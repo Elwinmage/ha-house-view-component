@@ -7,284 +7,194 @@
 
 # House View
 
-Vue pseudo-3D dynamique de la maison pour Home Assistant : plan **Sweet Home 3D** + modèle numérique de terrain,
-avec lumières, météo, soleil et saisons en direct. Un seul dépôt contient :
+**Supported languages:**
+[<img src="https://flagicons.lipis.dev/flags/4x3/fr.svg" style="width: 5%;"/>](doc/fr/README.fr.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/gb.svg" style="width: 5%;"/>](README.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/es.svg" style="width: 5%;"/>](doc/es/README.es.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/de.svg" style="width: 5%;"/>](doc/de/README.de.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/pl.svg" style="width: 5%;"/>](doc/pl/README.pl.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/pt.svg" style="width: 5%;"/>](doc/pt/README.pt.md)
+[<img src="https://flagicons.lipis.dev/flags/4x3/it.svg" style="width: 5%;"/>](doc/it/README.it.md)
 
-- `custom_components/house_view/` : l'**intégration** (stockage du plan, du terrain et des corrections ; API HTTP) ;
-- `card/` : la **carte Lovelace** `house-view-card` (three.js), compilée dans `custom_components/house_view/frontend/`.
-  L'intégration la sert elle-même (`/house_view/house-view-card.js`) et la charge sur tous les tableaux de bord :
-  **aucune ressource Lovelace à déclarer**.
+A live pseudo-3D view of your house for Home Assistant: your **Sweet Home 3D** plan on a digital terrain model, with lights, weather, sun and seasons in real time, plus a robot vacuum, garden watering and fences. One repository holds:
+
+- `custom_components/house_view/`: the **integration** (stores the plan, the terrain and your edits; fetches the terrain; HTTP API);
+- `card/`: the **Lovelace card** `house-view-card` (three.js), built into `custom_components/house_view/frontend/`. The integration serves it itself (`/house_view/house-view-card.js`) and loads it on every dashboard: **no Lovelace resource to declare**.
+
+The card interface exists in English and French; the options of the integration in English, French, Italian, German, Spanish, Polish and Portuguese. Translations are welcome: the texts are in `custom_components/house_view/translations/` and `card/src/i18n.js`.
 
 ## Installation
 
-HACS (dépôt personnalisé, type *Intégration*) ou copie de `custom_components/house_view/` dans
-`config/custom_components/`, puis redémarrer et ajouter l'intégration *House View* (aucun réglage : la position vient
-de la configuration de Home Assistant). Ajouter ensuite la carte au tableau de bord (`type: custom:house-view-card`),
-puis ouvrir ⚙ (administrateur) pour importer le plan `.sh3d`, puis récupérer le terrain (cartes.gouv.fr en France,
-sources ouvertes mondiales ailleurs : voir [Sources du terrain par pays](#sources-du-terrain-par-pays)) ou charger un
-terrain `.json`.
+1. Install with HACS (custom repository, type *Integration*), or copy `custom_components/house_view/` into `config/custom_components/`, then restart Home Assistant.
+2. Add the *House View* integration. There is nothing to set: the location comes from the Home Assistant configuration.
+3. Add the card to a dashboard (`type: custom:house-view-card`).
+4. Open ⚙ in the card (administrators only) to import your `.sh3d` plan, then fetch the terrain (cartes.gouv.fr in France, worldwide open data elsewhere: see [Terrain sources by country](#terrain-sources-by-country)) or load a terrain `.json`.
 
-La version de la carte s'affiche dans la console du navigateur au chargement (`🏠 HOUSE VIEW v0.x.y`).
+The version of the card is printed in the browser console when it loads (`🏠 HOUSE VIEW v0.x.y`). Cleaning by rooms and the icon of the integration need Home Assistant 2026.3 or later.
 
-La carte compilée n'est pas versionnée : `release.yml` la construit à chaque release et publie `house_view.zip`, que HACS
-installe. En développement : `cd card && npm install && npm run build`.
+The built card is not committed: `release.yml` builds it at each release and publishes `house_view.zip`, which HACS installs. For development: `cd card && npm install && npm run build`.
 
-## Carte : configuration
+## Card configuration
 
-Les options se règlent dans l'éditeur visuel de la carte (crayon du tableau de bord → « Modifier »), rangées en quatre
-sections : heure et météo, affichage, lumières, aspirateur. Le plan, le terrain et tout ce qui est placé dans la vue se
-règlent dans la carte elle-même (✎ et ⚙). En YAML :
+The options are set in the visual editor of the card (edit the dashboard, then *Edit* on the card), in four sections: time and weather, display, lights, robot vacuum. The plan, the terrain and everything placed in the view are set in the card itself (✎ and ⚙). In YAML:
 
 ```yaml
 type: custom:house-view-card
-weather_entity: weather.maison        # météo en direct (optionnel)
-rain_entity: binary_sensor.pluie      # optionnel : détecteur de pluie ou capteur d'intensité (mm/h) de votre station
-mode: live                            # live (heure réelle) | simulation (curseurs heure / date / météo)
-view: Vue générale                    # vue de départ (optionnel)
-show_views: true                      # boutons des vues caméra
-show_levels: true                     # boutons toit / niveaux (+ 🌡 si des températures par pièce sont connues)
-tap_action: zoom                      # clic sur une pièce : zoom (2e clic = lumières) | toggle_lights | none
-show_entities: true                   # entités placées dans l'éditeur
-vacuum_entity: vacuum.robot           # optionnel : par défaut le premier vacuum.* trouvé
-vacuum_poll: 15                       # s entre deux lectures de position (Roborock : action cloud, min 5)
-vacuum_show_floor: false              # true = pendant un nettoyage, montre l'étage du robot vu de dessus
-vacuum_rate: 1                        # m²/min, pour le trajet estimé d'un robot sans position
-vacuum_progress_entity: sensor.xxx    # optionnel : avancement (%) ; détecté seul pour Roborock
-movable_camera: true                  # caméra mobile (rotation, zoom, déplacement) ; false = figée sur les vues
-height: fill                          # fill (hauteur de l'écran sous le haut de la carte) | aspect (16/10) | 600 | "70vh"
-min_height: 320                       # hauteur minimale en mode fill (px)
-fps_cap: 30                           # limite d'images/s (écrans muraux, tablettes)
-light_entities: [light.salon, ...]    # optionnel : restreint les lumières prises en compte
+weather_entity: weather.home          # live weather (optional)
+rain_entity: binary_sensor.rain       # optional: rain detector or rain rate sensor (mm/h) of your weather station
+mode: live                            # live (real time) | simulation (time / date / weather sliders)
+view: Vue générale                    # starting view (optional): the name shown on its button
+show_views: true                      # camera view buttons
+show_levels: true                     # roof / level buttons (+ 🌡 when room temperatures are known)
+tap_action: zoom                      # tap on a room: zoom (second tap = lights) | toggle_lights | none
+show_entities: true                   # entities placed in the editor
+vacuum_entity: vacuum.robot           # optional: the first vacuum.* found by default
+vacuum_poll: 15                       # seconds between two position readings (Roborock: cloud action, min 5)
+vacuum_show_floor: false              # true = while cleaning, show the floor of the robot from above
+vacuum_rate: 1                        # m²/min, for the estimated path of a robot without position
+vacuum_progress_entity: sensor.xxx    # optional: progress (%); found automatically for Roborock
+movable_camera: true                  # movable camera (orbit, zoom, pan); false = fixed on the views
+height: fill                          # fill (screen height below the top of the card) | aspect (16/10) | 600 | "70vh"
+min_height: 320                       # minimum height in fill mode (px)
+fps_cap: 30                           # frames per second limit (wall screens, tablets)
+light_entities: [light.living, ...]   # optional: restricts the lights taken into account
 ```
 
-- **Latitude / longitude / fuseau** : lus dans la configuration de Home Assistant. Les saisons de la végétation
-  s'inversent dans l'hémisphère sud.
-- **Pièces ↔ areas** : une pièce du plan est liée à l'area HA de même nom (accents et casse ignorés). ⚙ liste les pièces
-  sans area correspondante.
-- **Lumières** : état, couleur et intensité des `light.*` de l'area de chaque pièce.
-- **Météo** : c'est l'entité météo `weather_entity` (service météo de Home Assistant) qui décide du temps affiché :
-  pluie (`rainy`, `pouring`, `hail`), neige (`snowy`, `snowy-rainy`), orage (`lightning`, `lightning-rainy`),
-  brouillard, nuages ; sa température, son vent et sa nébulosité sont repris s'ils sont fournis.
-  Avec `rain_entity` (détecteur de pluie `binary_sensor`, ou capteur d'intensité en mm/h), la pluie suit ce qui tombe
-  réellement chez vous : il pleut sur le capteur → pluie, plus ou moins dense selon l'intensité mesurée ; le service
-  annonce de la pluie mais le capteur est sec → ciel couvert sans pluie (orage : éclairs sans pluie). La neige et
-  l'orage restent décidés par le service météo, un pluviomètre ne les distinguant pas ; un cumul (« pluie du jour » en
-  mm) est ignoré, car il ne dit pas s'il pleut maintenant.
-- **Zoom sur une pièce** : un clic zoome sur la pièce (toit et étages supérieurs masqués) ; un 2e clic sur la même pièce
-  bascule ses lumières ; « ← pièce » revient à la vue d'avant.
-- **Aperçu** (bouton météo) : force une saison (printemps, été, automne, hiver), une météo (dégagé, nuageux, pluie, orage,
-  neige, brouillard) ou un moment (matin, midi, crépuscule, nuit), combinables ; retour au direct par le bouton
-  « Aperçu ✕ » ou automatiquement après 3 min. En mode simulation, ce sont des raccourcis vers les curseurs.
-- **Aspirateur** : si une entité `vacuum.*` existe, son icône apparaît en haut à droite. Un clic ouvre la sélection des
-  pièces (l'étage du robot s'affiche vu de dessus) : chaque pièce touchée, liée à une area HA, est surlignée, puis
-  « Nettoyer » appelle `vacuum.clean_area` avec les areas choisies (action générique de HA 2026.3+ ; la correspondance
-  pièces du robot ↔ areas se fait une fois dans les réglages de l'entité aspirateur). Démarrer / pause / base aussi.
-- **Suivi du nettoyage** (✎ → Aspirateur robot) : un robot 3D (couleur réglable, blanc par défaut) se déplace sur le
-  plan, la pièce en cours est teintée (couleur réglable) avec son pourcentage, les pièces demandées à venir sont
-  teintées plus clair, une pièce terminée scintille une minute, et une jauge circulaire autour de l'icône du robot
-  donne l'avancement total. En anomalie (`error`), la pièce et le robot clignotent en rouge avec un panneau ⚠.
-  - **Base** : « Placer la base » puis clic sur le sol ; c'est le point de calage entre la carte du robot et le plan.
-    Son **orientation** se règle en degrés (0° = face vers le haut du plan, 90° vers la droite, valeur par défaut),
-    par quarts de tour (⟲ / ⟳) ou avec « Orienter d'un clic » : on clique devant la base, là où le robot en sort.
-    Le robot au repos se gare devant la base, dans le même sens.
-  - **Position du robot** : *Roborock* (action officielle `roborock.get_vacuum_current_position`, base en 25500 /
-    25500 ; elle passe par le cloud, d'où une lecture toutes les `vacuum_poll` secondes, ralentie après une erreur),
-    *attributs d'une entité* (`vacuum_position {x, y}` et `charger`, comme les extracteurs de carte), ou *aucune* :
-    le robot suit alors un trajet estimé (allers-retours pièce par pièce), signalé « position estimée ».
-  - **Calage** : rotation, miroir et échelle ; « Caler d'un clic » calcule la rotation quand on clique la position
-    réelle du robot sorti de sa base ; « mémoriser » enregistre les coordonnées de la base pour les autres marques.
-  - **Pourcentage d'une pièce** : part du sol parcourue par le robot (estimation : 80 % du sol est supposé
-    accessible) ; l'avancement total vient du capteur du robot quand il existe (Roborock : `cleaning_progress`).
-  - « Tester l'animation » joue un nettoyage accéléré (avec ou sans anomalie) sans lancer le robot.
-- **Pièces ↔ areas** (✎ → Pièces) : une pièce du plan est liée à l'area HA de même nom ; cette section permet de
-  choisir une autre area, ou aucune, pièce par pièce (survol = la pièce s'allume sur le plan).
-- **Arrosage** (✎ → Arrosage) :
-  - **Goutte-à-goutte** : une ligne par vanne (`switch`, `valve`, `input_boolean`), tracée par points et arrondie au
-    rendu ; tuyau noir, marron, vert ou masqué. Vanne ouverte, la ligne passe au bleu, des reflets y circulent, une
-    goutte grossit puis rétrécit en boucle sous chaque goutteur (espacement 30 cm par défaut, léger décalage d'un
-    goutteur à l'autre : la ligne scintille) et une tache humide grandit jusqu'à former une bande. La largeur de la
-    tache suit le modèle de Schwartzman & Zur (1986) selon le débit du goutteur, la durée d'ouverture et le type de
-    sol ; elle s'efface en 30 min après la fermeture.
-  - **Arroseurs** : un circuit par vanne, avec un ou plusieurs arroseurs (modèle du catalogue : Hunter Pro-Spray
-    PSU-04 8A à 17A, SRM-04, PGJ-04, PGP Ultra, MP Rotator, ou générique ; distances min / max, orientation et angle
-    pré-remplis et modifiables ; « Viser » d'un clic). Vanne ouverte, le secteur arrosé estimé s'affiche et le jet
-    est animé (balayage pour une turbine, éventail pour une tuyère).
-  - « Tester l'animation » joue 30 s d'arrosage accéléré (30 s = 1 h 30) sur toutes les lignes et tous les circuits,
-    sans ouvrir aucune vanne : la tache humide grandit, les jets tournent, puis tout revient à l'état réel. Le bouton
-    « Tester » d'une ligne ou d'un circuit fait la même chose pour lui seul ; fermer l'éditeur arrête le test.
-- **Entités placées** (capteurs, lumières, interrupteurs, select…) : posées d'un clic puis déplacées en glissant leur
-  étiquette (éditeur ouvert). Fixation au sol (par défaut : l'étiquette reste dans sa pièce quel que soit l'angle), au
-  mur (côté pièce, cachée quand le mur est vu de dos) ou libre en hauteur ; une étiquette cachée par un étage supérieur
-  ou le toit n'est pas affichée. Pastille (icône + valeur) ou icône seule ; couleur, libellé, icône (sélecteur d'icônes
-  de HA avec aperçu) ; visible toujours, sur la vue de son étage ou en zoom sur sa pièce ; clic = fiche HA, bascule ou
-  rien. Dans l'éditeur, la liste est repliée : seule l'entité choisie est dépliée.
-- **Lumières placées** : une `light.*` placée devient une source lumineuse à cet endroit de la pièce (spot, suspension,
-  lampe, réglette ou invisible ; hauteur et portée réglables ; au mur : applique à la hauteur cliquée), pilotée par son
-  propre état et sa couleur. Les autres lumières de l'area continuent d'éclairer la pièce entière.
-- **Vue par pièce** : en zoom sur une pièce (éditeur ouvert), « 📷 Vue de la pièce » enregistre la caméra et les niveaux
-  visibles ; un clic sur cette pièce ouvre ensuite cette vue au lieu du zoom automatique.
-- **Caméra** : le bouton ✥ / 🔒 en haut à droite débloque ou fige la caméra sans toucher à la configuration.
-- **Températures** : capteur de température de l'area (réglage de l'area dans HA), sinon premier `sensor.*` de
-  `device_class: temperature` de l'area ; affichées au survol et en calque (🌡).
-- **Mode simulation** : ☀ ouvre heure (avec défilement), date, préréglage météo, nuages, précipitations, vent,
-  température et neige.
-- **Éditeur (admin, ✎)** : objets extérieurs (masquer, hauteur, décalage, rotation), niveau de la piscine, arbres
-  (supprimer, ajouter avec essence et hauteur, annuler, tout rétablir), corrections du sol (muret, terrasse, pinceaux,
-  coupe, liste des corrections modifiables), clôtures, entités placées, pièces ↔ areas, aspirateur, arrosage, vues.
-  Une seule section est dépliée à la fois. Tout est sauvegardé dans le fichier d'éditions, séparé du
-  plan et du terrain. Échap annule le tracé en cours.
-- **Récupération du terrain** (⚙ → Terrain) : l'intégration récupère elle-même le relief et ce qui l'entoure, autour
-  des coordonnées de HA (modifiables). La source est choisie selon le pays de la configuration de Home Assistant
-  (« Automatique »), ou imposée dans le formulaire :
-  - **France : cartes.gouv.fr (IGN)** — sol LiDAR HD 0,5 m (RGE ALTI 1 m à défaut), modèle de surface (calage
-    automatique, arbres), bâtiments, routes et cadastre (BD TOPO, parcellaire), photo aérienne ou plan IGN plaqué au
-    sol. Si l'IGN n'a pas de donnée à cet endroit, les sources mondiales prennent le relais ;
-  - **Monde : Mapterhorn + OpenStreetMap** — relief des tuiles [Mapterhorn](https://mapterhorn.com) (LiDAR ouverts de
-    nombreux pays, 30 m ailleurs ; à défaut les Terrain Tiles de Mapzen hébergées par AWS, plus grossières), bâtiments
-    et routes d'OpenStreetMap. Pas de modèle de surface, de cadastre ni de photo aérienne : les arbres se placent avec
-    l'éditeur, la clôture se trace à la main.
+## Live view
 
-  Dans les deux cas : option de recalage sur le bâtiment le plus proche (la position de HA est souvent approximative),
-  calage automatique du plan lancé à la fin, et source affichée sous le formulaire.
-- **Routes** : dessinées en enrobé sur le relief (désactivables dans ⚙).
-- **Clôtures** (✎ → Clôtures) : chaque côté a son type — grillage, bois, mur, haie, ou ouvert (portail) — et sa
-  hauteur. Deux façons de créer : « Clôturer d'après le cadastre » (parcelles de la maison présélectionnées, clic pour
-  ajouter ou retirer les parcelles voisines du même terrain ; le contour de l'ensemble est clôturé) ou « Tracer une
-  clôture » (clics successifs, vue « Dessus » conseillée ; chaque côté prend le type choisi dans la palette, une
-  couleur par type). « Modifier les côtés » : changer le type d'un côté au clic, couper un côté en deux (un morceau en
-  mur, l'autre en grillage), supprimer un point.
-- **Sauvegarde GitHub** : options de l'intégration, menu « Sauvegarde GitHub » (dépôt privé `propriétaire/nom`, jeton
-  fine-grained avec *Contents : read and write*, branche, dossier) ; boutons « Sauvegarder » / « Restaurer » dans ⚙.
-  Seuls les fichiers modifiés sont commités ; un dépôt public est refusé (il contient le plan de la maison).
-- **Protection de l'édition** : seuls les administrateurs de Home Assistant peuvent modifier la vue. Pour éviter en
-  plus les modifications par erreur (écran partagé resté connecté avec un compte administrateur), un mot de passe
-  peut être demandé avant d'ouvrir l'éditeur ✎ et la configuration ⚙ :
-  - il se règle dans les options de l'intégration (Paramètres → Appareils et services → House View → Configurer →
-    « Protection de l'édition ») : 4 caractères ou plus, champ vide pour garder l'actuel, case à cocher pour supprimer
-    la protection. Il est conservé sous forme d'empreinte salée, jamais en clair ;
-  - la carte le demande à l'ouverture de ✎ ou ⚙ (le crayon porte alors un cadenas), puis de nouveau après
-    10 minutes sans modification, après un rechargement de la page ou un redémarrage de Home Assistant. Le bouton 🔒
-    en tête du panneau reverrouille tout de suite ;
-  - le contrôle est fait par l'intégration : sans mot de passe valide, toute écriture est refusée (code HTTP 423),
-    même hors de la carte. Après 5 mots de passe faux, il faut attendre 1 minute ;
-  - mot de passe oublié : le changer ou le supprimer dans les options de l'intégration ;
-  - consulter la vue, zoomer, commander les lumières ou l'aspirateur et l'aperçu saison / météo restent libres.
-- **Performances** : le rendu s'arrête quand la carte n'est pas visible ; les volumes de lumière ne sont recalculés que
-  si un état utile change.
+- **Latitude, longitude, time zone**: read from the Home Assistant configuration. The seasons of the vegetation are reversed in the southern hemisphere.
+- **Rooms ↔ areas**: a room of the plan is linked to the Home Assistant area of the same name (accents and case ignored). ⚙ lists the rooms without a matching area; ✎ → *Rooms ↔ Home Assistant areas* lets you pick another area, or none, room by room.
+- **Lights**: state, colour and brightness of the `light.*` entities of the area of each room.
+- **Weather**: the weather entity `weather_entity` decides the weather shown: rain (`rainy`, `pouring`, `hail`), snow (`snowy`, `snowy-rainy`), thunderstorm (`lightning`, `lightning-rainy`), fog, clouds; its temperature, wind and cloud cover are used when provided. With `rain_entity` (a rain detector `binary_sensor`, or a rain rate sensor in mm/h), the rain follows what really falls at your place: rain on the sensor → rain, heavier or lighter with the measured rate; the weather service says rain but the sensor is dry → overcast sky without rain (thunderstorm: lightning without rain). Snow and thunderstorms stay with the weather service, since a rain gauge cannot tell them apart; a cumulated amount ("rain today" in mm) is ignored, as it does not say whether it is raining now.
+- **Zoom on a room**: a tap zooms on the room (roof and upper floors hidden); a second tap on the same room toggles its lights; *← room* goes back to the previous view.
+- **Preview** (weather button): forces a season (spring, summer, autumn, winter), a weather (clear, cloudy, rain, thunderstorm, snow, fog) or a moment (morning, noon, dusk, night), which can be combined; back to live with the *Preview … ✕* button, or automatically after 3 minutes. In simulation mode these are shortcuts to the sliders.
+- **Camera**: the button at the top right unlocks or locks the camera without touching the configuration.
+- **Temperatures**: the temperature sensor of the area (set on the area in Home Assistant), else the first `sensor.*` with `device_class: temperature` of the area; shown on hover and as a layer (🌡).
+- **Simulation mode**: ☀ opens time (with playback), date, weather preset, clouds, precipitation, wind, temperature and snow.
+- **Roads**: drawn as asphalt on the relief (can be switched off in ⚙).
+- **Performance**: rendering stops when the card is not visible; the light volumes are only rebuilt when a useful state changes.
 
-## Sources du terrain par pays
+## Robot vacuum
 
-La France utilise les services de l'IGN. Partout ailleurs, le relief vient de [Mapterhorn](https://mapterhorn.com), qui
-assemble les LiDAR nationaux ouverts au-dessus d'un modèle mondial à 30 m, et les bâtiments et routes viennent
-d'[OpenStreetMap](https://www.openstreetmap.org). La finesse indiquée est celle annoncée par Mapterhorn en
-novembre 2026 ; elle progresse à chaque version du projet (carte de couverture à jour sur mapterhorn.com).
+- **Cleaning by rooms**: when a `vacuum.*` entity exists, its icon appears at the top right. A tap opens the room selection (the floor of the robot is shown from above): each room tapped, when linked to an area, is highlighted, then *Clean* calls `vacuum.clean_area` with the chosen areas (generic action of Home Assistant 2026.3+; the mapping between the rooms of the robot and the areas is done once in the settings of the vacuum entity). *Start*, *Pause* and *Dock* too.
+- **Following the cleaning** (✎ → *Robot vacuum*): a 3D robot (colour of your choice, white by default) moves on the plan, the room being cleaned is tinted (colour of your choice) with its percentage, the rooms still to come are tinted lighter, a finished room sparkles for one minute, and a circular gauge around the robot icon gives the overall progress. On an error (`error`), the room and the robot blink red with a ⚠ sign.
+- **Dock**: *Place the dock*, then tap the floor; it is the reference point between the map of the robot and the plan. Its **direction** is set in degrees (0° = facing the top of the plan, 90° to the right, the default), by quarter turns (⟲ / ⟳) or with *Aim with a tap*: tap in front of the dock, where the robot comes out. The idle robot parks in front of the dock, facing the same way.
+- **Robot position**: *Roborock* (official action `roborock.get_vacuum_current_position`, dock at 25500 / 25500; it goes through the cloud, hence one reading every `vacuum_poll` seconds, slowed down after an error), *attributes of an entity* (`vacuum_position {x, y}` and `charger`, as map extractors provide), or *none*: the robot then follows an estimated path (back and forth, room by room), marked "estimated position".
+- **Calibration**: rotation, mirror and scale; *Calibrate with a tap* computes the rotation when you tap the real position of the robot once out of its dock; *remember* stores the coordinates of the dock for other brands.
+- **Percentage of a room**: share of the floor covered by the robot (estimate: 80 % of the floor is assumed reachable); the overall progress comes from the sensor of the robot when there is one (Roborock: `cleaning_progress`).
+- *Test the animation* plays an accelerated cleaning (with or without an error) without starting the robot.
 
-| | Pays | Relief | Bâtiments, routes | Cadastre, photo aérienne | Testé |
+## Editor (✎)
+
+For administrators. One section is unfolded at a time; everything is saved in the edits file, apart from the plan and the terrain; Escape cancels the drawing in progress.
+
+- **Placed entities** (sensors, lights, switches, selects…): placed with a tap, then moved by dragging their label (editor open). Fixed to the floor (default: the label stays in its room whatever the angle), to a wall (room side, hidden when the wall is seen from behind) or free in height; a label hidden by an upper floor or the roof is not shown. Badge (icon + value) or icon only; colour, label, icon (Home Assistant icon picker with preview); visible always, on the view of its floor or when zoomed on its room; tap = more-info, toggle or nothing. In the editor the list is folded: only the chosen entity is unfolded.
+- **Placed lights**: a placed `light.*` becomes a light source at that spot of the room (spot, pendant, lamp, strip or invisible; height and reach adjustable; on a wall: a wall lamp at the height tapped), driven by its own state and colour. The other lights of the area keep lighting the whole room.
+- **Room view**: zoomed on a room, with the editor open, *📷 Room view* saves the camera and the visible levels; a tap on that room then opens this view instead of the automatic zoom. *Automatic view* goes back to it.
+- **Fences** (*Fences*): each side has its type (mesh, wood, wall, hedge, or open for a gate) and its height. Two ways to create one: *Fence from the cadastre* (the parcels of the house are preselected, tap to add or remove the neighbouring parcels of the same property; the outline of the whole is fenced) or *Draw a fence* (successive taps, the "Dessus" top view is recommended; each side takes the type chosen in the palette, one colour per type). *Edit the sides*: change the type of a side with a tap, cut a side in two (one part as a wall, the other as mesh), remove a point.
+- **Watering** (*Watering*):
+  - **Drip lines**: one line per valve (`switch`, `valve`, `input_boolean`), drawn point by point and rounded when rendered; black, brown, green or hidden pipe. When the valve is open the line turns blue, glints run along it, a drop swells and shrinks in a loop under each emitter (30 cm apart by default, slightly out of step from one emitter to the next: the line twinkles) and a wet spot grows until it forms a strip. The width of the spot follows the Schwartzman & Zur (1986) model, from the emitter flow, the opening time and the soil type; it fades within 30 minutes after closing.
+  - **Sprinklers**: one circuit per valve, with one or several sprinklers (catalogue model: Hunter Pro-Spray PSU-04 8A to 17A, SRM-04, PGJ-04, PGP Ultra, MP Rotator, or generic; minimum / maximum distance, direction and angle prefilled and editable; *Aim* with a tap). When the valve is open the estimated watered sector is shown and the jet is animated (sweeping for a rotor, fan for a spray nozzle).
+  - *Test the animation* plays 30 seconds of accelerated watering (30 s = 1 h 30) on every line and circuit, without opening any valve: the wet spot grows, the jets turn, then everything goes back to the real state. The *Test* button of a line or a circuit does the same for it alone; closing the editor stops the test.
+- **Other tools**: outdoor objects (hide, height, offset, rotation), pool level, trees (remove, add with species and height, undo, restore all), ground corrections (low wall, terrace, brushes, cut, editable list of corrections), views.
+
+## Setup (⚙)
+
+- **Plan**: *Import a .sh3d* reads your Sweet Home 3D file in the browser and lists what was found (levels, rooms, walls, lights…).
+- **Fetching the terrain** (*Terrain (DTM)*): the integration fetches the relief and its surroundings itself, around the coordinates of Home Assistant (editable). The source follows the country of the Home Assistant configuration (*Automatic*), or is forced in the form:
+  - **France: cartes.gouv.fr (IGN)**: LiDAR HD ground at 0.5 m (RGE ALTI at 1 m otherwise), surface model (automatic registration, trees), buildings, roads and cadastre (BD TOPO, parcels), aerial photo or IGN map draped on the ground. When the IGN has no data for the place, the worldwide sources take over;
+  - **World: Mapterhorn + OpenStreetMap**: relief from the [Mapterhorn](https://mapterhorn.com) tiles (open LiDAR of many countries, 30 m elsewhere; failing that, the coarser Terrain Tiles of Mapzen hosted by AWS), buildings and roads from OpenStreetMap. No surface model, cadastre or aerial photo: trees are placed with the editor, the fence is drawn by hand.
+
+  In both cases: optional snapping to the nearest building (the location of Home Assistant is often approximate), automatic registration of the plan at the end, and the source shown under the form.
+- **GitHub backup**: options of the integration, *GitHub backup* menu (private repository `owner/name`, fine-grained token with *Contents: read and write*, branch, folder); *Back up to GitHub* / *Restore from GitHub* buttons in ⚙. Only the changed files are committed; a public repository is refused (it holds the plan of your house).
+- **Edit protection**: only Home Assistant administrators can change the view. To also avoid changes made by mistake (a shared screen left logged in with an administrator account), a password can be asked before the editor ✎ and the setup ⚙ open:
+  - it is set in the options of the integration (Settings → Devices & services → House View → Configure → *Edit protection*): 4 characters or more, empty field to keep the current one, a checkbox to remove the protection. It is kept as a salted hash, never in clear text;
+  - the card asks for it when ✎ or ⚙ opens (the pencil then carries a padlock), then again after 10 minutes without any change, after a page reload or a restart of Home Assistant. The 🔒 button at the top of the panel locks again at once;
+  - the check is done by the integration: without a valid password every write is refused (HTTP code 423), even outside the card. After 5 wrong passwords you have to wait 1 minute;
+  - forgotten password: change or remove it in the options of the integration;
+  - looking at the view, zooming, driving the lights or the vacuum and the season / weather preview stay free.
+
+## Terrain sources by country
+
+France uses the services of the IGN. Everywhere else the relief comes from [Mapterhorn](https://mapterhorn.com), which lays the open national LiDAR surveys over a global 30 m model, and the buildings and roads come from [OpenStreetMap](https://www.openstreetmap.org). The resolution given is the one announced by Mapterhorn in November 2026; it improves with each version of the project (up-to-date coverage map on mapterhorn.com).
+
+| | Country | Relief | Buildings, roads | Cadastre, aerial photo | Tested |
 |---|---|---|---|---|---|
-| 🇫🇷 | France | IGN LiDAR HD 0,5 m (RGE ALTI 1 m à défaut) | IGN BD TOPO | IGN (parcellaire, orthophoto ou plan) | ✅ |
-| 🇩🇪 | Allemagne | Mapterhorn : 0,25 m (Bade-Wurtemberg), 1 m (la plupart des Länder) | OpenStreetMap | — | ❌ |
-| 🇦🇹 | Autriche | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
-| 🇧🇪 | Belgique | Mapterhorn : 0,5 m (Wallonie) | OpenStreetMap | — | ❌ |
-| 🇩🇰 | Danemark | Mapterhorn : 0,4 m | OpenStreetMap | — | ❌ |
-| 🇪🇸 | Espagne | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
-| 🇪🇪 | Estonie | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
-| 🇮🇹 | Italie | Mapterhorn : LiDAR en Sicile et sur une partie de la Sardaigne | OpenStreetMap | — | ❌ |
-| 🇱🇺 | Luxembourg | Mapterhorn : 0,5 m | OpenStreetMap | — | ❌ |
-| 🇳🇴 | Norvège | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
-| 🇳🇱 | Pays-Bas | Mapterhorn : LiDAR national | OpenStreetMap | — | ❌ |
-| 🇵🇱 | Pologne | Mapterhorn : LiDAR national | OpenStreetMap | — | ❌ |
-| 🇵🇹 | Portugal | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
-| 🇷🇴 | Roumanie | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
-| 🇬🇧 | Royaume-Uni | Mapterhorn : 1 m (Angleterre, Écosse, pays de Galles) | OpenStreetMap | — | ❌ |
-| 🇸🇰 | Slovaquie | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
-| 🇸🇮 | Slovénie | Mapterhorn : 0,5 m | OpenStreetMap | — | ❌ |
-| 🇸🇪 | Suède | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
-| 🇨🇭 | Suisse | Mapterhorn : 0,25 m (canton de Zurich), 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
-| 🌍 | Reste du monde | Mapterhorn : 30 m (Copernicus GLO-30) ; à défaut Terrain Tiles (Mapzen / AWS) | OpenStreetMap | — | ❌ |
+| 🇫🇷 | France | IGN LiDAR HD 0.5 m (RGE ALTI 1 m otherwise) | IGN BD TOPO | IGN (parcels, aerial photo or map) | ✅ |
+| 🇦🇹 | Austria | Mapterhorn: 1 m | OpenStreetMap | — | ❌ |
+| 🇧🇪 | Belgium | Mapterhorn: 0.5 m (Wallonia) | OpenStreetMap | — | ❌ |
+| 🇩🇰 | Denmark | Mapterhorn: 0.4 m | OpenStreetMap | — | ❌ |
+| 🇪🇪 | Estonia | Mapterhorn: 1 m | OpenStreetMap | — | ❌ |
+| 🇩🇪 | Germany | Mapterhorn: 0.25 m (Baden-Württemberg), 1 m (most states) | OpenStreetMap | — | ❌ |
+| 🇮🇹 | Italy | Mapterhorn: LiDAR in Sicily and part of Sardinia | OpenStreetMap | — | ❌ |
+| 🇱🇺 | Luxembourg | Mapterhorn: 0.5 m | OpenStreetMap | — | ❌ |
+| 🇳🇱 | Netherlands | Mapterhorn: national LiDAR | OpenStreetMap | — | ❌ |
+| 🇳🇴 | Norway | Mapterhorn: 1 m | OpenStreetMap | — | ❌ |
+| 🇵🇱 | Poland | Mapterhorn: national LiDAR | OpenStreetMap | — | ❌ |
+| 🇵🇹 | Portugal | Mapterhorn: 0.5 m (partial coverage) | OpenStreetMap | — | ❌ |
+| 🇷🇴 | Romania | Mapterhorn: 0.5 m (partial coverage) | OpenStreetMap | — | ❌ |
+| 🇸🇰 | Slovakia | Mapterhorn: 1 m | OpenStreetMap | — | ❌ |
+| 🇸🇮 | Slovenia | Mapterhorn: 0.5 m | OpenStreetMap | — | ❌ |
+| 🇪🇸 | Spain | Mapterhorn: 0.5 m (partial coverage) | OpenStreetMap | — | ❌ |
+| 🇸🇪 | Sweden | Mapterhorn: 1 m | OpenStreetMap | — | ❌ |
+| 🇨🇭 | Switzerland | Mapterhorn: 0.25 m (canton of Zurich), 0.5 m (partial coverage) | OpenStreetMap | — | ❌ |
+| 🇬🇧 | United Kingdom | Mapterhorn: 1 m (England, Scotland, Wales) | OpenStreetMap | — | ❌ |
+| 🌍 | Rest of the world | Mapterhorn: 30 m (Copernicus GLO-30); failing that, Terrain Tiles (Mapzen / AWS) | OpenStreetMap | — | ❌ |
 
-> **Non testé hors de France.** Les sources mondiales ont été écrites d'après leur documentation et vérifiées sur des
-> données simulées, sans pouvoir les essayer en conditions réelles. Si la récupération échoue ou donne un relief
-> incohérent chez vous, merci d'[ouvrir une issue](https://github.com/elwinmage/ha-house-view-component/issues) en
-> indiquant le pays, la source choisie et le message affiché sous le formulaire. Un retour positif est bienvenu aussi :
-> il permettra de passer le pays en « testé ».
+> **Not tested outside France.** The worldwide sources were written from their documentation and checked on simulated data, without a chance to try them for real. If the fetch fails or gives an inconsistent relief at your place, please [open an issue](https://github.com/elwinmage/ha-house-view-component/issues) with the country, the source chosen and the message shown under the form. Good news is welcome too: it lets the country be marked as tested.
 
-Avec un modèle à 30 m, le terrain n'est qu'un plan incliné : les corrections du sol de l'éditeur (✎) permettent de
-redessiner terrasses et talus. Le cadastre et la photo aérienne n'existent que pays par pays ; ils pourront être ajoutés
-sur demande, une issue par pays.
+With a 30 m model the terrain is only a tilted plane: the ground corrections of the editor (✎) let you redraw terraces and banks. Cadastre and aerial photos only exist country by country; they can be added on request, one issue per country.
 
-## API HTTP (utilisée par la carte)
+## HTTP API (used by the card)
 
 | Route | GET | POST | DELETE |
 |---|---|---|---|
-| `/api/house_view/info` | état + position HA | | |
-| `/api/house_view/scene` | plan | remplace (admin) | |
-| `/api/house_view/terrain` | grille de hauteurs | remplace (admin) | supprime (admin) |
-| `/api/house_view/edits` | corrections | remplace (admin) | supprime (admin) |
-| `/api/house_view/ortho` | photo / plan au sol | remplace (admin) | supprime (admin) |
-| `/api/house_view/fetch` | état de la récupération | lance la récupération du terrain, `provider` : `auto` \| `ign` \| `world` (admin) | |
+| `/api/house_view/info` | state + Home Assistant location | | |
+| `/api/house_view/scene` | plan | replaces (admin) | |
+| `/api/house_view/terrain` | height grid | replaces (admin) | removes (admin) |
+| `/api/house_view/edits` | edits | replaces (admin) | removes (admin) |
+| `/api/house_view/ortho` | ground photo / map | replaces (admin) | removes (admin) |
+| `/api/house_view/fetch` | state of the fetch | starts fetching the terrain, `provider`: `auto` \| `ign` \| `world` (admin) | |
 | `/api/house_view/github` | | `{"action": "backup" \| "restore"}` (admin) | |
-| `/api/house_view/unlock` | `{locked, unlocked}` | `{"password"}` → jeton (admin) | reverrouille |
+| `/api/house_view/unlock` | `{locked, unlocked}` | `{"password"}` → token (admin) | locks again |
 
-Quand un mot de passe d'édition est défini, les écritures (POST / DELETE ci-dessus) exigent en plus l'en-tête
-`X-House-View-Unlock` avec le jeton rendu par `/unlock` ; sinon elles répondent 423.
+When an edit password is set, the writes (POST / DELETE above) also need the `X-House-View-Unlock` header with the token returned by `/unlock`; otherwise they answer 423.
 
-Chaque document est validé (`validate.py`) et conservé dans `.storage/house_view.<clé>` ; chaque écriture déclenche
-l'événement `house_view_updated` (`key`, `updated`). Les documents sont volumineux (un terrain fait plusieurs Mo) : ils
-passent en HTTP (limite HA de 16 Mo par requête) et non par le websocket.
+Each document is validated (`validate.py`) and kept in `.storage/house_view.<key>`; each write fires the `house_view_updated` event (`key`, `updated`). The documents are large (a terrain is several MB): they travel over HTTP (Home Assistant limit of 16 MB per request), not over the websocket.
 
-## Développement et tests
+## Development and tests
 
 ```bash
 pip install pre-commit
-# (optionnel) cd card && npm install pour lancer le build et les tests à la main
-pre-commit install            # ruff, prettier, vitest, traductions, pytest (100 % de couverture) ; les dépendances des hooks sont gérées par pre-commit
+# (optional) cd card && npm install to run the build and the tests by hand
+pre-commit install            # ruff, prettier, vitest, translations, pytest (100 % coverage); pre-commit manages the dependencies of the hooks
 pre-commit run --all-files
 ```
 
-- **Intégration** : `pytest` (vrai serveur HTTP de Home Assistant via `pytest-homeassistant-custom-component`,
-  couverture 100 % exigée).
-- **Carte** : `cd card && npm test` (vitest : liaison HA, météo, areas, lumières, horloge solaire) ;
-  `npm run build` écrit `custom_components/house_view/frontend/house-view-card.js` ; `npm run format` (prettier).
-- **Traductions** : `scripts/check_translations.py` vérifie que chaque langue de l'intégration (en, fr, it, de, es, pl, pt)
-  et de la carte (`card/src/i18n.js`) a exactement les clés de l'anglais.
-- **Page de test sans Home Assistant** : `python3 card/test/harness/server.py` (faux serveur de l'API), puis
-  http://localhost:8765/card/test/harness/index.html
-- **Images de marque** : `custom_components/house_view/brand/` (icône et logo, clair et sombre), servies par Home
-  Assistant 2026.3+ sans passer par le dépôt `home-assistant/brands`. Sources vectorielles dans `assets/brand/` ;
-  `scripts/build_brand.sh` régénère les PNG (`rsvg-convert`, ImageMagick, police Inter).
-- **CI** (`.github/workflows/`) : `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + build),
-  `release.yml` (lancé à la main avec la version : met à jour `manifest.json` et `card/package.json`, compile la carte,
-  tague, publie la release avec `house_view.zip`).
+- **Integration**: `pytest` (real Home Assistant HTTP server through `pytest-homeassistant-custom-component`, 100 % coverage required).
+- **Card**: `cd card && npm test` (vitest); `npm run build` writes `custom_components/house_view/frontend/house-view-card.js`; `npm run format` (prettier).
+- **Translations**: `scripts/check_translations.py` checks that every language of the integration (en, fr, it, de, es, pl, pt) and of the card (`card/src/i18n.js`) has exactly the keys of English. This README exists in the same seven languages (`doc/<language>/README.<language>.md`).
+- **Test page without Home Assistant**: `python3 card/test/harness/server.py` (fake API server), then http://localhost:8765/card/test/harness/index.html
+- **Brand images**: `custom_components/house_view/brand/` (icon and logo, light and dark), served by Home Assistant 2026.3+ without going through the `home-assistant/brands` repository. Vector sources in `assets/brand/`; `scripts/build_brand.sh` rebuilds the PNG files (`rsvg-convert`, ImageMagick, Inter font).
+- **CI** (`.github/workflows/`): `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + build), `release.yml` (started by hand with the version: updates `manifest.json` and `card/package.json`, builds the card, tags, publishes the release with `house_view.zip`).
 
-`card/src/engine.js` est le moteur 3D (une instance par carte, sans dépendance à HA) ; `card/src/ha-bridge.js` convertit
-l'état de HA en données pour le moteur ; `card/src/engine/` reprend les modules du prototype (géométrie, végétation,
-terrain, lumières…).
+`card/src/engine.js` is the 3D engine (one instance per card, no dependency on Home Assistant); `card/src/ha-bridge.js` turns the state of Home Assistant into data for the engine; `card/src/engine/` holds the modules of the prototype (geometry, vegetation, terrain, lights…).
 
-## Feuille de route
+## Roadmap
 
-1. ✅ Phase 1 : intégration + carte, import du plan, terrain, calage, lumières et météo en direct.
-2. ✅ Éditeurs dans la carte : objets extérieurs, arbres, corrections du sol, vues personnalisées.
-3. ✅ Récupération du terrain côté intégration pour la France (IGN), routes, photo au sol, clôtures, capteurs placés,
-   aspirateur, zoom pièce, aperçu saison / météo, sauvegarde GitHub.
-4. ✅ Autres pays : relief Mapterhorn, bâtiments et routes OpenStreetMap (à confirmer pays par pays). À venir :
-   cadastre et photo aérienne des pays qui les publient en données ouvertes.
-5. Catalogue (arbres à 4 saisons, objets) géré par `catalog_editor`.
+1. ✅ Phase 1: integration + card, plan import, terrain, registration, live lights and weather.
+2. ✅ Editors in the card: outdoor objects, trees, ground corrections, custom views.
+3. ✅ Terrain fetched by the integration for France (IGN), roads, ground photo, fences, placed entities, robot vacuum, room zoom, season / weather preview, GitHub backup.
+4. ✅ Other countries: Mapterhorn relief, OpenStreetMap buildings and roads (to be confirmed country by country). Next: cadastre and aerial photo of the countries that publish them as open data.
+5. Catalogue (four-season trees, objects) managed by `catalog_editor`.
 
-## Licence
+## License
 
-Code sous licence [MIT](LICENSE) © Elwinmage. L'icône et le logo (`assets/brand/`) sont des créations originales du
-projet, sous la même licence.
+Code under the [MIT](LICENSE) license © Elwinmage. The icon and the logo (`assets/brand/`) are original creations of the project, under the same license.
 
-- **Bibliothèques incluses dans la carte compilée** : [three.js](https://threejs.org) (MIT),
-  [Lit](https://lit.dev) (BSD-3-Clause) et [fflate](https://github.com/101arrowz/fflate) (MIT) ; leurs mentions de
-  licence sont conservées à la fin du fichier compilé.
-- **Données** : le dépôt ne contient aucune donnée cartographique ; chaque utilisateur télécharge celles de son
-  terrain, et la source est rappelée dans ⚙ → Terrain. En cas de publication d'une capture, mentionner cette source :
-  - France : services de l'IGN (cartes.gouv.fr), sous
-    [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/) ;
-  - relief hors de France : [Mapterhorn](https://mapterhorn.com/attribution) et les jeux de données ouverts qu'il
-    assemble, ou les [Terrain Tiles](https://registry.opendata.aws/terrain-tiles) de Mapzen ;
-  - bâtiments et routes hors de France : © les contributeurs d'[OpenStreetMap](https://www.openstreetmap.org/copyright),
-    sous licence ODbL.
-- Les noms de marques (Hunter, Roborock, Sweet Home 3D…) appartiennent à leurs propriétaires et ne sont cités que pour
-  décrire la compatibilité.
+- **Libraries bundled in the built card**: [three.js](https://threejs.org) (MIT), [Lit](https://lit.dev) (BSD-3-Clause) and [fflate](https://github.com/101arrowz/fflate) (MIT); their license notices are kept at the end of the built file.
+- **Data**: the repository holds no map data; each user downloads the data of their own property, and the source is recalled in ⚙ → *Terrain (DTM)*. When publishing a screenshot, credit that source:
+  - France: services of the IGN (cartes.gouv.fr), under the [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/);
+  - relief outside France: [Mapterhorn](https://mapterhorn.com/attribution) and the open datasets it assembles, or the [Terrain Tiles](https://registry.opendata.aws/terrain-tiles) of Mapzen;
+  - buildings and roads outside France: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, under the ODbL license.
+- Brand names (Hunter, Roborock, Sweet Home 3D…) belong to their owners and are only mentioned to describe compatibility.
