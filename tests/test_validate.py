@@ -67,3 +67,27 @@ def test_edits():
     for bad in ({"terrain": {}}, {"outdoor": []}, {"views": {}}, {"registration": []}, [], None):
         with pytest.raises(ValueError):
             validate.validate_edits(bad)
+
+
+def test_ortho_and_new_edit_lists():
+    good = {"version": 1, "bbox": [0, 0, 10, 10], "lat": 43.4, "lon": 1.3, "mime": "image/jpeg", "data": "AA=="}
+    validate.validate_ortho(good)
+    for bad in (
+        None,
+        {**good, "version": 2},
+        {**good, "bbox": [0, 0, 10]},
+        {**good, "bbox": [10, 0, 0, 10]},
+        {**good, "lat": "x"},
+        {**good, "mime": "image/gif"},
+        {**good, "data": ""},
+    ):
+        with pytest.raises(ValueError):
+            validate.validate_ortho(bad)
+    validate.validate_edits({"fences": [], "entities": [], "sensors": []})
+    for key in ("fences", "entities", "sensors"):
+        with pytest.raises(ValueError):
+            validate.validate_edits({key: {}})
+    validate.validate_edits({"irrigation": {"lines": []}, "vacuum": {}, "room_areas": {}, "room_views": {}})
+    for key in ("irrigation", "vacuum", "room_areas", "room_views"):
+        with pytest.raises(ValueError):
+            validate.validate_edits({key: []})

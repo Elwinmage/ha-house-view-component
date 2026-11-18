@@ -21,6 +21,8 @@ class HouseViewStore:
         self._data: dict[str, Any] = dict.fromkeys(KEYS)
         self._bytes: dict[str, bytes | None] = dict.fromkeys(KEYS)
         self.updated: dict[str, str | None] = dict.fromkeys(KEYS)
+        self.options: dict[str, Any] = {}  # config entry options (GitHub backup)
+        self.job: dict[str, Any] = {"state": "idle"}  # terrain fetch job, polled by the card
 
     async def async_load(self) -> None:
         for key, store in self._stores.items():

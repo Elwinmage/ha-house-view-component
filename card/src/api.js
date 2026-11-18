@@ -30,6 +30,25 @@ export class HouseViewApi {
     return this._json('edits');
   }
 
+  getOrtho() {
+    return this._json('ortho');
+  }
+
+  /** Start fetching the terrain from the national geodata service (runs in the integration). */
+  startFetch(params) {
+    return this._send('fetch', 'POST', params);
+  }
+
+  /** Fetch job state: { state: idle|running|done|error, step, message }. */
+  fetchStatus() {
+    return this._json('fetch');
+  }
+
+  /** GitHub backup: action = 'backup' | 'restore'. */
+  github(action) {
+    return this._send('github', 'POST', { action });
+  }
+
   _send(path, method, body) {
     return this._json(path, {
       method,
@@ -48,6 +67,10 @@ export class HouseViewApi {
 
   clearTerrain() {
     return this._send('terrain', 'DELETE');
+  }
+
+  clearOrtho() {
+    return this._send('ortho', 'DELETE');
   }
 
   setEdits(edits) {

@@ -9,5 +9,25 @@
     "abort": {
       "single_instance_allowed": "House View is already set up."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GitHub backup",
+        "description": "Private repository used by the “Back up to GitHub” / “Restore” buttons of the card setup. Leave the repository empty to disable.",
+        "data": {
+          "repo": "Repository (owner/name)",
+          "token": "Token (fine-grained, Contents: read and write)",
+          "branch": "Branch",
+          "path": "Folder in the repository"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Use the form owner/name.",
+      "token_required": "A token is required.",
+      "repo_public": "This repository is public: use a private one (it holds the plan of your house).",
+      "cannot_connect": "Repository not reachable with this token."
+    }
   }
 }

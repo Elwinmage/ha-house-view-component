@@ -42,13 +42,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Load the stored documents and expose them over HTTP."""
     store = HouseViewStore(hass)
     await store.async_load()
+    store.options = dict(entry.options)
     hass.data[DOMAIN] = store
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     if not hass.data.get(_VIEWS_REGISTERED):  # routes cannot be removed: register once per run
         for view in all_views():
             hass.http.register_view(view)
         await _async_register_card(hass)
         hass.data[_VIEWS_REGISTERED] = True
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """New GitHub settings: used by the next backup / restore, nothing to reload."""
+    store = hass.data.get(DOMAIN)
+    if store is not None:
+        store.options = dict(entry.options)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

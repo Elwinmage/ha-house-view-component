@@ -9,5 +9,25 @@
     "abort": {
       "single_instance_allowed": "House View est déjà configuré."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sauvegarde GitHub",
+        "description": "Dépôt privé utilisé par les boutons « Sauvegarder sur GitHub » / « Restaurer » de la configuration de la carte. Laissez le dépôt vide pour désactiver.",
+        "data": {
+          "repo": "Dépôt (propriétaire/nom)",
+          "token": "Jeton (fine-grained, Contents : lecture et écriture)",
+          "branch": "Branche",
+          "path": "Dossier dans le dépôt"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Utilisez la forme propriétaire/nom.",
+      "token_required": "Un jeton est nécessaire.",
+      "repo_public": "Ce dépôt est public : utilisez un dépôt privé (il contient le plan de votre maison).",
+      "cannot_connect": "Dépôt inaccessible avec ce jeton."
+    }
   }
 }

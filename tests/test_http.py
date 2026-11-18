@@ -1,5 +1,6 @@
 """Integration tests through the real HA HTTP server (pytest-homeassistant-custom-component)."""
 
+from homeassistant.core import callback
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -25,7 +26,12 @@ async def _setup(hass, hass_client, hass_admin_user):
 async def test_roundtrip_and_events(hass, hass_client, hass_admin_user):
     client = await _setup(hass, hass_client, hass_admin_user)
     events = []
-    hass.bus.async_listen(f"{DOMAIN}_updated", lambda e: events.append(e.data["key"]))
+
+    @callback  # run in the event loop: a plain function goes to the thread pool, where the order is not guaranteed
+    def _seen(event):
+        events.append(event.data["key"])
+
+    hass.bus.async_listen(f"{DOMAIN}_updated", _seen)
 
     info = await (await client.get("/api/house_view/info")).json()
     assert info["has_scene"] is False

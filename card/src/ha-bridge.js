@@ -70,6 +70,7 @@ export function mapRoomsToAreas(rooms, areas, explicit = {}) {
   const byName = new Map(Object.values(areas || {}).map((a) => [norm(a.name), a.area_id]));
   const out = {};
   for (const r of rooms) {
+    if (explicit[r.id] === '-') continue; // explicitly linked to no area
     if (explicit[r.id]) out[r.id] = explicit[r.id];
     else if (byName.has(norm(r.name))) out[r.id] = byName.get(norm(r.name));
   }
@@ -82,12 +83,14 @@ const toHex = (rgb) => `#${rgb.map((v) => Math.round(v).toString(16).padStart(2,
  * Per-room light state from the `light.*` entities of each room's area:
  *   on = any light on; color = first colored light; brightness = mean over the lights that are on (0..1).
  * `lightEntities` may restrict which entities count (card option); null = every light.* entity.
+ * `exclude`: light entities placed on the plan (they light their own source, not the whole room).
  */
-export function roomLights(hass, roomToArea, lightEntities = null) {
+export function roomLights(hass, roomToArea, lightEntities = null, exclude = null) {
   const byArea = {};
   for (const [id, st] of Object.entries(hass.states || {})) {
     if (!id.startsWith('light.')) continue;
     if (lightEntities && !lightEntities.includes(id)) continue;
+    if (exclude && exclude.has(id)) continue; // placed on the plan: drives its own light source
     const area = areaOfEntity(hass, id);
     if (area) (byArea[area] ||= []).push(st);
   }
@@ -107,4 +110,36 @@ export function roomLights(hass, roomToArea, lightEntities = null) {
     };
   }
   return out;
+}
+
+/**
+ * Room temperatures (°C) from HA: the area's own temperature sensor when set (area registry
+ * `temperature_entity_id`), otherwise the first `sensor.*` with device_class temperature in that area.
+ */
+export function roomTemps(hass, roomToArea) {
+  const byArea = {};
+  for (const a of Object.values(hass.areas || {})) if (a.temperature_entity_id) byArea[a.area_id] = a.temperature_entity_id;
+  for (const [id, st] of Object.entries(hass.states || {})) {
+    if (!id.startsWith('sensor.') || !st.attributes || st.attributes.device_class !== 'temperature') continue;
+    const area = areaOfEntity(hass, id);
+    if (area && !byArea[area]) byArea[area] = id;
+  }
+  const out = {};
+  for (const [roomId, area] of Object.entries(roomToArea)) {
+    const st = byArea[area] && hass.states[byArea[area]];
+    const v = st ? parseFloat(st.state) : NaN;
+    if (Number.isFinite(v)) out[roomId] = v;
+  }
+  return out;
+}
+
+/** State of one light entity for its placed light source: { on, color?, brightness }. */
+export function entityLight(st) {
+  if (!st || st.state !== 'on') return { on: false };
+  const a = st.attributes || {};
+  return {
+    on: true,
+    color: Array.isArray(a.rgb_color) ? toHex(a.rgb_color) : undefined,
+    brightness: Number.isFinite(a.brightness) ? Math.min(Math.max(a.brightness / 255, 0.15), 1.3) : 0.9,
+  };
 }

@@ -403,7 +403,9 @@ export function buildSite(site, snowables, terrain = null) {
     ground.name = 'ground';
     group.add(ground);
   }
-  snowables.push({ material: groundMat, key: 'grass', snow: 1, wet: 0.45 });
+  if (terrain && terrain.roadMaterial) snowables.push({ material: terrain.roadMaterial, key: 'road', snow: 0.75, wet: 0.6 });
+  // an aerial photo keeps its own colors: no seasonal grass tint, snow is added as a white glow
+  snowables.push(terrain && terrain.photo ? { material: groundMat, key: 'photo', photo: true, snow: 0.85, wet: 0.3 } : { material: groundMat, key: 'grass', snow: 1, wet: 0.45 });
 
   let water = null;
   let waterMat = null;

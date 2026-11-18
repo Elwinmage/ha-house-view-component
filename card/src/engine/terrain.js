@@ -80,6 +80,84 @@ export function gridToPlan(t, cfg) {
   };
 }
 
+const M_PER_DEG = 111320;
+const R_MERC = 6378137;
+
+/** Grid offset from the fetch center (m, x east / z south of the plan) -> [lon, lat] (same formula as the fetcher). */
+export function gridToLonLat(dx, dz, lat0, lon0, northDeg) {
+  const a = (northDeg * Math.PI) / 180;
+  const east = dx * Math.cos(a) + dz * Math.sin(a);
+  const nrth = dx * Math.sin(a) - dz * Math.cos(a);
+  return [lon0 + east / (M_PER_DEG * Math.cos((lat0 * Math.PI) / 180)), lat0 + nrth / M_PER_DEG];
+}
+
+export function mercator(lon, lat) {
+  return [((lon * Math.PI) / 180) * R_MERC, Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * R_MERC];
+}
+
+/** Parcel (grid frame) that holds the house: the one containing the plan center, else the nearest by centroid. */
+export function houseParcel(t, cfg, sd) {
+  if (!t.parcels || !t.parcels.length) return null;
+  const b = sd.bbox;
+  const [gx, gz] = planToGrid(t, cfg)((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
+  const inside = t.parcels.find((p) => pointInPolygon([gx, gz], p.poly));
+  if (inside) return inside;
+  let best = null;
+  let bd = Infinity;
+  for (const p of t.parcels) {
+    const cx = p.poly.reduce((a, q) => a + q[0], 0) / p.poly.length;
+    const cz = p.poly.reduce((a, q) => a + q[1], 0) / p.poly.length;
+    const d = Math.hypot(cx - gx, cz - gz);
+    if (d < bd) {
+      bd = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/** Roads draped on the ground: asphalt ribbons subdivided every meter so they follow the relief. */
+function buildRoads(roads, g2p, heightAt, extent) {
+  const pos = [];
+  const idx = [];
+  const inside = (x, z) => x >= extent.x0 && x <= extent.x1 && z >= extent.z0 && z <= extent.z1;
+  for (const r of roads) {
+    const pl = r.pts.map((p) => g2p(p[0], p[1]));
+    const hw = Math.max(1.5, r.w || 4) / 2;
+    for (let i = 0; i < pl.length - 1; i++) {
+      const [ax, az] = pl[i];
+      const [bx, bz] = pl[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.01) continue;
+      const nx = (-(bz - az) / L) * hw;
+      const nz = ((bx - ax) / L) * hw;
+      const n = Math.max(1, Math.ceil(L));
+      for (let k = 0; k < n; k++) {
+        const x1 = ax + ((bx - ax) * k) / n;
+        const z1 = az + ((bz - az) * k) / n;
+        const x2 = ax + ((bx - ax) * (k + 1)) / n;
+        const z2 = az + ((bz - az) * (k + 1)) / n;
+        if (!inside(x1, z1) || !inside(x2, z2)) continue;
+        const b = pos.length / 3;
+        const y = (x, z) => heightAt(x, z) + 0.06;
+        pos.push(x1 + nx, y(x1 + nx, z1 + nz), z1 + nz, x1 - nx, y(x1 - nx, z1 - nz), z1 - nz);
+        pos.push(x2 - nx, y(x2 - nx, z2 - nz), z2 - nz, x2 + nx, y(x2 + nx, z2 + nz), z2 + nz);
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+    }
+  }
+  if (!idx.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: '#55595f', roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+  m.receiveShadow = true;
+  m.name = 'roads';
+  m.renderOrder = 2;
+  return m;
+}
+
 export function buildTerrain(t, sd, cfg) {
   const base = cfg.base;
   const cell = Math.max(0.5, Math.max((t.nx - 1) * t.step, (t.nz - 1) * t.step) / 260);
@@ -155,6 +233,20 @@ export function buildTerrain(t, sd, cfg) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(idx);
+  // aerial photo / map draped on the ground: each vertex -> grid -> lon/lat -> Web Mercator -> texture
+  const photo = cfg.ortho && cfg.ortho.texture ? cfg.ortho : null;
+  if (photo) {
+    const [bx0, by0, bx1, by1] = photo.bbox;
+    const uv = new Float32Array((pos.length / 3) * 2);
+    for (let k = 0; k < pos.length / 3; k++) {
+      const [gx, gz] = toGrid(pos[k * 3], pos[k * 3 + 2]);
+      const [lon, lat] = gridToLonLat(gx - t.center[0], gz - t.center[1], photo.lat, photo.lon, photo.north || 0);
+      const [mx, my] = mercator(lon, lat);
+      uv[k * 2] = (mx - bx0) / (bx1 - bx0);
+      uv[k * 2 + 1] = (my - by0) / (by1 - by0);
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
   geo.computeVertexNormals();
   // slope shading: banks get darker and earthier so the relief reads like a hillshade
   const nrm = geo.getAttribute('normal');
@@ -234,6 +326,7 @@ export function buildTerrain(t, sd, cfg) {
   }
 
   // Vector overlay: BD TOPO buildings (red), roads (grey), cadastral parcels (yellow)
+  const roads = t.roads && cfg.showRoads !== false ? buildRoads(t.roads, gridToPlan(t, cfg), heightAt, { x0, z0, x1: xe, z1: ze }) : null;
   let vec = null;
   if ((t.buildings || t.roads || t.parcels) && cfg.showVec !== false) {
     vec = new THREE.Group();
@@ -271,7 +364,7 @@ export function buildTerrain(t, sd, cfg) {
     }
     const rpos = [];
     const ridx = [];
-    for (const r of t.roads || []) {
+    for (const r of roads ? [] : t.roads || []) {
       const pl = r.pts.map(P);
       const hw = (r.w || 4) / 2;
       for (let i = 0; i < pl.length - 1; i++) {
@@ -298,7 +391,13 @@ export function buildTerrain(t, sd, cfg) {
     }
   }
 
-  const material = new THREE.MeshStandardMaterial({ color: '#6aa84f', roughness: 1, side: THREE.DoubleSide, vertexColors: true });
+  const material = new THREE.MeshStandardMaterial({
+    color: photo ? '#ffffff' : '#6aa84f',
+    roughness: 1,
+    side: THREE.DoubleSide,
+    vertexColors: !photo, // the photo has its own shading
+    map: photo ? photo.texture : null,
+  });
   const group = new THREE.Group();
   group.name = 'terrain';
   const mesh = new THREE.Mesh(geo, material);
@@ -308,6 +407,7 @@ export function buildTerrain(t, sd, cfg) {
   group.add(mesh, skirtMesh);
   if (mns) group.add(mns);
   if (vec) group.add(vec);
+  if (roads) group.add(roads);
 
   // masonry faces of the retaining walls (vertical boxes along each segment)
   if (eops) {
@@ -344,7 +444,7 @@ export function buildTerrain(t, sd, cfg) {
     }
     return out;
   };
-  return { group, material, heightAt, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, extent: { x0, z0, x1: xe, z1: ze }, zRef };
+  return { group, material, heightAt, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
 }
 
 /**

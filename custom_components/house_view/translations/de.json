@@ -9,5 +9,25 @@
     "abort": {
       "single_instance_allowed": "House View ist bereits eingerichtet."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GitHub-Sicherung",
+        "description": "Privates Repository für die Schaltflächen „Auf GitHub sichern“ / „Wiederherstellen“ der Karten-Einrichtung. Leer lassen zum Deaktivieren.",
+        "data": {
+          "repo": "Repository (Besitzer/Name)",
+          "token": "Token (fine-grained, Contents: Lesen und Schreiben)",
+          "branch": "Branch",
+          "path": "Ordner im Repository"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Format Besitzer/Name verwenden.",
+      "token_required": "Ein Token ist erforderlich.",
+      "repo_public": "Dieses Repository ist öffentlich: bitte ein privates verwenden (es enthält den Grundriss Ihres Hauses).",
+      "cannot_connect": "Repository mit diesem Token nicht erreichbar."
+    }
   }
 }

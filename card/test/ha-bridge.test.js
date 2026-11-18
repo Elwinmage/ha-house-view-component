@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weatherLive, solarClock, areaOfEntity, mapRoomsToAreas, roomLights } from '../src/ha-bridge.js';
+import { weatherLive, solarClock, areaOfEntity, mapRoomsToAreas, roomLights, roomTemps, entityLight } from '../src/ha-bridge.js';
 
 describe('weatherLive', () => {
   it('maps conditions and measured values', () => {
@@ -60,5 +60,50 @@ describe('rooms and lights', () => {
     expect(res.r1.brightness).toBeCloseTo(0.6);
     expect(res.r2).toEqual({ on: false });
     expect(roomLights(hass, { r1: 'salon' }, ['light.c']).r1.color).toBeUndefined();
+  });
+});
+
+describe('roomTemps', () => {
+  it('prefers the area temperature sensor, then any temperature sensor of the area', () => {
+    const hass = {
+      areas: { salon: { area_id: 'salon', temperature_entity_id: 'sensor.t_salon' }, cuisine: { area_id: 'cuisine' } },
+      entities: { 'sensor.t_cuisine': { area_id: 'cuisine' }, 'sensor.h_cuisine': { area_id: 'cuisine' } },
+      states: {
+        'sensor.t_salon': { state: '21.5', attributes: { device_class: 'temperature' } },
+        'sensor.h_cuisine': { state: '55', attributes: { device_class: 'humidity' } },
+        'sensor.t_cuisine': { state: '19', attributes: { device_class: 'temperature' } },
+      },
+    };
+    expect(roomTemps(hass, { r1: 'salon', r2: 'cuisine', r3: 'garage' })).toEqual({ r1: 21.5, r2: 19 });
+  });
+
+  it('ignores unavailable sensors', () => {
+    const hass = {
+      areas: { a: { area_id: 'a', temperature_entity_id: 'sensor.x' } },
+      states: { 'sensor.x': { state: 'unavailable', attributes: {} } },
+    };
+    expect(roomTemps(hass, { r: 'a' })).toEqual({});
+  });
+});
+
+describe('placed lights', () => {
+  it('entityLight reads state, color and brightness', () => {
+    expect(entityLight(null)).toEqual({ on: false });
+    expect(entityLight({ state: 'off', attributes: {} })).toEqual({ on: false });
+    expect(entityLight({ state: 'on', attributes: { rgb_color: [255, 0, 16], brightness: 255 } })).toEqual({
+      on: true,
+      color: '#ff0010',
+      brightness: 1,
+    });
+    expect(entityLight({ state: 'on', attributes: {} })).toEqual({ on: true, color: undefined, brightness: 0.9 });
+  });
+
+  it('roomLights skips the placed lights', () => {
+    const hass = {
+      entities: { 'light.a': { area_id: 'salon' }, 'light.b': { area_id: 'salon' } },
+      states: { 'light.a': { state: 'on', attributes: {} }, 'light.b': { state: 'off', attributes: {} } },
+    };
+    expect(roomLights(hass, { r: 'salon' }).r.on).toBe(true);
+    expect(roomLights(hass, { r: 'salon' }, null, new Set(['light.a'])).r.on).toBe(false);
   });
 });

@@ -8,6 +8,15 @@ export function emptyEdits() {
     views: [], // optional user-defined camera views (replace the automatic ones when not empty)
     outdoor: {}, // id -> { dx, dz, dy, rot, hidden }   (detached objects: shed, gate, ...)
     terrain: [], // ground corrections: walls / terraces / brushes, see terrain-edit.js
+    fences: [], // { pts (grid frame, closed), h, color, style: mesh|wood|wall, open: [segment index], parcel }
+    // entities placed on the plan (sensors, lights, switches...):
+    // { id, entity, at: [x, z], base, y, level, room, scope: general|level|room, display: badge|icon, color, label, icon,
+    //   tap: toggle|more-info, kind / radius (lights: fixture and reach of the light source) }
+    entities: [],
+    room_areas: {}, // explicit room id -> HA area id (overrides the match by name)
+    irrigation: { soil: 'loam', lines: [], circuits: [] }, // drip lines and sprinkler circuits (see irrigation.js)
+    vacuum: {}, // dock position and calibration of the robot vacuum (see VAC_DEFAULTS in vacuum.js)
+    room_views: {}, // room id -> camera view used when the room is tapped ({ pos, target, zoom, levels, roof })
     pool: { dy: 0 }, // vertical offset of the pool (basin, water, coping) from the ground
     trees: {
       removed: { dsm: [], sd: [] }, // dsm: [gx, gz] in the terrain grid frame ; sd: index in the plan vegetation
@@ -23,6 +32,15 @@ export function normalizeEdits(raw) {
   if (raw.registration && typeof raw.registration === 'object') e.registration = raw.registration;
   if (Array.isArray(raw.views)) e.views = raw.views;
   if (Array.isArray(raw.terrain)) e.terrain = raw.terrain;
+  if (Array.isArray(raw.fences)) e.fences = raw.fences;
+  if (Array.isArray(raw.entities)) e.entities = raw.entities;
+  else if (Array.isArray(raw.sensors)) e.entities = raw.sensors; // first name of the list (0.2 previews)
+  if (raw.room_areas && typeof raw.room_areas === 'object') e.room_areas = raw.room_areas;
+  if (raw.room_views && typeof raw.room_views === 'object') e.room_views = raw.room_views;
+  if (raw.irrigation && typeof raw.irrigation === 'object') {
+    e.irrigation = { soil: raw.irrigation.soil || 'loam', lines: raw.irrigation.lines || [], circuits: raw.irrigation.circuits || [] };
+  }
+  if (raw.vacuum && typeof raw.vacuum === 'object') e.vacuum = raw.vacuum;
   if (raw.pool && Number.isFinite(raw.pool.dy)) e.pool.dy = raw.pool.dy;
   const t = raw.trees || {};
   if (t.removed) {

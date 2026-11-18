@@ -349,7 +349,9 @@ export class Environment {
     for (const e of this.surfaces) {
       c.copy(e.base);
       if (e.wet) c.lerp(wetC, this.wetness * e.wet * 0.5);
-      if (e.snow) c.lerp(snowC, this.snowCover * e.snow);
+      if (e.photo) {
+        if (e.material.emissive) e.material.emissive.copy(snowC).multiplyScalar(this.snowCover * e.snow);
+      } else if (e.snow) c.lerp(snowC, this.snowCover * e.snow);
       e.material.color.copy(c);
     }
     const bg = this.scene.background;

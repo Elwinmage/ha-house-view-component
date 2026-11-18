@@ -20,10 +20,27 @@
     <script>
       // minimal stand-in for the HA frontend
       customElements.define('ha-card', class extends HTMLElement {});
+      // icons: show the mdi name initials (the real frontend draws the icons)
+      for (const tag of ['ha-icon', 'ha-state-icon'])
+        customElements.define(
+          tag,
+          class extends HTMLElement {
+            set icon(v) {
+              this._i = v;
+              this.textContent = (v || (this.stateObj && this.stateObj.entity_id) || '?').split(/[:.]/).pop().slice(0, 2);
+            }
+            get icon() {
+              return this._i;
+            }
+            connectedCallback() {
+              if (!this.textContent) this.icon = this.getAttribute('icon') || this._i;
+            }
+          },
+        );
       window.mockHass = {
         language: 'fr',
         user: { is_admin: true },
-        config: { latitude: 43.46151, longitude: 1.34528 },
+        config: { latitude: 43.6045, longitude: 1.444 }, // a public place (Place du Capitole, Toulouse)
         areas: {},
         devices: {},
         entities: {},

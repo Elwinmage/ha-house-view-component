@@ -9,5 +9,25 @@
     "abort": {
       "single_instance_allowed": "House View è già configurato."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Backup GitHub",
+        "description": "Repository privato usato dai pulsanti “Backup su GitHub” / “Ripristina” della configurazione della card. Lascia vuoto per disattivare.",
+        "data": {
+          "repo": "Repository (proprietario/nome)",
+          "token": "Token (fine-grained, Contents: lettura e scrittura)",
+          "branch": "Branch",
+          "path": "Cartella nel repository"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Usa il formato proprietario/nome.",
+      "token_required": "È necessario un token.",
+      "repo_public": "Questo repository è pubblico: usane uno privato (contiene la pianta della casa).",
+      "cannot_connect": "Repository non raggiungibile con questo token."
+    }
   }
 }

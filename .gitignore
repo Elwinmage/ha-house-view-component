@@ -5,3 +5,4 @@ node_modules/
 custom_components/house_view/frontend/*.js
 custom_components/house_view/frontend/*.map
 reports/
+.coverage

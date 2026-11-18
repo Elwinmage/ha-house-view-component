@@ -33,7 +33,13 @@ class H(SimpleHTTPRequestHandler):
             return self._send(
                 200,
                 json.dumps(
-                    {"has_scene": "scene" in DB, "has_terrain": "terrain" in DB, "has_edits": "edits" in DB}
+                    {
+                        "has_scene": "scene" in DB,
+                        "has_terrain": "terrain" in DB,
+                        "has_edits": "edits" in DB,
+                        "has_ortho": "ortho" in DB,
+                        "github": None,
+                    }
                 ).encode(),
             )
         return self._send(200, DB[k]) if k in DB else self._send(404)

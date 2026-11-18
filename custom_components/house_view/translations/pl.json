@@ -9,5 +9,25 @@
     "abort": {
       "single_instance_allowed": "House View jest już skonfigurowany."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kopia w GitHub",
+        "description": "Prywatne repozytorium używane przez przyciski „Kopia w GitHub” / „Przywróć” w konfiguracji karty. Pozostaw puste, aby wyłączyć.",
+        "data": {
+          "repo": "Repozytorium (właściciel/nazwa)",
+          "token": "Token (fine-grained, Contents: odczyt i zapis)",
+          "branch": "Gałąź",
+          "path": "Folder w repozytorium"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Użyj formatu właściciel/nazwa.",
+      "token_required": "Wymagany jest token.",
+      "repo_public": "To repozytorium jest publiczne: użyj prywatnego (zawiera plan domu).",
+      "cannot_connect": "Repozytorium niedostępne z tym tokenem."
+    }
   }
 }

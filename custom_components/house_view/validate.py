@@ -69,10 +69,36 @@ def validate_edits(doc: Any) -> None:
         raise ValueError("edits.views must be a list")
     if "registration" in doc and not isinstance(doc["registration"], dict):
         raise ValueError("edits.registration must be an object")
+    for key in ("fences", "entities", "sensors"):
+        if key in doc and not isinstance(doc[key], list):
+            raise ValueError(f"edits.{key} must be a list")
+    for key in ("irrigation", "vacuum", "room_areas", "room_views"):
+        if key in doc and not isinstance(doc[key], dict):
+            raise ValueError(f"edits.{key} must be an object")
+
+
+def validate_ortho(doc: Any) -> None:
+    """Raise ValueError when `doc` is not a ground texture (base64 image + Web Mercator window)."""
+    if not isinstance(doc, dict) or doc.get("version") != 1:
+        raise ValueError("ortho must be an object with version 1")
+    bbox = doc.get("bbox")
+    if not (
+        isinstance(bbox, list)
+        and len(bbox) == 4
+        and all(_is_num(v) for v in bbox)
+        and bbox[0] < bbox[2]
+        and bbox[1] < bbox[3]
+    ):
+        raise ValueError("ortho.bbox must be [x0, y0, x1, y1] (Web Mercator)")
+    if not (_is_num(doc.get("lat")) and _is_num(doc.get("lon"))):
+        raise ValueError("ortho.lat / lon must be numbers")
+    if doc.get("mime") not in ("image/jpeg", "image/png") or not isinstance(doc.get("data"), str) or not doc["data"]:
+        raise ValueError("ortho needs a mime (image/jpeg or image/png) and base64 data")
 
 
 VALIDATORS = {
     "scene": validate_scene,
     "terrain": validate_terrain,
     "edits": validate_edits,
+    "ortho": validate_ortho,
 }
