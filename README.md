@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="custom_components/house_view/brand/dark_logo.png">
+    <img src="custom_components/house_view/brand/logo.png" alt="House View" width="420">
+  </picture>
+</p>
+
 # House View
 
 Vue pseudo-3D dynamique de la maison pour Home Assistant : plan **Sweet Home 3D** + modèle numérique de terrain,
@@ -80,10 +87,11 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
   choisir une autre area, ou aucune, pièce par pièce (survol = la pièce s'allume sur le plan).
 - **Arrosage** (✎ → Arrosage) :
   - **Goutte-à-goutte** : une ligne par vanne (`switch`, `valve`, `input_boolean`), tracée par points et arrondie au
-    rendu ; tuyau noir, marron, vert ou masqué. Vanne ouverte, la ligne passe au bleu et une tache humide grandit
-    sous chaque goutteur (espacement 30 cm par défaut) jusqu'à former une bande. La largeur suit le modèle de
-    Schwartzman & Zur (1986) selon le débit du goutteur, la durée d'ouverture et le type de sol ; elle s'efface en
-    30 min après la fermeture.
+    rendu ; tuyau noir, marron, vert ou masqué. Vanne ouverte, la ligne passe au bleu, des reflets y circulent, une
+    goutte grossit puis rétrécit en boucle sous chaque goutteur (espacement 30 cm par défaut, léger décalage d'un
+    goutteur à l'autre : la ligne scintille) et une tache humide grandit jusqu'à former une bande. La largeur de la
+    tache suit le modèle de Schwartzman & Zur (1986) selon le débit du goutteur, la durée d'ouverture et le type de
+    sol ; elle s'efface en 30 min après la fermeture.
   - **Arroseurs** : un circuit par vanne, avec un ou plusieurs arroseurs (modèle du catalogue : Hunter Pro-Spray
     PSU-04 8A à 17A, SRM-04, PGJ-04, PGP Ultra, MP Rotator, ou générique ; distances min / max, orientation et angle
     pré-remplis et modifiables ; « Viser » d'un clic). Vanne ouverte, le secteur arrosé estimé s'affiche et le jet
@@ -163,6 +171,9 @@ pre-commit run --all-files
   et de la carte (`card/src/i18n.js`) a exactement les clés de l'anglais.
 - **Page de test sans Home Assistant** : `python3 card/test/harness/server.py` (faux serveur de l'API), puis
   http://localhost:8765/card/test/harness/index.html
+- **Images de marque** : `custom_components/house_view/brand/` (icône et logo, clair et sombre), servies par Home
+  Assistant 2026.3+ sans passer par le dépôt `home-assistant/brands`. Sources vectorielles dans `assets/brand/` ;
+  `scripts/build_brand.sh` régénère les PNG (`rsvg-convert`, ImageMagick, police Inter).
 - **CI** (`.github/workflows/`) : `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + build),
   `release.yml` (lancé à la main avec la version : met à jour `manifest.json` et `card/package.json`, compile la carte,
   tague, publie la release avec `house_view.zip`).
@@ -178,3 +189,18 @@ terrain, lumières…).
 3. ✅ Récupération du terrain côté intégration pour la France (IGN), routes, photo au sol, clôtures, capteurs placés,
    aspirateur, zoom pièce, aperçu saison / météo, sauvegarde GitHub. À venir : autres pays (PDOK, swisstopo…).
 4. Catalogue (arbres à 4 saisons, objets) géré par `catalog_editor`.
+
+## Licence
+
+Code sous licence [MIT](LICENSE) © Elwinmage. L'icône et le logo (`assets/brand/`) sont des créations originales du
+projet, sous la même licence.
+
+- **Bibliothèques incluses dans la carte compilée** : [three.js](https://threejs.org) (MIT),
+  [Lit](https://lit.dev) (BSD-3-Clause) et [fflate](https://github.com/101arrowz/fflate) (MIT) ; leurs mentions de
+  licence sont conservées à la fin du fichier compilé.
+- **Données** : le dépôt ne contient aucune donnée cartographique. Le terrain, les routes, le cadastre et les
+  photos aériennes sont téléchargés par chaque utilisateur depuis les services de l'IGN (cartes.gouv.fr), diffusés
+  sous [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/) : mentionner la source
+  (IGN) en cas de publication d'une capture.
+- Les noms de marques (Hunter, Roborock, Sweet Home 3D…) appartiennent à leurs propriétaires et ne sont cités que pour
+  décrire la compatibilité.

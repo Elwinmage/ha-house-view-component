@@ -2,6 +2,7 @@
   "name": "house-view-card",
   "version": "0.1.0",
   "description": "Home Assistant Lovelace card: dynamic pseudo-3D view of the house (three.js)",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "esbuild src/house-view-card.js --bundle --format=esm --minify --outfile=../custom_components/house_view/frontend/house-view-card.js",

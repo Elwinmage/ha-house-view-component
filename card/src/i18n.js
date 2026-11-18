@@ -63,7 +63,7 @@ const T = {
     soil_clay: 'Argileux',
     irr_drip: 'Goutte-à-goutte',
     irr_drip_hint:
-      'Une ligne par vanne. Vanne ouverte, la ligne passe au bleu et la tache humide grandit sous chaque goutteur jusqu’à former une bande.',
+      'Une ligne par vanne. Vanne ouverte, la ligne passe au bleu, des reflets y circulent, une goutte palpite sous chaque goutteur et la tache humide grandit jusqu’à former une bande.',
     irr_line: 'Ligne',
     irr_color: 'Couleur du tuyau',
     irr_color_black: 'Noir',
@@ -375,7 +375,7 @@ const T = {
     soil_clay: 'Clay',
     irr_drip: 'Drip lines',
     irr_drip_hint:
-      'One line per valve. When the valve is open the line turns blue and the wet spot grows under each emitter until they form a strip.',
+      'One line per valve. When the valve is open the line turns blue, glints run along it, a drop pulses under each emitter and the wet spot grows until it forms a strip.',
     irr_line: 'Line',
     irr_color: 'Pipe color',
     irr_color_black: 'Black',
