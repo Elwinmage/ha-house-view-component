@@ -6,8 +6,8 @@ whose messages are limited to a few MB.
 
 from __future__ import annotations
 
-from http import HTTPStatus
 import json
+from http import HTTPStatus
 from typing import Any
 
 from aiohttp import web

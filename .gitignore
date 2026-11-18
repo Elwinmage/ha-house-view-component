@@ -1,2 +1,7 @@
 __pycache__/
 .pytest_cache/
+node_modules/
+# built card (CI builds it for the release; `npm run build` in card/ for development)
+custom_components/house_view/frontend/*.js
+custom_components/house_view/frontend/*.map
+reports/

@@ -14,3 +14,6 @@ EVENT_UPDATED = f"{DOMAIN}_updated"
 
 # Upper bound of an uploaded document, in bytes (the HA web server itself caps requests at 16 MiB)
 MAX_BODY_BYTES = 15 * 1024 * 1024
+
+# The Lovelace card is bundled with the integration (built from /card): served at CARD_URL and loaded on every dashboard
+CARD_URL = f"/{DOMAIN}/house-view-card.js"

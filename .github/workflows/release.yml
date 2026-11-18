@@ -1,0 +1,75 @@
+name: Release
+
+# Creates the version: bumps manifest.json and card/package.json, builds the card into the integration, tags,
+# and publishes a GitHub release with house_view.zip (the file HACS / the Marketplace installs).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.2.0 (no leading v)"
+        required: true
+      prerelease:
+        description: "Mark the release as a pre-release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - name: Check the version
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid version"; exit 1; }
+          ! git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1 || { echo "tag already exists"; exit 1; }
+      - name: Tests
+        run: |
+          pip install -r requirements-test.txt
+          pytest
+          npm --prefix card ci
+          npm --prefix card test
+      - name: Bump the version
+        run: |
+          python - <<'PY'
+          import json
+          v = "${{ inputs.version }}"
+          for path in ("custom_components/house_view/manifest.json", "card/package.json"):
+              with open(path, encoding="utf-8") as f:
+                  doc = json.load(f)
+              doc["version"] = v
+              with open(path, "w", encoding="utf-8") as f:
+                  json.dump(doc, f, indent=2, ensure_ascii=False)
+                  f.write("\n")
+          PY
+      - name: Build the card (written into custom_components/house_view/frontend/)
+        run: npm --prefix card run build
+      - name: Zip the integration (with the built card)
+        working-directory: custom_components/house_view
+        run: zip -r ../../house_view.zip . -x "*/__pycache__/*" "frontend/.gitkeep"
+      - name: Commit the version and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/house_view/manifest.json card/package.json
+          git commit -m "Release v${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          for i in 1 2 3; do git pull --rebase --autostash && git push origin HEAD "v${{ inputs.version }}" && break || sleep 5; done
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease }}
+          files: house_view.zip

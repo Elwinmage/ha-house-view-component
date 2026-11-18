@@ -1,0 +1,23 @@
+{
+  "name": "house-view-card",
+  "version": "0.1.0",
+  "description": "Home Assistant Lovelace card: dynamic pseudo-3D view of the house (three.js)",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/house-view-card.js --bundle --format=esm --minify --outfile=../custom_components/house_view/frontend/house-view-card.js",
+    "dev": "esbuild src/house-view-card.js --bundle --format=esm --sourcemap --outfile=../custom_components/house_view/frontend/house-view-card.js --watch",
+    "test": "vitest run",
+    "format": "prettier --write \"src/**/*.js\" \"test/**/*.{js,html}\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.{js,html}\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "vitest": "^3.0.0",
+    "prettier": "3.10.1"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "lit": "^3.2.0",
+    "three": "^0.180.0"
+  }
+}

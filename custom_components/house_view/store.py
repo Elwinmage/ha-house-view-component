@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -43,7 +43,7 @@ class HouseViewStore:
 
     async def async_set(self, key: str, doc: Any) -> str:
         """Replace a document; returns the update timestamp."""
-        stamp = datetime.now(timezone.utc).isoformat()
+        stamp = datetime.now(UTC).isoformat()
         self._data[key] = doc
         self._bytes[key] = None
         self.updated[key] = stamp

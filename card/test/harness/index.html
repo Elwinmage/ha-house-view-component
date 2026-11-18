@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        font-family: sans-serif;
+      }
+      ha-card {
+        display: block;
+        width: 1100px;
+        background: #222;
+        color: #ddd;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // minimal stand-in for the HA frontend
+      customElements.define('ha-card', class extends HTMLElement {});
+      window.mockHass = {
+        language: 'fr',
+        user: { is_admin: true },
+        config: { latitude: 43.46151, longitude: 1.34528 },
+        areas: {},
+        devices: {},
+        entities: {},
+        states: {},
+        calls: [],
+        callService(domain, service, data) {
+          this.calls.push([domain, service, data]);
+        },
+        fetchWithAuth: (url, init) => fetch(url, init),
+      };
+    </script>
+    <script type="module" src="/custom_components/house_view/frontend/house-view-card.js"></script>
+    <script type="module">
+      await customElements.whenDefined('house-view-card');
+      const card = document.createElement('house-view-card');
+      card.setConfig(window.__cardConfig || { type: 'custom:house-view-card', weather_entity: 'weather.home' });
+      document.body.appendChild(card);
+      window.card = card;
+      card.hass = window.mockHass;
+    </script>
+  </body>
+</html>

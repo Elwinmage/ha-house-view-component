@@ -22,7 +22,16 @@ def test_scene_ok():
 
 @pytest.mark.parametrize(
     "doc",
-    [None, [], {}, {"levels": []}, {"levels": [{"id": "a"}]}, {"levels": [{"id": "a", "elevation": 0}], "lights": {}}],
+    [
+        None,
+        [],
+        {},
+        {"levels": []},
+        {"levels": [1]},
+        {"levels": [{"id": "a", "elevation": 0, "rooms": {}}]},
+        {"levels": [{"id": "a"}]},
+        {"levels": [{"id": "a", "elevation": 0}], "lights": {}},
+    ],
 )
 def test_scene_rejects(doc):
     with pytest.raises(ValueError):
@@ -55,6 +64,6 @@ def test_terrain_rejects():
 
 def test_edits():
     validate.validate_edits({"version": 1, "terrain": [], "outdoor": {}, "registration": {}})
-    for bad in ({"terrain": {}}, {"outdoor": []}, {"views": {}}, [], None):
+    for bad in ({"terrain": {}}, {"outdoor": []}, {"views": {}}, {"registration": []}, [], None):
         with pytest.raises(ValueError):
             validate.validate_edits(bad)
