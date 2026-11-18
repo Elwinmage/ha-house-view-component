@@ -24,3 +24,12 @@ CONF_REPO = "repo"
 CONF_TOKEN = "token"
 CONF_BRANCH = "branch"
 CONF_PATH = "path"
+
+# Options (edit lock): salted hash of the password asked by the card before its editors open
+CONF_LOCK = "edit_lock"
+CONF_PASSWORD = "password"
+CONF_REMOVE = "remove"
+UNLOCK_HEADER = "X-House-View-Unlock"  # token returned by /api/house_view/unlock, sent with every write
+UNLOCK_TTL = 600  # seconds without any write before the password is asked again
+UNLOCK_MAX_FAILURES = 5  # wrong passwords in a row...
+UNLOCK_PENALTY = 60  # ...before this many seconds of refusal

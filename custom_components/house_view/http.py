@@ -1,4 +1,4 @@
-"""HTTP API used by the card: /api/house_view/{info,scene,terrain,edits,ortho,fetch,github}.
+"""HTTP API used by the card: /api/house_view/{info,scene,terrain,edits,ortho,fetch,github,unlock}.
 
 Documents are big (a terrain grid is several MB), so they go through plain HTTP rather than the websocket API,
 whose messages are limited to a few MB.
@@ -17,7 +17,7 @@ from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import ign
+from . import ign, sources
 from .const import (
     CONF_BRANCH,
     CONF_PATH,
@@ -29,8 +29,11 @@ from .const import (
     KEY_TERRAIN,
     KEYS,
     MAX_BODY_BYTES,
+    UNLOCK_HEADER,
+    UNLOCK_TTL,
 )
 from .github import GitHubBackup, GitHubError
+from .lock import verify_password
 from .store import HouseViewStore
 from .validate import VALIDATORS
 
@@ -44,6 +47,20 @@ def _store(request: web.Request) -> HouseViewStore | None:
 def _is_admin(request: web.Request) -> bool:
     user = request.get("hass_user")
     return bool(user and user.is_admin)
+
+
+def _locked(request: web.Request, store: HouseViewStore) -> bool:
+    """True when an edit password is set and the request does not carry a live unlock token."""
+    return store.lock is not None and not store.unlocks.valid(request.headers.get(UNLOCK_HEADER))
+
+
+def _refusal(view: HomeAssistantView, request: web.Request, store: HouseViewStore) -> web.Response | None:
+    """Why a write is refused (not an administrator, or editing locked), None when it may go on."""
+    if not _is_admin(request):
+        return view.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+    if _locked(request, store):
+        return view.json_message("Editing is locked", HTTPStatus.LOCKED)
+    return None
 
 
 def _fire(hass: HomeAssistant, key: str, stamp: str | None) -> None:
@@ -87,6 +104,7 @@ class HouseViewInfoView(HomeAssistantView):
                 "has_edits": store.has("edits"),
                 "has_ortho": store.has(KEY_ORTHO),
                 "github": store.options.get(CONF_REPO) if store.options.get(CONF_TOKEN) else None,
+                "locked": store.lock is not None,
                 "fetch": store.job,
                 "updated": store.updated,
             }
@@ -94,7 +112,7 @@ class HouseViewInfoView(HomeAssistantView):
 
 
 class HouseViewDataView(HomeAssistantView):
-    """GET (any user) / POST / DELETE (admin) of one stored document."""
+    """GET (any user) / POST / DELETE (admin, editing unlocked) of one stored document."""
 
     requires_auth = True
 
@@ -116,8 +134,8 @@ class HouseViewDataView(HomeAssistantView):
         store = _store(request)
         if store is None:
             return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
-        if not _is_admin(request):
-            return self.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+        if refusal := _refusal(self, request, store):
+            return refusal
         if request.content_length and request.content_length > MAX_BODY_BYTES:
             return self.json_message("Document too large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         try:
@@ -133,8 +151,8 @@ class HouseViewDataView(HomeAssistantView):
         store = _store(request)
         if store is None:
             return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
-        if not _is_admin(request):
-            return self.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+        if refusal := _refusal(self, request, store):
+            return refusal
         await store.async_remove(self._key)
         _fire(request.app[KEY_HASS], self._key, None)
         return self.json({"ok": True})
@@ -148,8 +166,8 @@ async def run_fetch(hass: HomeAssistant, store: HouseViewStore, params: ign.Fetc
         job["step"] = step
 
     try:
-        terrain, photo, notes = await ign.fetch_all(
-            async_get_clientsession(hass), params, hass.async_add_executor_job, progress
+        terrain, photo, notes = await sources.fetch_all(
+            async_get_clientsession(hass), params, hass.config.country, hass.async_add_executor_job, progress
         )
         VALIDATORS[KEY_TERRAIN](terrain)
         _fire(hass, KEY_TERRAIN, await store.async_set(KEY_TERRAIN, terrain))
@@ -167,7 +185,7 @@ async def run_fetch(hass: HomeAssistant, store: HouseViewStore, params: ign.Fetc
 
 
 class HouseViewFetchView(HomeAssistantView):
-    """GET: state of the terrain fetch job. POST (admin): start it (cartes.gouv.fr, France only)."""
+    """GET: state of the terrain fetch job. POST (admin, unlocked): start it (French or worldwide open data)."""
 
     url = f"/api/{DOMAIN}/fetch"
     name = f"api:{DOMAIN}:fetch"
@@ -183,8 +201,8 @@ class HouseViewFetchView(HomeAssistantView):
         store = _store(request)
         if store is None:
             return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
-        if not _is_admin(request):
-            return self.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+        if refusal := _refusal(self, request, store):
+            return refusal
         if store.job.get("state") == "running":
             return self.json_message("A fetch is already running", HTTPStatus.CONFLICT)
         try:
@@ -198,7 +216,7 @@ class HouseViewFetchView(HomeAssistantView):
 
 
 class HouseViewGitHubView(HomeAssistantView):
-    """POST (admin) {"action": "backup" | "restore"}: manual backup to / restore from the private repository."""
+    """POST (admin, unlocked) {"action": "backup" | "restore"}: manual backup to / restore from the private repo."""
 
     url = f"/api/{DOMAIN}/github"
     name = f"api:{DOMAIN}:github"
@@ -208,8 +226,8 @@ class HouseViewGitHubView(HomeAssistantView):
         store = _store(request)
         if store is None:
             return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
-        if not _is_admin(request):
-            return self.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+        if refusal := _refusal(self, request, store):
+            return refusal
         hass = request.app[KEY_HASS]
         gh = github_client(hass, store)
         if gh is None:
@@ -237,5 +255,53 @@ class HouseViewGitHubView(HomeAssistantView):
         return self.json_message("action must be backup or restore", HTTPStatus.BAD_REQUEST)
 
 
+class HouseViewUnlockView(HomeAssistantView):
+    """Edit lock. GET: state for this card. POST (admin) {"password"}: unlock token. DELETE: lock again."""
+
+    url = f"/api/{DOMAIN}/unlock"
+    name = f"api:{DOMAIN}:unlock"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        store = _store(request)
+        if store is None:
+            return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
+        return self.json({"locked": store.lock is not None, "unlocked": not _locked(request, store)})
+
+    async def post(self, request: web.Request) -> web.Response:
+        store = _store(request)
+        if store is None:
+            return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
+        if not _is_admin(request):
+            return self.json_message("Admin only", HTTPStatus.UNAUTHORIZED)
+        lock = store.lock
+        if lock is None:
+            return self.json({"ok": True, "locked": False, "token": None})
+        if wait := store.unlocks.blocked():
+            return self.json({"message": "Too many wrong passwords", "retry_after": wait}, HTTPStatus.TOO_MANY_REQUESTS)
+        try:
+            password = (await request.json()).get("password")
+        except (ValueError, AttributeError):
+            password = None
+        hass = request.app[KEY_HASS]
+        if not isinstance(password, str) or not await hass.async_add_executor_job(verify_password, lock, password):
+            store.unlocks.fail()
+            return self.json_message("Wrong password", HTTPStatus.FORBIDDEN)
+        return self.json({"ok": True, "locked": True, "token": store.unlocks.grant(), "ttl": UNLOCK_TTL})
+
+    async def delete(self, request: web.Request) -> web.Response:
+        store = _store(request)
+        if store is None:
+            return self.json_message("House View is not set up", HTTPStatus.NOT_FOUND)
+        store.unlocks.revoke(request.headers.get(UNLOCK_HEADER))
+        return self.json({"ok": True})
+
+
 def all_views() -> list[HomeAssistantView]:
-    return [HouseViewInfoView(), HouseViewFetchView(), HouseViewGitHubView(), *(HouseViewDataView(k) for k in KEYS)]
+    return [
+        HouseViewInfoView(),
+        HouseViewFetchView(),
+        HouseViewGitHubView(),
+        HouseViewUnlockView(),
+        *(HouseViewDataView(k) for k in KEYS),
+    ]

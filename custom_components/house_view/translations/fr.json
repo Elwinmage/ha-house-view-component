@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Options de House View",
+        "menu_options": {
+          "github": "Sauvegarde GitHub",
+          "lock": "Protection de l'édition"
+        }
+      },
+      "github": {
         "title": "Sauvegarde GitHub",
         "description": "Dépôt privé utilisé par les boutons « Sauvegarder sur GitHub » / « Restaurer » de la configuration de la carte. Laissez le dépôt vide pour désactiver.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Branche",
           "path": "Dossier dans le dépôt"
         }
+      },
+      "lock": {
+        "title": "Protection de l'édition",
+        "description": "Mot de passe demandé par la carte avant d'ouvrir l'éditeur (✎) et la configuration (⚙), pour éviter les modifications par erreur. État actuel : {status}. Laissez le champ vide pour garder le mot de passe actuel. La carte le redemande après 10 minutes sans modification.",
+        "data": {
+          "password": "Nouveau mot de passe (4 caractères ou plus)",
+          "remove": "Supprimer la protection"
+        }
       }
     },
     "error": {
       "bad_repo": "Utilisez la forme propriétaire/nom.",
       "token_required": "Un jeton est nécessaire.",
       "repo_public": "Ce dépôt est public : utilisez un dépôt privé (il contient le plan de votre maison).",
-      "cannot_connect": "Dépôt inaccessible avec ce jeton."
+      "cannot_connect": "Dépôt inaccessible avec ce jeton.",
+      "too_short": "Au moins 4 caractères."
     }
   }
 }

@@ -15,7 +15,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CARD_URL, DOMAIN
+from .const import CARD_URL, CONF_LOCK, DOMAIN
 from .http import all_views
 from .store import HouseViewStore
 
@@ -54,9 +54,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """New GitHub settings: used by the next backup / restore, nothing to reload."""
+    """New GitHub settings or edit password: used by the next request, nothing to reload."""
     store = hass.data.get(DOMAIN)
     if store is not None:
+        if store.options.get(CONF_LOCK) != entry.options.get(CONF_LOCK):
+            store.unlocks.clear()  # password changed or removed: the cards have to unlock again
         store.options = dict(entry.options)
 
 

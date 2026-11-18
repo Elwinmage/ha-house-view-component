@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { weatherLive, solarClock, areaOfEntity, mapRoomsToAreas, roomLights, roomTemps, entityLight } from '../src/ha-bridge.js';
+import {
+  weatherLive,
+  rainSensor,
+  applyRain,
+  solarClock,
+  areaOfEntity,
+  mapRoomsToAreas,
+  roomLights,
+  roomTemps,
+  entityLight,
+} from '../src/ha-bridge.js';
 
 describe('weatherLive', () => {
   it('maps conditions and measured values', () => {
@@ -12,6 +22,64 @@ describe('weatherLive', () => {
     expect(weatherLive({ state: 'partlycloudy', attributes: {} })).toEqual({ weather: 'clear', cloud: 0.45 });
     expect(weatherLive(null)).toEqual({});
     expect(weatherLive({ state: 'unknown', attributes: {} })).toEqual({});
+  });
+});
+
+describe('local rain sensor', () => {
+  const sensor = (state, attributes = {}) => ({ state, attributes });
+
+  it('reads a rain detector or a rain rate, and ignores what cannot tell', () => {
+    expect(rainSensor(sensor('on'))).toEqual({ raining: true, rate: null });
+    expect(rainSensor(sensor('off'))).toEqual({ raining: false, rate: null });
+    expect(rainSensor(sensor('Raining'))).toEqual({ raining: true, rate: null });
+    expect(rainSensor(sensor('dry'))).toEqual({ raining: false, rate: null });
+    expect(rainSensor(sensor('2.4', { unit_of_measurement: 'mm/h', device_class: 'precipitation_intensity' }))).toEqual({
+      raining: true,
+      rate: 2.4,
+    });
+    expect(rainSensor(sensor('0', { unit_of_measurement: 'mm/h' }))).toEqual({ raining: false, rate: 0 });
+    expect(rainSensor(sensor('0.1', { unit_of_measurement: 'in/h' })).rate).toBeCloseTo(2.54);
+    expect(rainSensor(sensor('24', { unit_of_measurement: 'mm/d' })).rate).toBeCloseTo(1);
+    expect(rainSensor(sensor('1'))).toEqual({ raining: true, rate: 1 }); // helper without unit
+    // rain fallen today is not rain falling now
+    expect(rainSensor(sensor('12.5', { unit_of_measurement: 'mm', device_class: 'precipitation' }))).toBeNull();
+    expect(rainSensor(sensor('80', { unit_of_measurement: '%' }))).toBeNull();
+    for (const state of ['unavailable', 'unknown', '', null, undefined]) expect(rainSensor(sensor(state))).toBeNull();
+    expect(rainSensor(undefined)).toBeNull();
+  });
+
+  it('corrects the rain of the weather service with what falls here', () => {
+    const wet = { raining: true, rate: null };
+    const dry = { raining: false, rate: null };
+    // no sensor (or one that cannot tell): the weather service decides alone
+    expect(applyRain({ weather: 'rain', temp: 9 }, null)).toEqual({ weather: 'rain', temp: 9 });
+    // it rains here although the service says cloudy or clear
+    expect(applyRain({ weather: 'cloudy', temp: 9 }, wet)).toEqual({ weather: 'rain', temp: 9 });
+    expect(applyRain({ weather: 'clear', cloud: 0.45 }, wet).weather).toBe('rain');
+    expect(applyRain({ weather: 'fog' }, wet).weather).toBe('rain');
+    // the service says rain but the garden is dry
+    expect(applyRain({ weather: 'rain', temp: 9 }, dry)).toEqual({ weather: 'cloudy', temp: 9 });
+    // a gauge cannot tell snow or thunder: kept from the service
+    expect(applyRain({ weather: 'snow' }, wet)).toEqual({ weather: 'snow' });
+    expect(applyRain({ weather: 'snow' }, dry)).toEqual({ weather: 'snow' });
+    expect(applyRain({ weather: 'storm' }, wet).weather).toBe('storm');
+    expect(applyRain({ weather: 'storm' }, dry)).toEqual({ weather: 'storm', precip: 0 }); // thunder around, dry here
+    expect(applyRain({ weather: 'clear' }, dry)).toEqual({ weather: 'clear' });
+    // the sensor alone, without any weather service
+    expect(applyRain({}, wet)).toEqual({ weather: 'rain' });
+    expect(applyRain({}, dry)).toEqual({ weather: 'clear' });
+  });
+
+  it('scales the rain with the measured rate', () => {
+    const at = (rate) => applyRain({ weather: 'cloudy' }, { raining: rate > 0, rate });
+    expect(at(0.5).precip).toBeCloseTo(0.25); // drizzle
+    expect(at(4).precip).toBeCloseTo(0.6);
+    expect(at(30).precip).toBe(1); // downpour
+    expect(at(0)).toEqual({ weather: 'cloudy' });
+    const storm = applyRain({ weather: 'storm' }, { raining: true, rate: 4 });
+    expect(storm.weather).toBe('storm');
+    expect(storm.precip).toBeCloseTo(0.6);
+    expect(applyRain({ weather: 'snow' }, { raining: true, rate: 4 })).toEqual({ weather: 'snow' });
   });
 });
 

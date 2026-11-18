@@ -45,6 +45,45 @@ export function weatherLive(st) {
   return out;
 }
 
+const RAIN_WORDS = { on: true, raining: true, rain: true, wet: true, true: true, off: false, dry: false, false: false };
+
+/**
+ * Reading of a local rain sensor: { raining, rate } (rate in mm/h, null when the sensor only says yes / no), or null
+ * when it cannot tell: no sensor, unavailable, or a cumulated amount ("rain today", in mm), which says nothing about
+ * what is falling now. Accepts a binary_sensor (rain detector) or a rain rate sensor (mm/h, mm/d, in/h, in/d).
+ */
+export function rainSensor(st) {
+  if (!st || st.state === null || st.state === undefined) return null;
+  const word = String(st.state).trim().toLowerCase();
+  if (word in RAIN_WORDS) return { raining: RAIN_WORDS[word], rate: null };
+  const v = Number(word);
+  if (word === '' || !Number.isFinite(v)) return null; // unavailable, unknown…
+  const a = st.attributes || {};
+  const unit = String(a.unit_of_measurement || '').toLowerCase();
+  if (a.device_class === 'precipitation' || (unit && !unit.includes('/'))) return null;
+  const rate = Math.max(0, v) * (unit.startsWith('in') ? 25.4 : 1) * (unit.endsWith('/d') ? 1 / 24 : 1);
+  return { raining: rate > 0, rate };
+}
+
+/**
+ * A local rain sensor refines the weather service: the service tells what is expected over the town, the sensor what
+ * falls on the garden. Rain seen here shows rain (snow and thunderstorm are kept, a gauge cannot tell them apart);
+ * no rain here turns "rainy" into an overcast sky and keeps a thunderstorm dry. Snow is left to the weather service:
+ * most gauges do not see it.
+ */
+export function applyRain(weather, rain) {
+  if (!rain) return weather;
+  const out = { ...weather };
+  if (rain.raining) {
+    if (out.weather !== 'storm' && out.weather !== 'snow') out.weather = 'rain';
+    // 0.2 = drizzle … 1 = downpour (8 mm/h and more)
+    if (rain.rate !== null && out.weather !== 'snow') out.precip = Math.min(1, 0.2 + rain.rate / 10);
+  } else if (out.weather === 'rain') out.weather = 'cloudy';
+  else if (out.weather === 'storm') out.precip = 0;
+  else if (!out.weather) out.weather = 'clear'; // no weather service: the sensor alone switches the rain off
+  return out;
+}
+
 /** Solar-ish time from a Date and a longitude: { hour (0..24), doy (1..366) }. Equation of time ignored (< 17 min). */
 export function solarClock(date, longitudeDeg) {
   const utcH = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;

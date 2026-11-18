@@ -1,6 +1,7 @@
 """Config flow: nothing to ask, the home location comes from the Home Assistant configuration.
 
-Options: the private GitHub repository used by the manual backup / restore of the setup panel.
+Options, behind a menu: the private GitHub repository used by the manual backup / restore of the setup panel, and
+the password asked by the card before its editors open.
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
-from .const import CONF_BRANCH, CONF_PATH, CONF_REPO, CONF_TOKEN, DOMAIN
+from .const import CONF_BRANCH, CONF_LOCK, CONF_PASSWORD, CONF_PATH, CONF_REMOVE, CONF_REPO, CONF_TOKEN, DOMAIN
 from .github import GitHubBackup, GitHubError
+from .lock import MIN_LENGTH, hash_password
 
 
 class HouseViewConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -33,15 +36,47 @@ class HouseViewConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HouseViewOptionsFlow(OptionsFlow):
-    """GitHub backup settings. An empty repository disables the backup."""
+    """Menu: GitHub backup settings, edit password. Each step keeps the settings of the other one."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="init", menu_options=["github", "lock"])
+
+    async def async_step_lock(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Set, change or remove the edit password (an empty field keeps the current one)."""
+        errors: dict[str, str] = {}
+        options = dict(self.config_entry.options)
+        if user_input is not None:
+            password = user_input.get(CONF_PASSWORD) or ""
+            if user_input.get(CONF_REMOVE):
+                options.pop(CONF_LOCK, None)
+            elif password and len(password) < MIN_LENGTH:
+                errors[CONF_PASSWORD] = "too_short"
+            elif password:
+                options[CONF_LOCK] = await self.hass.async_add_executor_job(hash_password, password)
+            if not errors:
+                return self.async_create_entry(data=options)
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_PASSWORD): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                vol.Optional(CONF_REMOVE, default=False): bool,
+            }
+        )
+        return self.async_show_form(
+            step_id="lock",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"status": "🔒" if options.get(CONF_LOCK) else "🔓"},
+        )
+
+    async def async_step_github(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """GitHub backup settings. An empty repository disables the backup."""
         errors: dict[str, str] = {}
         current = {**self.config_entry.options, **(user_input or {})}
+        keep = {k: v for k, v in self.config_entry.options.items() if k == CONF_LOCK}
         if user_input is not None:
             repo = user_input.get(CONF_REPO, "").strip()
             if not repo:
-                return self.async_create_entry(data={})
+                return self.async_create_entry(data=keep)
             if repo.count("/") != 1:
                 errors[CONF_REPO] = "bad_repo"
             elif not user_input.get(CONF_TOKEN):
@@ -59,7 +94,7 @@ class HouseViewOptionsFlow(OptionsFlow):
                 except GitHubError as err:
                     errors["base"] = "repo_public" if "public" in str(err) else "cannot_connect"
                 else:
-                    return self.async_create_entry(data={**user_input, CONF_REPO: repo})
+                    return self.async_create_entry(data={**keep, **user_input, CONF_REPO: repo})
         schema = vol.Schema(
             {
                 vol.Optional(CONF_REPO, default=current.get(CONF_REPO, "")): str,
@@ -68,4 +103,4 @@ class HouseViewOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_PATH, default=current.get(CONF_PATH, "house_view")): str,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="github", data_schema=schema, errors=errors)

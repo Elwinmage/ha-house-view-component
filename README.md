@@ -20,8 +20,9 @@ avec lumières, météo, soleil et saisons en direct. Un seul dépôt contient :
 HACS (dépôt personnalisé, type *Intégration*) ou copie de `custom_components/house_view/` dans
 `config/custom_components/`, puis redémarrer et ajouter l'intégration *House View* (aucun réglage : la position vient
 de la configuration de Home Assistant). Ajouter ensuite la carte au tableau de bord (`type: custom:house-view-card`),
-puis ouvrir ⚙ (administrateur) pour importer le plan `.sh3d`, puis récupérer le terrain depuis cartes.gouv.fr (France)
-ou charger un terrain `.json`.
+puis ouvrir ⚙ (administrateur) pour importer le plan `.sh3d`, puis récupérer le terrain (cartes.gouv.fr en France,
+sources ouvertes mondiales ailleurs : voir [Sources du terrain par pays](#sources-du-terrain-par-pays)) ou charger un
+terrain `.json`.
 
 La version de la carte s'affiche dans la console du navigateur au chargement (`🏠 HOUSE VIEW v0.x.y`).
 
@@ -30,15 +31,20 @@ installe. En développement : `cd card && npm install && npm run build`.
 
 ## Carte : configuration
 
+Les options se règlent dans l'éditeur visuel de la carte (crayon du tableau de bord → « Modifier »), rangées en quatre
+sections : heure et météo, affichage, lumières, aspirateur. Le plan, le terrain et tout ce qui est placé dans la vue se
+règlent dans la carte elle-même (✎ et ⚙). En YAML :
+
 ```yaml
 type: custom:house-view-card
 weather_entity: weather.maison        # météo en direct (optionnel)
+rain_entity: binary_sensor.pluie      # optionnel : détecteur de pluie ou capteur d'intensité (mm/h) de votre station
 mode: live                            # live (heure réelle) | simulation (curseurs heure / date / météo)
 view: Vue générale                    # vue de départ (optionnel)
 show_views: true                      # boutons des vues caméra
 show_levels: true                     # boutons toit / niveaux (+ 🌡 si des températures par pièce sont connues)
 tap_action: zoom                      # clic sur une pièce : zoom (2e clic = lumières) | toggle_lights | none
-show_sensors: true                    # capteurs placés dans l'éditeur
+show_entities: true                   # entités placées dans l'éditeur
 vacuum_entity: vacuum.robot           # optionnel : par défaut le premier vacuum.* trouvé
 vacuum_poll: 15                       # s entre deux lectures de position (Roborock : action cloud, min 5)
 vacuum_show_floor: false              # true = pendant un nettoyage, montre l'étage du robot vu de dessus
@@ -56,7 +62,14 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
 - **Pièces ↔ areas** : une pièce du plan est liée à l'area HA de même nom (accents et casse ignorés). ⚙ liste les pièces
   sans area correspondante.
 - **Lumières** : état, couleur et intensité des `light.*` de l'area de chaque pièce.
-- **Météo** : l'état de `weather_entity` (`rainy`, `snowy`, `fog`…) + température, vent et nébulosité si fournis.
+- **Météo** : c'est l'entité météo `weather_entity` (service météo de Home Assistant) qui décide du temps affiché :
+  pluie (`rainy`, `pouring`, `hail`), neige (`snowy`, `snowy-rainy`), orage (`lightning`, `lightning-rainy`),
+  brouillard, nuages ; sa température, son vent et sa nébulosité sont repris s'ils sont fournis.
+  Avec `rain_entity` (détecteur de pluie `binary_sensor`, ou capteur d'intensité en mm/h), la pluie suit ce qui tombe
+  réellement chez vous : il pleut sur le capteur → pluie, plus ou moins dense selon l'intensité mesurée ; le service
+  annonce de la pluie mais le capteur est sec → ciel couvert sans pluie (orage : éclairs sans pluie). La neige et
+  l'orage restent décidés par le service météo, un pluviomètre ne les distinguant pas ; un cumul (« pluie du jour » en
+  mm) est ignoré, car il ne dit pas s'il pleut maintenant.
 - **Zoom sur une pièce** : un clic zoome sur la pièce (toit et étages supérieurs masqués) ; un 2e clic sur la même pièce
   bascule ses lumières ; « ← pièce » revient à la vue d'avant.
 - **Aperçu** (bouton météo) : force une saison (printemps, été, automne, hiver), une météo (dégagé, nuageux, pluie, orage,
@@ -120,11 +133,19 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
   coupe, liste des corrections modifiables), clôtures, entités placées, pièces ↔ areas, aspirateur, arrosage, vues.
   Une seule section est dépliée à la fois. Tout est sauvegardé dans le fichier d'éditions, séparé du
   plan et du terrain. Échap annule le tracé en cours.
-- **Terrain depuis cartes.gouv.fr** (⚙ → Terrain, France) : l'intégration récupère elle-même, autour des coordonnées
-  de HA (modifiables) : sol LiDAR HD 0,5 m (RGE ALTI 1 m à défaut), modèle de surface (calage automatique, arbres),
-  bâtiments, routes et cadastre (BD TOPO, parcellaire), et la photo aérienne ou le plan IGN plaqué au sol. Option de
-  recalage sur le bâtiment BD TOPO le plus proche (la position de HA est souvent approximative). Le calage automatique
-  est lancé à la fin.
+- **Récupération du terrain** (⚙ → Terrain) : l'intégration récupère elle-même le relief et ce qui l'entoure, autour
+  des coordonnées de HA (modifiables). La source est choisie selon le pays de la configuration de Home Assistant
+  (« Automatique »), ou imposée dans le formulaire :
+  - **France : cartes.gouv.fr (IGN)** — sol LiDAR HD 0,5 m (RGE ALTI 1 m à défaut), modèle de surface (calage
+    automatique, arbres), bâtiments, routes et cadastre (BD TOPO, parcellaire), photo aérienne ou plan IGN plaqué au
+    sol. Si l'IGN n'a pas de donnée à cet endroit, les sources mondiales prennent le relais ;
+  - **Monde : Mapterhorn + OpenStreetMap** — relief des tuiles [Mapterhorn](https://mapterhorn.com) (LiDAR ouverts de
+    nombreux pays, 30 m ailleurs ; à défaut les Terrain Tiles de Mapzen hébergées par AWS, plus grossières), bâtiments
+    et routes d'OpenStreetMap. Pas de modèle de surface, de cadastre ni de photo aérienne : les arbres se placent avec
+    l'éditeur, la clôture se trace à la main.
+
+  Dans les deux cas : option de recalage sur le bâtiment le plus proche (la position de HA est souvent approximative),
+  calage automatique du plan lancé à la fin, et source affichée sous le formulaire.
 - **Routes** : dessinées en enrobé sur le relief (désactivables dans ⚙).
 - **Clôtures** (✎ → Clôtures) : chaque côté a son type — grillage, bois, mur, haie, ou ouvert (portail) — et sa
   hauteur. Deux façons de créer : « Clôturer d'après le cadastre » (parcelles de la maison présélectionnées, clic pour
@@ -132,11 +153,64 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
   clôture » (clics successifs, vue « Dessus » conseillée ; chaque côté prend le type choisi dans la palette, une
   couleur par type). « Modifier les côtés » : changer le type d'un côté au clic, couper un côté en deux (un morceau en
   mur, l'autre en grillage), supprimer un point.
-- **Sauvegarde GitHub** : options de l'intégration (dépôt privé `propriétaire/nom`, jeton fine-grained avec
-  *Contents : read and write*, branche, dossier) ; boutons « Sauvegarder » / « Restaurer » dans ⚙. Seuls les fichiers
-  modifiés sont commités ; un dépôt public est refusé (il contient le plan de la maison).
+- **Sauvegarde GitHub** : options de l'intégration, menu « Sauvegarde GitHub » (dépôt privé `propriétaire/nom`, jeton
+  fine-grained avec *Contents : read and write*, branche, dossier) ; boutons « Sauvegarder » / « Restaurer » dans ⚙.
+  Seuls les fichiers modifiés sont commités ; un dépôt public est refusé (il contient le plan de la maison).
+- **Protection de l'édition** : seuls les administrateurs de Home Assistant peuvent modifier la vue. Pour éviter en
+  plus les modifications par erreur (écran partagé resté connecté avec un compte administrateur), un mot de passe
+  peut être demandé avant d'ouvrir l'éditeur ✎ et la configuration ⚙ :
+  - il se règle dans les options de l'intégration (Paramètres → Appareils et services → House View → Configurer →
+    « Protection de l'édition ») : 4 caractères ou plus, champ vide pour garder l'actuel, case à cocher pour supprimer
+    la protection. Il est conservé sous forme d'empreinte salée, jamais en clair ;
+  - la carte le demande à l'ouverture de ✎ ou ⚙ (le crayon porte alors un cadenas), puis de nouveau après
+    10 minutes sans modification, après un rechargement de la page ou un redémarrage de Home Assistant. Le bouton 🔒
+    en tête du panneau reverrouille tout de suite ;
+  - le contrôle est fait par l'intégration : sans mot de passe valide, toute écriture est refusée (code HTTP 423),
+    même hors de la carte. Après 5 mots de passe faux, il faut attendre 1 minute ;
+  - mot de passe oublié : le changer ou le supprimer dans les options de l'intégration ;
+  - consulter la vue, zoomer, commander les lumières ou l'aspirateur et l'aperçu saison / météo restent libres.
 - **Performances** : le rendu s'arrête quand la carte n'est pas visible ; les volumes de lumière ne sont recalculés que
   si un état utile change.
+
+## Sources du terrain par pays
+
+La France utilise les services de l'IGN. Partout ailleurs, le relief vient de [Mapterhorn](https://mapterhorn.com), qui
+assemble les LiDAR nationaux ouverts au-dessus d'un modèle mondial à 30 m, et les bâtiments et routes viennent
+d'[OpenStreetMap](https://www.openstreetmap.org). La finesse indiquée est celle annoncée par Mapterhorn en
+novembre 2026 ; elle progresse à chaque version du projet (carte de couverture à jour sur mapterhorn.com).
+
+| | Pays | Relief | Bâtiments, routes | Cadastre, photo aérienne | Testé |
+|---|---|---|---|---|---|
+| 🇫🇷 | France | IGN LiDAR HD 0,5 m (RGE ALTI 1 m à défaut) | IGN BD TOPO | IGN (parcellaire, orthophoto ou plan) | ✅ |
+| 🇩🇪 | Allemagne | Mapterhorn : 0,25 m (Bade-Wurtemberg), 1 m (la plupart des Länder) | OpenStreetMap | — | ❌ |
+| 🇦🇹 | Autriche | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
+| 🇧🇪 | Belgique | Mapterhorn : 0,5 m (Wallonie) | OpenStreetMap | — | ❌ |
+| 🇩🇰 | Danemark | Mapterhorn : 0,4 m | OpenStreetMap | — | ❌ |
+| 🇪🇸 | Espagne | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
+| 🇪🇪 | Estonie | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
+| 🇮🇹 | Italie | Mapterhorn : LiDAR en Sicile et sur une partie de la Sardaigne | OpenStreetMap | — | ❌ |
+| 🇱🇺 | Luxembourg | Mapterhorn : 0,5 m | OpenStreetMap | — | ❌ |
+| 🇳🇴 | Norvège | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
+| 🇳🇱 | Pays-Bas | Mapterhorn : LiDAR national | OpenStreetMap | — | ❌ |
+| 🇵🇱 | Pologne | Mapterhorn : LiDAR national | OpenStreetMap | — | ❌ |
+| 🇵🇹 | Portugal | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
+| 🇷🇴 | Roumanie | Mapterhorn : 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
+| 🇬🇧 | Royaume-Uni | Mapterhorn : 1 m (Angleterre, Écosse, pays de Galles) | OpenStreetMap | — | ❌ |
+| 🇸🇰 | Slovaquie | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
+| 🇸🇮 | Slovénie | Mapterhorn : 0,5 m | OpenStreetMap | — | ❌ |
+| 🇸🇪 | Suède | Mapterhorn : 1 m | OpenStreetMap | — | ❌ |
+| 🇨🇭 | Suisse | Mapterhorn : 0,25 m (canton de Zurich), 0,5 m (couverture partielle) | OpenStreetMap | — | ❌ |
+| 🌍 | Reste du monde | Mapterhorn : 30 m (Copernicus GLO-30) ; à défaut Terrain Tiles (Mapzen / AWS) | OpenStreetMap | — | ❌ |
+
+> **Non testé hors de France.** Les sources mondiales ont été écrites d'après leur documentation et vérifiées sur des
+> données simulées, sans pouvoir les essayer en conditions réelles. Si la récupération échoue ou donne un relief
+> incohérent chez vous, merci d'[ouvrir une issue](https://github.com/elwinmage/ha-house-view-component/issues) en
+> indiquant le pays, la source choisie et le message affiché sous le formulaire. Un retour positif est bienvenu aussi :
+> il permettra de passer le pays en « testé ».
+
+Avec un modèle à 30 m, le terrain n'est qu'un plan incliné : les corrections du sol de l'éditeur (✎) permettent de
+redessiner terrasses et talus. Le cadastre et la photo aérienne n'existent que pays par pays ; ils pourront être ajoutés
+sur demande, une issue par pays.
 
 ## API HTTP (utilisée par la carte)
 
@@ -147,8 +221,12 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
 | `/api/house_view/terrain` | grille de hauteurs | remplace (admin) | supprime (admin) |
 | `/api/house_view/edits` | corrections | remplace (admin) | supprime (admin) |
 | `/api/house_view/ortho` | photo / plan au sol | remplace (admin) | supprime (admin) |
-| `/api/house_view/fetch` | état de la récupération | lance la récupération cartes.gouv.fr (admin) | |
+| `/api/house_view/fetch` | état de la récupération | lance la récupération du terrain, `provider` : `auto` \| `ign` \| `world` (admin) | |
 | `/api/house_view/github` | | `{"action": "backup" \| "restore"}` (admin) | |
+| `/api/house_view/unlock` | `{locked, unlocked}` | `{"password"}` → jeton (admin) | reverrouille |
+
+Quand un mot de passe d'édition est défini, les écritures (POST / DELETE ci-dessus) exigent en plus l'en-tête
+`X-House-View-Unlock` avec le jeton rendu par `/unlock` ; sinon elles répondent 423.
 
 Chaque document est validé (`validate.py`) et conservé dans `.storage/house_view.<clé>` ; chaque écriture déclenche
 l'événement `house_view_updated` (`key`, `updated`). Les documents sont volumineux (un terrain fait plusieurs Mo) : ils
@@ -187,8 +265,10 @@ terrain, lumières…).
 1. ✅ Phase 1 : intégration + carte, import du plan, terrain, calage, lumières et météo en direct.
 2. ✅ Éditeurs dans la carte : objets extérieurs, arbres, corrections du sol, vues personnalisées.
 3. ✅ Récupération du terrain côté intégration pour la France (IGN), routes, photo au sol, clôtures, capteurs placés,
-   aspirateur, zoom pièce, aperçu saison / météo, sauvegarde GitHub. À venir : autres pays (PDOK, swisstopo…).
-4. Catalogue (arbres à 4 saisons, objets) géré par `catalog_editor`.
+   aspirateur, zoom pièce, aperçu saison / météo, sauvegarde GitHub.
+4. ✅ Autres pays : relief Mapterhorn, bâtiments et routes OpenStreetMap (à confirmer pays par pays). À venir :
+   cadastre et photo aérienne des pays qui les publient en données ouvertes.
+5. Catalogue (arbres à 4 saisons, objets) géré par `catalog_editor`.
 
 ## Licence
 
@@ -198,9 +278,13 @@ projet, sous la même licence.
 - **Bibliothèques incluses dans la carte compilée** : [three.js](https://threejs.org) (MIT),
   [Lit](https://lit.dev) (BSD-3-Clause) et [fflate](https://github.com/101arrowz/fflate) (MIT) ; leurs mentions de
   licence sont conservées à la fin du fichier compilé.
-- **Données** : le dépôt ne contient aucune donnée cartographique. Le terrain, les routes, le cadastre et les
-  photos aériennes sont téléchargés par chaque utilisateur depuis les services de l'IGN (cartes.gouv.fr), diffusés
-  sous [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/) : mentionner la source
-  (IGN) en cas de publication d'une capture.
+- **Données** : le dépôt ne contient aucune donnée cartographique ; chaque utilisateur télécharge celles de son
+  terrain, et la source est rappelée dans ⚙ → Terrain. En cas de publication d'une capture, mentionner cette source :
+  - France : services de l'IGN (cartes.gouv.fr), sous
+    [Licence Ouverte Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/) ;
+  - relief hors de France : [Mapterhorn](https://mapterhorn.com/attribution) et les jeux de données ouverts qu'il
+    assemble, ou les [Terrain Tiles](https://registry.opendata.aws/terrain-tiles) de Mapzen ;
+  - bâtiments et routes hors de France : © les contributeurs d'[OpenStreetMap](https://www.openstreetmap.org/copyright),
+    sous licence ODbL.
 - Les noms de marques (Hunter, Roborock, Sweet Home 3D…) appartiennent à leurs propriétaires et ne sont cités que pour
   décrire la compatibilité.

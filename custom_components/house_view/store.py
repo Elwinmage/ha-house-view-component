@@ -9,7 +9,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_bytes
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN, KEYS, STORAGE_VERSION
+from .const import CONF_LOCK, DOMAIN, KEYS, STORAGE_VERSION
+from .lock import Unlocks
 
 
 class HouseViewStore:
@@ -21,8 +22,14 @@ class HouseViewStore:
         self._data: dict[str, Any] = dict.fromkeys(KEYS)
         self._bytes: dict[str, bytes | None] = dict.fromkeys(KEYS)
         self.updated: dict[str, str | None] = dict.fromkeys(KEYS)
-        self.options: dict[str, Any] = {}  # config entry options (GitHub backup)
+        self.options: dict[str, Any] = {}  # config entry options (GitHub backup, edit lock)
+        self.unlocks = Unlocks()  # tokens of the cards that gave the edit password
         self.job: dict[str, Any] = {"state": "idle"}  # terrain fetch job, polled by the card
+
+    @property
+    def lock(self) -> dict[str, Any] | None:
+        """Stored hash of the edit password, None when editing is not protected."""
+        return self.options.get(CONF_LOCK) or None
 
     async def async_load(self) -> None:
         for key, store in self._stores.items():

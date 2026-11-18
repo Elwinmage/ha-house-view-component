@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opções do House View",
+        "menu_options": {
+          "github": "Cópia no GitHub",
+          "lock": "Proteção da edição"
+        }
+      },
+      "github": {
         "title": "Cópia no GitHub",
         "description": "Repositório privado usado pelos botões «Copiar para o GitHub» / «Restaurar» da configuração do cartão. Deixe vazio para desativar.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Ramo",
           "path": "Pasta no repositório"
         }
+      },
+      "lock": {
+        "title": "Proteção da edição",
+        "description": "Palavra-passe pedida pelo cartão antes de abrir o editor (✎) e a configuração (⚙), para evitar alterações feitas por engano. Estado atual: {status}. Deixe o campo vazio para manter a palavra-passe atual. O cartão volta a pedi-la após 10 minutos sem alterações.",
+        "data": {
+          "password": "Nova palavra-passe (4 caracteres ou mais)",
+          "remove": "Remover a proteção"
+        }
       }
     },
     "error": {
       "bad_repo": "Use o formato proprietário/nome.",
       "token_required": "É necessário um token.",
       "repo_public": "Este repositório é público: use um privado (contém a planta da sua casa).",
-      "cannot_connect": "Repositório inacessível com este token."
+      "cannot_connect": "Repositório inacessível com este token.",
+      "too_short": "Pelo menos 4 caracteres."
     }
   }
 }

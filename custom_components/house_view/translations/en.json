@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "House View options",
+        "menu_options": {
+          "github": "GitHub backup",
+          "lock": "Edit protection"
+        }
+      },
+      "github": {
         "title": "GitHub backup",
         "description": "Private repository used by the “Back up to GitHub” / “Restore” buttons of the card setup. Leave the repository empty to disable.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Branch",
           "path": "Folder in the repository"
         }
+      },
+      "lock": {
+        "title": "Edit protection",
+        "description": "Password asked by the card before the editor (✎) and the setup (⚙) open, to avoid changes made by mistake. Current state: {status}. Leave the field empty to keep the current password. The card asks for it again after 10 minutes without any change.",
+        "data": {
+          "password": "New password (4 characters or more)",
+          "remove": "Remove the protection"
+        }
       }
     },
     "error": {
       "bad_repo": "Use the form owner/name.",
       "token_required": "A token is required.",
       "repo_public": "This repository is public: use a private one (it holds the plan of your house).",
-      "cannot_connect": "Repository not reachable with this token."
+      "cannot_connect": "Repository not reachable with this token.",
+      "too_short": "At least 4 characters."
     }
   }
 }

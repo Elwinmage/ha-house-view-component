@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opzioni di House View",
+        "menu_options": {
+          "github": "Backup GitHub",
+          "lock": "Protezione delle modifiche"
+        }
+      },
+      "github": {
         "title": "Backup GitHub",
         "description": "Repository privato usato dai pulsanti “Backup su GitHub” / “Ripristina” della configurazione della card. Lascia vuoto per disattivare.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Branch",
           "path": "Cartella nel repository"
         }
+      },
+      "lock": {
+        "title": "Protezione delle modifiche",
+        "description": "Password richiesta dalla scheda prima di aprire l'editor (✎) e la configurazione (⚙), per evitare modifiche fatte per errore. Stato attuale: {status}. Lasciare il campo vuoto per mantenere la password attuale. La scheda la richiede di nuovo dopo 10 minuti senza modifiche.",
+        "data": {
+          "password": "Nuova password (almeno 4 caratteri)",
+          "remove": "Rimuovere la protezione"
+        }
       }
     },
     "error": {
       "bad_repo": "Usa il formato proprietario/nome.",
       "token_required": "È necessario un token.",
       "repo_public": "Questo repository è pubblico: usane uno privato (contiene la pianta della casa).",
-      "cannot_connect": "Repository non raggiungibile con questo token."
+      "cannot_connect": "Repository non raggiungibile con questo token.",
+      "too_short": "Almeno 4 caratteri."
     }
   }
 }

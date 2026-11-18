@@ -6,7 +6,18 @@ import { FenceTools, IrrigationTools, VacuumTools } from './garden-tools.js';
 import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
 import { renderFences, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
-import { weatherLive, solarClock, mapRoomsToAreas, roomLights, roomTemps, areaOfEntity, entityLight } from './ha-bridge.js';
+import {
+  weatherLive,
+  rainSensor,
+  applyRain,
+  solarClock,
+  mapRoomsToAreas,
+  roomLights,
+  roomTemps,
+  areaOfEntity,
+  entityLight,
+} from './ha-bridge.js';
+import { loadHaForm } from './card-editor.js';
 import { importSh3d } from './engine/sh3d-import.js';
 import { normalizeScene } from './engine/scene-model.js';
 import { autoCalibrate, parseTerrain } from './engine/terrain.js';
@@ -74,10 +85,18 @@ class HouseViewCard extends LitElement {
     _vacSel: { state: true },
     _fetch: { state: true }, // terrain fetch job status
     _busy: { state: true },
+    _lockDlg: { state: true }, // password dialog of the edit lock: { error, busy } while shown
+    _provider: { state: true }, // terrain source chosen in the fetch form: auto | ign | world
   };
 
   static getStubConfig() {
     return { type: 'custom:house-view-card' };
+  }
+
+  /** Visual editor of the options (card-editor.js). */
+  static async getConfigElement() {
+    await loadHaForm();
+    return document.createElement('house-view-card-editor');
   }
 
   constructor() {
@@ -237,6 +256,8 @@ class HouseViewCard extends LitElement {
 
   async _init() {
     this._api = new HouseViewApi(this._hass);
+    this._api.onLocked = () => this._askUnlock(); // a write refused by the edit lock: ask the password, then retry
+    this._api.lockedMessage = this._t('lock_refused');
     await this.updateComplete;
     this._fit();
     this._engine = new HouseEngine(this.renderRoot.querySelector('#view'), {
@@ -434,7 +455,14 @@ class HouseViewCard extends LitElement {
     const lights = roomLights(h, areas, cfg.light_entities || null, placed);
     const entLights = Object.fromEntries([...placed].map((id) => [id, entityLight(h.states[id])]));
     const temps = roomTemps(h, areas);
-    const weather = cfg.mode === 'simulation' ? {} : weatherLive(cfg.weather_entity ? h.states[cfg.weather_entity] : null);
+    // the weather service decides (rain, snow, storm, fog, clouds); a local rain sensor, when given, corrects the rain
+    const weather =
+      cfg.mode === 'simulation'
+        ? {}
+        : applyRain(
+            weatherLive(cfg.weather_entity ? h.states[cfg.weather_entity] : null),
+            cfg.rain_entity ? rainSensor(h.states[cfg.rain_entity]) : null,
+          );
     const sig = JSON.stringify([lights, entLights, weather, temps]);
     if (sig === this._lastLive) return; // nothing relevant changed: skip the rebuild of the light volumes
     this._lastLive = sig;
@@ -808,6 +836,104 @@ class HouseViewCard extends LitElement {
     };
   }
 
+  // ------------------------------------------------------------ edit lock
+
+  /** True when a password protects the editors and this page has not given it (or not lately). */
+  get _lockedNow() {
+    return !!(this._info && this._info.locked && this._api && !this._api.hasToken);
+  }
+
+  /** Open or close the editor / the setup: opening first asks the edit password when one is set. */
+  async _guardedPanel(p) {
+    if (this._panel === p) return this._togglePanel(p);
+    if ((await this._ensureUnlocked()) && this._panel !== p) this._togglePanel(p);
+  }
+
+  async _ensureUnlocked() {
+    let st = null;
+    try {
+      st = await this._api.lockState();
+    } catch (e) {
+      // unreachable: let the panel open, the writes will report the problem
+    }
+    if (st && this._info) this._info = { ...this._info, locked: !!st.locked };
+    if (!st || !st.locked || st.unlocked) return true;
+    return this._askUnlock();
+  }
+
+  /** Show the password dialog: resolves true once unlocked, false when cancelled. One dialog for all the callers. */
+  _askUnlock() {
+    if (!this._lockAsk) {
+      this._lockAsk = new Promise((resolve) => {
+        this._lockResolve = resolve;
+      });
+      this._lockDlg = { error: '', busy: false };
+      this.updateComplete.then(() => {
+        const input = this.renderRoot.querySelector('.lockdlg input');
+        if (input) input.focus();
+      });
+    }
+    return this._lockAsk;
+  }
+
+  _closeUnlock(ok) {
+    const resolve = this._lockResolve;
+    this._lockAsk = this._lockResolve = null;
+    this._lockDlg = null;
+    if (ok && this._info) this._info = { ...this._info, locked: true };
+    if (resolve) resolve(ok);
+  }
+
+  async _submitUnlock(ev) {
+    ev.preventDefault();
+    const input = ev.target.querySelector('input');
+    const password = input.value;
+    if (!password || this._lockDlg.busy) return;
+    this._lockDlg = { error: '', busy: true };
+    let error;
+    try {
+      const r = await this._api.unlock(password);
+      if (r.ok) return this._closeUnlock(true);
+      error = r.wait ? this._t('lock_wait').replace('{n}', r.wait) : this._t('lock_wrong');
+    } catch (e) {
+      error = e.message;
+    }
+    if (!this._lockDlg) return; // cancelled meanwhile
+    this._lockDlg = { error, busy: false };
+    await this.updateComplete;
+    input.value = '';
+    input.focus();
+  }
+
+  /** "Lock now" of the panels: save what is pending, forget the token, close the panel. */
+  async _lockNow() {
+    if (this._dirty) {
+      clearTimeout(this._saveTimer);
+      await this._save('edits');
+    }
+    await this._api.lock();
+    if (this._panel === 'edit' || this._panel === 'setup') this._togglePanel(this._panel);
+    this.requestUpdate();
+  }
+
+  _renderLock() {
+    const t = this._t;
+    const d = this._lockDlg;
+    if (!d) return nothing;
+    return html`<div class="lockdlg" @pointerdown=${(e) => e.stopPropagation()}>
+      <form @submit=${(e) => this._submitUnlock(e)} @keydown=${(e) => e.key === 'Escape' && this._closeUnlock(false)}>
+        <b>🔒 ${t('lock_title')}</b>
+        <div class="hint">${t('lock_hint')}</div>
+        <input type="password" autocomplete="off" placeholder=${t('lock_password')} ?disabled=${d.busy} />
+        ${d.error ? html`<div class="lockerr">${d.error}</div>` : nothing}
+        <div class="row">
+          <button type="button" @click=${() => this._closeUnlock(false)}>${t('lock_cancel')}</button>
+          <button type="submit" class="primary" ?disabled=${d.busy}>${t('lock_unlock')}</button>
+        </div>
+      </form>
+    </div>`;
+  }
+
   // ------------------------------------------------------------ panels / camera
 
   _togglePanel(p) {
@@ -837,6 +963,7 @@ class HouseViewCard extends LitElement {
     this._pushIrrigation();
     if (this._vac && !this._vac.demo) this._vac.refresh();
     if (!persist) return;
+    this._dirty = true;
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => this._save('edits'), SAVE_DELAY);
   }
@@ -858,6 +985,7 @@ class HouseViewCard extends LitElement {
     try {
       if (what === 'scene') await this._api.setScene(this._data.scene);
       else if (what === 'edits') {
+        this._dirty = false;
         if (this._engine && this._engine.edits) this._data.edits = this._engine.edits;
         await this._api.setEdits(this._data.edits);
       } else if (what === 'terrain') await (this._data.terrain ? this._api.setTerrain(this._data.terrain) : this._api.clearTerrain());
@@ -928,10 +1056,17 @@ class HouseViewCard extends LitElement {
 
   // ------------------------------------------------------------ terrain fetch (integration) / GitHub backup
 
-  get _canFetch() {
+  /** Same rule as the integration (sources.py): the French services in France, the worldwide ones elsewhere. */
+  get _inFrance() {
     const c = this._hass.config;
-    if (c.country) return c.country === 'FR';
+    if (c.country) return ['FR', 'GP', 'MQ', 'GF', 'RE', 'YT', 'PM', 'BL', 'MF'].includes(String(c.country).toUpperCase());
     return c.latitude > 41 && c.latitude < 51.5 && c.longitude > -5.5 && c.longitude < 10; // metropolitan France
+  }
+
+  /** Provider that the fetch form describes: the one chosen, or the one "auto" will try first. */
+  get _fetchSource() {
+    const chosen = this._provider || 'auto';
+    return chosen === 'auto' ? (this._inFrance ? 'ign' : 'world') : chosen;
   }
 
   async _startFetch(form) {
@@ -943,10 +1078,12 @@ class HouseViewCard extends LitElement {
       center: [Math.round(((b.x0 + b.x1) / 2) * 100) / 100, Math.round(((b.z0 + b.z1) / 2) * 100) / 100],
       north: sd.site.northOffsetDeg || 0,
       size: parseFloat(form.size.value),
-      mns: form.mns.checked,
+      provider: form.provider.value,
+      // the surface model and the ground texture only exist with the French services: not in the form otherwise
+      mns: form.mns ? form.mns.checked : false,
       vectors: form.vectors.checked,
       locate: form.locate.checked,
-      photo: form.photo.value,
+      photo: form.photo ? form.photo.value : 'none',
     };
     try {
       this._fetch = { state: 'running', step: 'start' };
@@ -1092,6 +1229,11 @@ class HouseViewCard extends LitElement {
                   >${t('import_terrain')}<input type="file" accept=".json,application/json" @change=${this._onTerrain}
                 /></label>
                 ${
+                  terr && (terr.source || terr.attribution)
+                    ? html`<div class="hint">${t('terrain_source')} : ${[terr.source, terr.attribution].filter(Boolean).join(' — ')}</div>`
+                    : nothing
+                }
+                ${
                   terr
                     ? html`<div class="row">
                           <button @click=${this._removeTerrain}>${t('remove_terrain')}</button>
@@ -1153,6 +1295,10 @@ class HouseViewCard extends LitElement {
                 }
               </details>
               <details>
+                <summary>${t('lock_section')}</summary>
+                <div class="hint">${t(this._info && this._info.locked ? 'lock_on' : 'lock_off')} ${t('lock_where')}</div>
+              </details>
+              <details>
                 <summary>${t('edits')}</summary>
                 <div class="row">
                   <button @click=${this._exportEdits}>${t('export')}</button>
@@ -1168,10 +1314,11 @@ class HouseViewCard extends LitElement {
 
   _renderFetch() {
     const t = this._t;
-    if (!this._canFetch) return html`<div class="hint">${t('fetch_unavailable')}</div>`;
     const c = this._hass.config;
     const f = this._fetch;
     const running = f && f.state === 'running';
+    const src = this._fetchSource;
+    const french = src === 'ign';
     return html`<form
       class="fetch"
       @submit=${(e) => {
@@ -1179,22 +1326,37 @@ class HouseViewCard extends LitElement {
         this._startFetch(e.target);
       }}
     >
-      <div class="hint">${t('fetch_hint')}</div>
+      <div class="hint">${t(`fetch_hint_${src}`)}</div>
       <div class="grid">
+        <span>${t('fetch_provider')}</span>
+        <select
+          name="provider"
+          @change=${(e) => {
+            this._provider = e.target.value;
+          }}
+        >
+          ${['auto', 'ign', 'world'].map(
+            (v) => html`<option value=${v} ?selected=${v === (this._provider || 'auto')}>${t(`fetch_provider_${v}`)}</option>`,
+          )}
+        </select>
         <span>${t('lat')}</span><input name="lat" type="number" step="0.000001" .value=${String(c.latitude)} /> <span>${t('lon')}</span
         ><input name="lon" type="number" step="0.000001" .value=${String(c.longitude)} />
         <span>${t('fetch_size')}</span>
         <select name="size">
           ${[80, 120, 200].map((v) => html`<option value=${v} ?selected=${v === 120}>${v} m</option>`)}
         </select>
-        <span>${t('fetch_photo')}</span>
-        <select name="photo">
-          ${['ortho', 'plan', 'none'].map((v) => html`<option value=${v}>${t(`photo_${v}`)}</option>`)}
-        </select>
+        ${
+          french
+            ? html`<span>${t('fetch_photo')}</span>
+                <select name="photo">
+                  ${['ortho', 'plan', 'none'].map((v) => html`<option value=${v}>${t(`photo_${v}`)}</option>`)}
+                </select>`
+            : nothing
+        }
       </div>
       <label class="chk"><input name="locate" type="checkbox" checked /> ${t('fetch_locate')}</label>
-      <label class="chk"><input name="mns" type="checkbox" checked /> ${t('fetch_mns')}</label>
-      <label class="chk"><input name="vectors" type="checkbox" checked /> ${t('fetch_vectors')}</label>
+      ${french ? html`<label class="chk"><input name="mns" type="checkbox" checked /> ${t('fetch_mns')}</label>` : nothing}
+      <label class="chk"><input name="vectors" type="checkbox" checked /> ${t(french ? 'fetch_vectors' : 'fetch_vectors_world')}</label>
       <button type="submit" ?disabled=${running}>${t('fetch_go')}</button>
       ${
         f
@@ -1729,8 +1891,23 @@ class HouseViewCard extends LitElement {
       preview: () => this._renderPreview(),
     }[this._panel]();
     return html`<div class="panel" @pointerdown=${(e) => e.stopPropagation()}>
-      <div class="head"><b>${title}</b><button class="x" @click=${() => this._togglePanel(this._panel)}>✕</button></div>
-      ${body} ${this._msg && (this._panel === 'setup' || this._panel === 'edit') ? html`<div class="msg">${this._msg}</div>` : nothing}
+      <div class="head">
+        <b>${title}</b>
+        <span>
+          ${
+            this._info && this._info.locked && (this._panel === 'setup' || this._panel === 'edit')
+              ? html`<button class="x" title=${t('lock_now')} @click=${() => this._lockNow()}>🔒</button>`
+              : nothing
+          }
+          <button class="x" @click=${() => this._togglePanel(this._panel)}>✕</button>
+        </span>
+      </div>
+      ${body}
+      ${
+        this._msg && (this._panel === 'setup' || this._panel === 'edit')
+          ? html`<div class=${this._msg.startsWith(t('error')) ? 'msg bad' : 'msg'}>${this._msg}</div>`
+          : nothing
+      }
     </div>`;
   }
 
@@ -1786,8 +1963,8 @@ class HouseViewCard extends LitElement {
           ${tb('mdi:weather-snowy-rainy', t('preview'), this._panel === 'preview' || !!this._preview, () => this._togglePanel('preview'), ready)}
           ${tb(this._movable ? 'mdi:axis-arrow' : 'mdi:lock', t(this._movable ? 'camera_lock' : 'camera_unlock'), this._movable, () => this._toggleMovable(), ready)}
           ${tb('mdi:tune-variant', t('simulation'), this._panel === 'sim', () => this._togglePanel('sim'), ready && this._config.mode === 'simulation')}
-          ${tb('mdi:pencil', t('editor'), this._panel === 'edit', () => this._togglePanel('edit'), ready && this._isAdmin)}
-          ${tb('mdi:cog', t('setup'), this._panel === 'setup', () => this._togglePanel('setup'), this._isAdmin)}
+          ${tb(this._lockedNow ? 'mdi:pencil-lock' : 'mdi:pencil', t('editor'), this._panel === 'edit', () => this._guardedPanel('edit'), ready && this._isAdmin)}
+          ${tb('mdi:cog', t('setup'), this._panel === 'setup', () => this._guardedPanel('setup'), this._isAdmin)}
         </div>
         ${
           this._tip && !this._panel
@@ -1806,12 +1983,12 @@ class HouseViewCard extends LitElement {
             ? html`<div class="overlay">
                 <div>
                   ${t('empty')}<br />${this._isAdmin ? t('empty_admin') : ''}
-                  ${this._isAdmin ? html`<br /><button class="open-setup" @click=${() => this._togglePanel('setup')}>⚙ ${t('setup')}</button>` : nothing}
+                  ${this._isAdmin ? html`<br /><button class="open-setup" @click=${() => this._guardedPanel('setup')}>⚙ ${t('setup')}</button>` : nothing}
                 </div>
               </div>`
             : nothing
         }
-        ${this._renderPanel()} ${this._renderVacuum()}
+        ${this._renderPanel()} ${this._renderVacuum()} ${this._renderLock()}
         ${
           this._focus && ready && !this._vacMode
             ? html`<div class="back-row">
@@ -2389,6 +2566,65 @@ class HouseViewCard extends LitElement {
     .msg {
       font-size: 12px;
       color: var(--success-color, #43a047);
+    }
+    .msg.bad {
+      color: var(--error-color, #ef5350);
+    }
+    .lockdlg {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(16, 21, 28, 0.6);
+    }
+    .lockdlg form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: min(280px, calc(100% - 32px));
+      box-sizing: border-box;
+      padding: 14px;
+      background: rgba(22, 28, 38, 0.97);
+      color: #e6edf5;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    .lockdlg .hint {
+      opacity: 0.75;
+      font-size: 12px;
+    }
+    .lockdlg input {
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(0, 0, 0, 0.3);
+      color: inherit;
+      font-size: 16px; /* no zoom on focus on phones */
+    }
+    .lockdlg .row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .lockdlg button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    .lockdlg button.primary {
+      background: var(--primary-color, #03a9f4);
+      border-color: transparent;
+      color: #fff;
+    }
+    .lockdlg .lockerr {
+      color: var(--error-color, #ef5350);
+      font-size: 12px;
     }
   `;
 }

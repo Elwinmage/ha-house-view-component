@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opciones de House View",
+        "menu_options": {
+          "github": "Copia en GitHub",
+          "lock": "Protección de la edición"
+        }
+      },
+      "github": {
         "title": "Copia en GitHub",
         "description": "Repositorio privado usado por los botones «Copiar en GitHub» / «Restaurar» de la configuración de la tarjeta. Déjalo vacío para desactivarlo.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Rama",
           "path": "Carpeta en el repositorio"
         }
+      },
+      "lock": {
+        "title": "Protección de la edición",
+        "description": "Contraseña que pide la tarjeta antes de abrir el editor (✎) y la configuración (⚙), para evitar cambios hechos por error. Estado actual: {status}. Deje el campo vacío para conservar la contraseña actual. La tarjeta vuelve a pedirla tras 10 minutos sin cambios.",
+        "data": {
+          "password": "Nueva contraseña (4 caracteres o más)",
+          "remove": "Quitar la protección"
+        }
       }
     },
     "error": {
       "bad_repo": "Usa el formato propietario/nombre.",
       "token_required": "Se necesita un token.",
       "repo_public": "Este repositorio es público: usa uno privado (contiene el plano de tu casa).",
-      "cannot_connect": "Repositorio inaccesible con este token."
+      "cannot_connect": "Repositorio inaccesible con este token.",
+      "too_short": "Al menos 4 caracteres."
     }
   }
 }

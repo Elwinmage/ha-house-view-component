@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "House View-Optionen",
+        "menu_options": {
+          "github": "GitHub-Sicherung",
+          "lock": "Bearbeitungsschutz"
+        }
+      },
+      "github": {
         "title": "GitHub-Sicherung",
         "description": "Privates Repository für die Schaltflächen „Auf GitHub sichern“ / „Wiederherstellen“ der Karten-Einrichtung. Leer lassen zum Deaktivieren.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Branch",
           "path": "Ordner im Repository"
         }
+      },
+      "lock": {
+        "title": "Bearbeitungsschutz",
+        "description": "Passwort, das die Karte verlangt, bevor der Editor (✎) und die Einrichtung (⚙) geöffnet werden, um versehentliche Änderungen zu vermeiden. Aktueller Zustand: {status}. Feld leer lassen, um das aktuelle Passwort zu behalten. Nach 10 Minuten ohne Änderung fragt die Karte erneut danach.",
+        "data": {
+          "password": "Neues Passwort (mindestens 4 Zeichen)",
+          "remove": "Schutz entfernen"
+        }
       }
     },
     "error": {
       "bad_repo": "Format Besitzer/Name verwenden.",
       "token_required": "Ein Token ist erforderlich.",
       "repo_public": "Dieses Repository ist öffentlich: bitte ein privates verwenden (es enthält den Grundriss Ihres Hauses).",
-      "cannot_connect": "Repository mit diesem Token nicht erreichbar."
+      "cannot_connect": "Repository mit diesem Token nicht erreichbar.",
+      "too_short": "Mindestens 4 Zeichen."
     }
   }
 }

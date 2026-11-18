@@ -13,6 +13,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opcje House View",
+        "menu_options": {
+          "github": "Kopia w GitHub",
+          "lock": "Ochrona edycji"
+        }
+      },
+      "github": {
         "title": "Kopia w GitHub",
         "description": "Prywatne repozytorium używane przez przyciski „Kopia w GitHub” / „Przywróć” w konfiguracji karty. Pozostaw puste, aby wyłączyć.",
         "data": {
@@ -21,13 +28,22 @@
           "branch": "Gałąź",
           "path": "Folder w repozytorium"
         }
+      },
+      "lock": {
+        "title": "Ochrona edycji",
+        "description": "Hasło wymagane przez kartę przed otwarciem edytora (✎) i konfiguracji (⚙), aby uniknąć przypadkowych zmian. Obecny stan: {status}. Pozostaw pole puste, aby zachować obecne hasło. Karta prosi o nie ponownie po 10 minutach bez zmian.",
+        "data": {
+          "password": "Nowe hasło (co najmniej 4 znaki)",
+          "remove": "Usuń ochronę"
+        }
       }
     },
     "error": {
       "bad_repo": "Użyj formatu właściciel/nazwa.",
       "token_required": "Wymagany jest token.",
       "repo_public": "To repozytorium jest publiczne: użyj prywatnego (zawiera plan domu).",
-      "cannot_connect": "Repozytorium niedostępne z tym tokenem."
+      "cannot_connect": "Repozytorium niedostępne z tym tokenem.",
+      "too_short": "Co najmniej 4 znaki."
     }
   }
 }
