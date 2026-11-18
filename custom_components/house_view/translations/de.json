@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "House View",
+        "description": "Speichert Ihren Grundriss, das Gelände und Ihre Korrekturen für die House-View-Karte. Der Standort stammt aus der Home-Assistant-Konfiguration."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "House View ist bereits eingerichtet."
+    }
+  }
+}

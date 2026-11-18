@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "House View",
+        "description": "Guarda a planta, o terreno e as correções para o cartão House View. A localização vem da configuração do Home Assistant."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "O House View já está configurado."
+    }
+  }
+}

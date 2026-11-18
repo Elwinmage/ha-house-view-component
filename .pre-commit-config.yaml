@@ -1,0 +1,52 @@
+# Install once: `pip install pre-commit && pre-commit install` (hook dependencies are managed by pre-commit)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+        exclude: ^card/package-lock\.json$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.14
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Every tool below is installed by pre-commit itself (no manual npm/pip install needed).
+      - id: prettier
+        name: prettier (card)
+        entry: prettier --check
+        language: node
+        additional_dependencies: ["prettier@3.10.1"]
+        files: ^card/(src|test)/.*\.(js|html)$
+        exclude: ^card/src/engine/
+      - id: vitest
+        name: vitest (card)
+        entry: vitest run --root card
+        language: node
+        additional_dependencies: ["vitest@3.2.4"]
+        files: ^card/(src|test)/
+        pass_filenames: false
+      - id: check-translations
+        name: check translations
+        entry: python scripts/check_translations.py
+        language: python
+        files: ^(custom_components/house_view/translations/|card/src/i18n\.js|scripts/)
+        pass_filenames: false
+      - id: pytest
+        name: pytest (100 % coverage)
+        entry: pytest
+        language: python
+        additional_dependencies: ["pytest-homeassistant-custom-component", "pytest-cov"]
+        files: ^(custom_components|tests|scripts|pyproject\.toml)
+        pass_filenames: false

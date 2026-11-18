@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pre-commit:
+    name: pre-commit (ruff, prettier, translations)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - run: pip install -r requirements-test.txt
+      - run: npm --prefix card ci
+      # pytest and vitest have their own jobs below
+      - run: SKIP=pytest,vitest pre-commit run --all-files --show-diff-on-failure
+
+  python:
+    name: pytest (integration, 100 % coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-test.txt
+      - run: pytest
+
+  card:
+    name: vitest + build (card)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - run: npm --prefix card ci
+      - run: npm --prefix card test
+      - run: npm --prefix card run build
