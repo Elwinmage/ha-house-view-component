@@ -62,9 +62,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add custom_components/house_view/manifest.json card/package.json
-          git commit -m "Release v${{ inputs.version }}"
-          git tag "v${{ inputs.version }}"
-          for i in 1 2 3; do git pull --rebase --autostash && git push origin HEAD "v${{ inputs.version }}" && break || sleep 5; done
+          # Nothing to commit when the released version is already the one in the files (e.g. first release).
+          git diff --cached --quiet || git commit -m "Release v${{ inputs.version }}"
+          for i in 1 2 3; do
+            git pull --rebase --autostash \
+              && git tag -f "v${{ inputs.version }}" \
+              && git push origin HEAD "v${{ inputs.version }}" \
+              && break
+            sleep 5
+          done
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
