@@ -1,0 +1,14 @@
+{
+  "domain": "house_view",
+  "name": "House View",
+  "codeowners": ["@elwinmage"],
+  "config_flow": true,
+  "dependencies": ["http"],
+  "documentation": "https://github.com/elwinmage/ha-house-view-component",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/elwinmage/ha-house-view-component/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
