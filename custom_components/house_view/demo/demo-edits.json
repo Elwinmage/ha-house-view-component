@@ -1,0 +1,630 @@
+{
+ "version": 1,
+ "registration": {
+  "base": 0,
+  "rot": 0,
+  "dx": 0,
+  "dz": 0,
+  "showTrees": true,
+  "showRoads": true
+ },
+ "views": [],
+ "outdoor": {},
+ "terrain": [],
+ "fences": [
+  {
+   "pts": [
+    [
+     -26,
+     -32
+    ],
+    [
+     42,
+     -32
+    ],
+    [
+     42,
+     47.5
+    ],
+    [
+     -26,
+     47.5
+    ]
+   ],
+   "closed": true,
+   "frame": "plan",
+   "segs": [
+    {
+     "s": "wood",
+     "h": 1.5
+    },
+    {
+     "s": "mesh",
+     "h": 1.5
+    },
+    {
+     "s": "wall",
+     "h": 1.2
+    },
+    {
+     "s": "mesh",
+     "h": 1.5
+    }
+   ]
+  }
+ ],
+ "entities": [
+  {
+   "id": "e1",
+   "entity": "sensor.exterieur_temperature",
+   "at": [
+    24,
+    14
+   ],
+   "base": 0,
+   "level": null,
+   "room": null,
+   "scope": "general",
+   "display": "badge",
+   "label": "Dehors"
+  },
+  {
+   "id": "e2",
+   "entity": "sensor.sejour_temperature",
+   "overRoof": true,
+   "at": [
+    4,
+    7
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r6",
+   "scope": "general",
+   "display": "badge"
+  },
+  {
+   "id": "e3",
+   "entity": "sensor.chambre_parentale_temperature",
+   "overRoof": true,
+   "at": [
+    12,
+    7
+   ],
+   "base": 2.72,
+   "level": "level1",
+   "room": "r14",
+   "scope": "general",
+   "display": "badge"
+  },
+  {
+   "id": "e4",
+   "entity": "sensor.piscine_temperature",
+   "at": [
+    5,
+    35
+   ],
+   "base": -2.5,
+   "level": null,
+   "room": null,
+   "scope": "general",
+   "display": "badge",
+   "label": "Piscine"
+  },
+  {
+   "id": "e5",
+   "entity": "sensor.sejour_humidite",
+   "at": [
+    1.2,
+    5.5
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r6",
+   "layer": "r6",
+   "scope": "room",
+   "display": "badge"
+  },
+  {
+   "id": "e6",
+   "entity": "sensor.sejour_co2",
+   "at": [
+    6.8,
+    5.2
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r6",
+   "layer": "r6",
+   "scope": "room",
+   "display": "badge",
+   "mount": "free",
+   "y": 1.2
+  },
+  {
+   "id": "e7",
+   "entity": "cover.sejour_volet_ouest",
+   "at": [
+    0.43,
+    7
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r6",
+   "layer": "r6",
+   "scope": "room",
+   "display": "badge",
+   "mount": "wall",
+   "wall": {
+    "p": [
+     0.13,
+     2.35,
+     7
+    ],
+    "n": [
+     1,
+     0
+    ]
+   },
+   "tap": "toggle"
+  },
+  {
+   "id": "e8",
+   "entity": "media_player.salon",
+   "at": [
+    2.4,
+    6.2
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r6",
+   "layer": "r6",
+   "scope": "room",
+   "display": "icon",
+   "tap": "toggle"
+  },
+  {
+   "id": "e9",
+   "entity": "sensor.cuisine_temperature",
+   "at": [
+    12,
+    7
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r7",
+   "layer": "r7",
+   "scope": "room",
+   "display": "badge"
+  },
+  {
+   "id": "e10",
+   "entity": "binary_sensor.cuisine_fumee",
+   "at": [
+    10.5,
+    6
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r7",
+   "layer": "r7",
+   "scope": "room",
+   "display": "icon",
+   "mount": "free",
+   "y": 2.4
+  },
+  {
+   "id": "e11",
+   "entity": "binary_sensor.buanderie_fuite",
+   "at": [
+    12.5,
+    3.8
+   ],
+   "base": 0,
+   "level": "level0",
+   "room": "r5",
+   "layer": "r5",
+   "scope": "room",
+   "display": "icon"
+  },
+  {
+   "id": "e12",
+   "entity": "sensor.salle_de_bain_humidite",
+   "at": [
+    11,
+    1.5
+   ],
+   "base": 2.72,
+   "level": "level1",
+   "room": "r11",
+   "layer": "r11",
+   "scope": "room",
+   "display": "badge"
+  },
+  {
+   "id": "e13",
+   "entity": "sensor.salle_de_bain_temperature",
+   "at": [
+    13,
+    1.5
+   ],
+   "base": 2.72,
+   "level": "level1",
+   "room": "r11",
+   "layer": "r11",
+   "scope": "room",
+   "display": "badge"
+  },
+  {
+   "id": "e14",
+   "entity": "light.terrasse",
+   "at": [
+    4,
+    11
+   ],
+   "base": 0,
+   "level": null,
+   "room": null,
+   "scope": "general",
+   "display": "icon",
+   "kind": "spot",
+   "tap": "toggle",
+   "lightY": 2.4
+  }
+ ],
+ "room_areas": {},
+ "openings": {
+  "level0:40:100": {
+   "contact": "binary_sensor.sejour_baie",
+   "shutter": "cover.sejour_volet_baie"
+  },
+  "level0:0:70": {
+   "contact": "binary_sensor.sejour_fenetre",
+   "shutter": "cover.sejour_volet_ouest"
+  },
+  "level1:120:100": {
+   "shutter": "cover.chambre_parentale_volet_sud"
+  },
+  "level1:140:70": {
+   "shutter": "cover.chambre_parentale_volet_est"
+  },
+  "level0:95:0": {
+   "contact": "binary_sensor.entree_porte"
+  },
+  "level0:170:100": {
+   "contact": "binary_sensor.garage_porte"
+  }
+ },
+ "pools": [
+  {
+   "id": "pool1",
+   "name": "Piscine",
+   "kind": "pool",
+   "shape": "rect",
+   "pts": [
+    [
+     0,
+     28
+    ],
+    [
+     10,
+     28
+    ],
+    [
+     10,
+     34
+    ],
+    [
+     0,
+     34
+    ]
+   ],
+   "frame": "plan",
+   "color": "#2a9fd6",
+   "depth": 1.6,
+   "robot": "binary_sensor.robot_piscine"
+  },
+  {
+   "id": "pond1",
+   "name": "Étang",
+   "kind": "pond",
+   "shape": "free",
+   "pts": [
+    [
+     30.68,
+     34
+    ],
+    [
+     30.66,
+     35.48
+    ],
+    [
+     29.27,
+     36.51
+    ],
+    [
+     27.6,
+     36.98
+    ],
+    [
+     26,
+     36.3
+    ],
+    [
+     24.76,
+     36.3
+    ],
+    [
+     22.21,
+     36.91
+    ],
+    [
+     20.97,
+     35.6
+    ],
+    [
+     22.36,
+     34
+    ],
+    [
+     22.97,
+     33.04
+    ],
+    [
+     23.38,
+     31.99
+    ],
+    [
+     24.42,
+     31.07
+    ],
+    [
+     26,
+     29.9
+    ],
+    [
+     27.95,
+     30.38
+    ],
+    [
+     28.1,
+     32.39
+    ],
+    [
+     28.66,
+     33.15
+    ]
+   ],
+   "frame": "plan",
+   "color": "#3d6b4a",
+   "depth": 0.9,
+   "robot": ""
+  }
+ ],
+ "irrigation": {
+  "soil": "loam",
+  "lines": [
+   {
+    "id": "l1",
+    "name": "Potager",
+    "entity": "switch.arrosage_potager",
+    "color": "black",
+    "flow": 2,
+    "spacing": 0.3,
+    "frame": "plan",
+    "pts": [
+     [
+      -18,
+      26
+     ],
+     [
+      -8,
+      26
+     ],
+     [
+      -8,
+      30
+     ],
+     [
+      -18,
+      30
+     ],
+     [
+      -18,
+      34
+     ],
+     [
+      -8,
+      34
+     ]
+    ]
+   },
+   {
+    "id": "l2",
+    "name": "Haie",
+    "entity": "switch.arrosage_haie",
+    "color": "brown",
+    "flow": 2,
+    "spacing": 0.5,
+    "frame": "plan",
+    "pts": [
+     [
+      -6,
+      45.5
+     ],
+     [
+      10,
+      45.5
+     ],
+     [
+      22,
+      45.5
+     ]
+    ]
+   }
+  ],
+  "circuits": [
+   {
+    "id": "c1",
+    "name": "Pelouse",
+    "entity": "switch.arrosage_pelouse",
+    "heads": [
+     {
+      "id": "h1",
+      "model": "hunter-pgj-04",
+      "rMin": 1.4,
+      "rMax": 9,
+      "dir": 90,
+      "arc": 180,
+      "at": [
+       14,
+       26
+      ],
+      "frame": "plan"
+     },
+     {
+      "id": "h2",
+      "model": "hunter-pgj-04",
+      "rMin": 1.4,
+      "rMax": 9,
+      "dir": 270,
+      "arc": 180,
+      "at": [
+       14,
+       40
+      ],
+      "frame": "plan"
+     },
+     {
+      "id": "h3",
+      "model": "hunter-mp2000",
+      "rMin": 4,
+      "rMax": 5.5,
+      "dir": 180,
+      "arc": 90,
+      "at": [
+       -4,
+       22.5
+      ],
+      "frame": "plan"
+     }
+    ]
+   }
+  ]
+ },
+ "vacuums": [
+  {
+   "entity": "vacuum.robot",
+   "source": "none",
+   "color": "#ffffff",
+   "dock": {
+    "at": [
+     16.9,
+     4.45
+    ],
+    "level": "level0",
+    "base": 0,
+    "dir": 180
+   }
+  }
+ ],
+ "panel": [
+  {
+   "id": "g15",
+   "entity": "sensor.exterieur_temperature",
+   "label": "Dehors",
+   "icon": "mdi:thermometer",
+   "tap": "more-info"
+  },
+  {
+   "id": "g16",
+   "entity": "alarm_control_panel.maison",
+   "label": "Alarme",
+   "icon": "",
+   "tap": "more-info"
+  },
+  {
+   "id": "g17",
+   "entity": "switch.pompe_piscine",
+   "label": "Pompe",
+   "icon": "mdi:pump",
+   "tap": "toggle"
+  },
+  {
+   "id": "g18",
+   "entity": "light.terrasse",
+   "label": "Terrasse",
+   "icon": "",
+   "tap": "toggle"
+  },
+  {
+   "id": "g19",
+   "entity": "binary_sensor.robot_piscine",
+   "label": "Robot piscine",
+   "icon": "mdi:robot-vacuum-variant",
+   "tap": "toggle"
+  },
+  {
+   "id": "g20",
+   "entity": "switch.arrosage_pelouse",
+   "label": "Arrosage pelouse",
+   "icon": "mdi:sprinkler-variant",
+   "tap": "toggle"
+  },
+  {
+   "id": "g21",
+   "entity": "switch.arrosage_potager",
+   "label": "Arrosage potager",
+   "icon": "mdi:water-pump",
+   "tap": "toggle"
+  },
+  {
+   "id": "g22",
+   "entity": "switch.arrosage_haie",
+   "label": "Arrosage haie",
+   "icon": "mdi:sprinkler",
+   "tap": "toggle"
+  }
+ ],
+ "alarms": {
+  "auto": true,
+  "rooms": true,
+  "extra": [],
+  "ignored": []
+ },
+ "zones": [
+  {
+   "id": "z1",
+   "kind": "media",
+   "name": "Télévision",
+   "entity": "media_player.salon",
+   "shape": "rect",
+   "level": "level0",
+   "rect": {
+    "c": [
+     2.4,
+     1.3,
+     4.08
+    ],
+    "n": [
+     0,
+     0,
+     1
+    ],
+    "rot": 0,
+    "w": 1.3,
+    "h": 0.75
+   }
+  }
+ ],
+ "room_views": {},
+ "pool": {
+  "dy": 0
+ },
+ "trees": {
+  "removed": {
+   "dsm": [],
+   "sd": []
+  },
+  "added": []
+ }
+}
