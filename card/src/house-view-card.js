@@ -1615,11 +1615,12 @@ class HouseViewCard extends LitElement {
       // first plan of the home: the documents already stored (edits restored, demo edits, terrain) are kept
       if (!this._data) {
         const info = (await this._api.info()) || {};
-        const [terrain, edits] = await Promise.all([
+        const [terrain, edits, ortho] = await Promise.all([
           info.has_terrain ? this._api.getTerrain() : null,
           info.has_edits ? this._api.getEdits() : null,
+          info.has_ortho ? this._api.getOrtho() : null,
         ]);
-        this._data = { terrain, ortho: null, edits: edits || emptyEdits() };
+        this._data = { terrain, ortho, edits: edits || emptyEdits() };
       }
       this._data = { ...this._data, scene };
       this._report = report;

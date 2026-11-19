@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import re
 from array import array
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -348,33 +349,46 @@ async def fetch_raster(
 
 
 async def fetch_image(
-    session: aiohttp.ClientSession, kind: str, p: FetchParams, half_m: float
+    session: aiohttp.ClientSession, kind: str, p: FetchParams, half_m: float, errors: list[str] | None = None
 ) -> dict[str, Any] | None:
-    """Aerial photo or IGN map over the same window, as a texture document for the card."""
+    """Aerial photo or IGN map over the same window, as a texture document for the card.
+
+    Each layer is tried at full size, then at a smaller one (some layers refuse large images); the reason of the
+    last refusal goes into errors, so that the user sees why the ground has no texture.
+    """
     layers, mime = PHOTO_LAYERS[kind]
     bbox = merc_bbox(p.lat, p.lon, half_m)
-    px = 2048 if half_m > 100 else 1536
+    sizes = (2048, 1024) if half_m > 100 else (1536, 1024)
     raw = b""
+    reason = ""
     for layer in layers:
-        q = {
-            "SERVICE": "WMS",
-            "VERSION": "1.3.0",
-            "REQUEST": "GetMap",
-            "LAYERS": layer,
-            "STYLES": "",
-            "CRS": "EPSG:3857",
-            "BBOX": ",".join(f"{v:.3f}" for v in bbox),
-            "WIDTH": px,
-            "HEIGHT": px,
-            "FORMAT": mime,
-        }
-        try:
-            status, raw = await _get(session, WMS, q)
-        except (aiohttp.ClientError, TimeoutError):
+        for px in sizes:
+            q = {
+                "SERVICE": "WMS",
+                "VERSION": "1.3.0",
+                "REQUEST": "GetMap",
+                "LAYERS": layer,
+                "STYLES": "",
+                "CRS": "EPSG:3857",
+                "BBOX": ",".join(f"{v:.3f}" for v in bbox),
+                "WIDTH": px,
+                "HEIGHT": px,
+                "FORMAT": mime,
+            }
+            try:
+                status, raw = await _get(session, WMS, q)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                reason = f"{layer}: {type(err).__name__}"
+                continue
+            if status == 200 and raw.startswith((b"\xff\xd8", b"\x89PNG")):  # an XML error page otherwise
+                break
+            reason = f"{layer}: HTTP {status} {_wms_error(raw)}".rstrip()
+        else:
             continue
-        if status == 200 and raw.startswith((b"\xff\xd8", b"\x89PNG")):  # an XML error page otherwise
-            break
+        break
     else:
+        if errors is not None and reason:
+            errors.append(reason)
         return None
     return {
         "version": 1,
@@ -387,6 +401,14 @@ async def fetch_image(
         "center": list(p.center),
         "data": base64.b64encode(raw).decode("ascii"),
     }
+
+
+def _wms_error(raw: bytes) -> str:
+    """Text of a WMS ServiceException (or the start of whatever came back), on one short line."""
+    text = raw[:2000].decode("utf-8", "replace")
+    m = re.search(r"<(?:\w+:)?ServiceException\b[^>]*>(.*?)</", text, re.S)
+    msg = re.sub(r"<[^>]+>", " ", m.group(1) if m else text)
+    return " ".join(msg.split())[:160]
 
 
 async def fetch_wfs(
@@ -502,7 +524,8 @@ async def fetch_all(
     photo = None
     if p.photo != "none":
         progress("photo")
-        photo = await fetch_image(session, p.photo, p, half)
+        errors: list[str] = []
+        photo = await fetch_image(session, p.photo, p, half, errors)
         if photo is None:
-            notes.append("ground texture unavailable")
+            notes.append("ground texture unavailable" + (f" ({errors[0]})" if errors else ""))
     return terrain, photo, notes

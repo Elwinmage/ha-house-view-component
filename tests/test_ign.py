@@ -201,7 +201,12 @@ async def test_fetch_all_fallbacks(hass, aioclient_mock):
             ]
         },
     )
-    aioclient_mock.get(wms("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2"), text="<ServiceException/>")
+    aioclient_mock.get(
+        wms("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2"),
+        status=400,
+        text='<ServiceExceptionReport><ServiceException code="InvalidParameterValue">'
+        "Width too   large</ServiceException></ServiceExceptionReport>",
+    )
     session = aioclient_mock.create_session(hass.loop)
     terrain, photo, notes = await ign.fetch_all(session, p, run_sync, lambda s: None)
     assert terrain["source"] == "IGN RGE ALTI 1 m"
@@ -212,7 +217,7 @@ async def test_fetch_all_fallbacks(hass, aioclient_mock):
     assert photo is None
     assert "no building found near the point" in notes
     assert "no surface model (DSM) here" in notes
-    assert "ground texture unavailable" in notes
+    assert "ground texture unavailable (GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2: HTTP 400 Width too large)" in notes
     await session.close()
 
 
@@ -237,6 +242,9 @@ async def test_network_errors_are_soft(hass, aioclient_mock):
     aioclient_mock.get(ign.WMS, exc=aiohttp.ClientError())
     aioclient_mock.get(ign.APICARTO_PARCELS, text="not json")
     session = aioclient_mock.create_session(hass.loop)
+    errors: list[str] = []
+    assert await ign.fetch_image(session, "ortho", p, 150, errors) is None
+    assert errors == ["ORTHOIMAGERY.ORTHOPHOTOS: ClientError"]
     assert await ign.fetch_image(session, "ortho", p, 150) is None
     assert await ign.fetch_apicarto_parcels(session, p, 30) == []
     aioclient_mock.clear_requests()
