@@ -42,6 +42,8 @@ Opcje ustawia się w wizualnym edytorze karty (edytuj pulpit, potem *Edytuj* na 
 type: custom:house-view-card
 weather_entity: weather.dom           # pogoda na żywo (opcjonalnie)
 rain_entity: binary_sensor.deszcz     # opcjonalnie: czujnik deszczu lub czujnik natężenia opadu (mm/h) Twojej stacji
+wind_speed_entity: sensor.wiatr_predk   # opcjonalnie: czujnik prędkości wiatru (stacja pogodowa lub internetowy serwis pogodowy)
+wind_bearing_entity: sensor.wiatr_kier  # opcjonalnie: czujnik kierunku wiatru (stopnie lub kierunki świata)
 mode: live                            # live (czas rzeczywisty) | simulation (suwaki godziny / daty / pogody)
 view: Vue générale                    # widok początkowy (opcjonalnie): nazwa widoczna na jego przycisku
 show_views: true                      # przyciski widoków kamery
@@ -66,11 +68,12 @@ light_entities: [light.salon, ...]    # opcjonalnie: ogranicza uwzględniane św
 - **Pomieszczenia ↔ obszary**: pomieszczenie z planu jest powiązane z obszarem Home Assistant o tej samej nazwie (bez rozróżniania akcentów i wielkości liter). ⚙ wypisuje pomieszczenia bez pasującego obszaru; ✎ → *Rooms ↔ Home Assistant areas* pozwala wybrać inny obszar albo żaden, pomieszczenie po pomieszczeniu.
 - **Światła**: stan, kolor i jasność encji `light.*` z obszaru każdego pomieszczenia.
 - **Pogoda**: encja pogody `weather_entity` decyduje o wyświetlanej pogodzie: deszcz (`rainy`, `pouring`, `hail`), śnieg (`snowy`, `snowy-rainy`), burza (`lightning`, `lightning-rainy`), mgła, chmury; jej temperatura, wiatr i zachmurzenie są używane, jeśli są dostępne. Z `rain_entity` (czujnik deszczu `binary_sensor` albo czujnik natężenia opadu w mm/h) deszcz odpowiada temu, co naprawdę pada u Ciebie: pada na czujnik → deszcz, gęstszy lub rzadszy zależnie od zmierzonego natężenia; serwis pogodowy zapowiada deszcz, ale czujnik jest suchy → pochmurne niebo bez deszczu (burza: błyskawice bez deszczu). O śniegu i burzy nadal decyduje serwis pogodowy, bo deszczomierz ich nie rozróżnia; suma opadu („deszcz dzisiaj” w mm) jest pomijana, ponieważ nie mówi, czy pada teraz.
+- **Wiatr i natężenie deszczu**: przy wietrze deszcz i śnieg padają ukośnie, w stronę, w którą wieje wiatr: im silniejszy wiatr, tym bardziej są pochylone (cisza → pionowo, 60 km/h i więcej → około 50°). Kierunek uwzględnia północ planu: wiatr zachodni spycha więc deszcz na wschodnią stronę domu. Prędkość i kierunek pochodzą z encji pogody (`wind_speed`, `wind_bearing`) albo z własnych czujników: `wind_speed_entity` (km/h, m/s, mph, kn, ft/s, Beaufort) i `wind_bearing_entity` (stopnie albo kierunki świata, np. `NW`): stacja pogodowa lub czujniki internetowego serwisu pogodowego. Ilość deszczu decyduje o jego wyglądzie: mżawka jest rzadka, powolna i krótka, ulewa gęsta, szybka i długa. Pochodzi z natężenia `rain_entity` (mm/h; od 8 mm/h ulewa), a gdy go brak, z encji pogody (`pouring` jest silniejszy niż `rainy`). Gdy czujnik jest niedostępny, decyduje encja pogody.
 - **Zoom na pomieszczenie**: dotknięcie przybliża pomieszczenie (dach i wyższe kondygnacje ukryte); drugie dotknięcie tego samego pomieszczenia przełącza jego światła; *← pomieszczenie* wraca do poprzedniego widoku.
 - **Podgląd** (przycisk pogody): wymusza porę roku (wiosna, lato, jesień, zima), pogodę (bezchmurnie, pochmurno, deszcz, burza, śnieg, mgła) lub porę dnia (rano, południe, zmierzch, noc), które można łączyć; powrót do widoku na żywo przyciskiem *Preview … ✕* albo automatycznie po 3 minutach. W trybie symulacji są to skróty do suwaków.
 - **Kamera**: przycisk w prawym górnym rogu odblokowuje lub blokuje kamerę bez zmiany konfiguracji.
 - **Temperatury**: czujnik temperatury obszaru (ustawienie obszaru w Home Assistant), a jeśli go nie ma, pierwszy `sensor.*` z `device_class: temperature` w obszarze; wyświetlane po najechaniu oraz jako warstwa (🌡).
-- **Tryb symulacji**: ☀ otwiera godzinę (z odtwarzaniem), datę, ustawienie pogody, chmury, opady, wiatr, temperaturę i śnieg.
+- **Tryb symulacji**: ☀ otwiera godzinę (z odtwarzaniem), datę, ustawienie pogody, chmury, opady, wiatr (siłę i kierunek), temperaturę i śnieg.
 - **Drogi**: rysowane jako asfalt na rzeźbie terenu (można je wyłączyć w ⚙).
 - **Wydajność**: renderowanie zatrzymuje się, gdy karta nie jest widoczna; bryły światła są przeliczane tylko wtedy, gdy zmienia się istotny stan.
 
@@ -83,6 +86,15 @@ light_entities: [light.salon, ...]    # opcjonalnie: ogranicza uwzględniane św
 - **Kalibracja**: obrót, odbicie lustrzane i skala; *Calibrate with a tap* oblicza obrót po dotknięciu rzeczywistej pozycji robota, gdy wyjedzie ze stacji; *remember* zapisuje współrzędne stacji dla innych marek.
 - **Procent pomieszczenia**: część podłogi przejechana przez robota (szacunek: zakłada się, że dostępne jest 80 % podłogi); łączny postęp pochodzi z czujnika robota, jeśli istnieje (Roborock: `cleaning_progress`).
 - *Test the animation* odtwarza przyspieszone sprzątanie (z błędem lub bez) bez uruchamiania robota.
+
+## Katalog: drzewa i obiekty
+
+Drzewa i meble nie są zaszyte w karcie: pochodzą z [katalogu domu](https://github.com/Elwinmage/house-catalog), w którym dodanie gatunku lub obiektu to pull request, a nie nowa wersja tej integracji.
+
+- **Drzewa**: każdy gatunek ma do czterech wyglądów, po jednym na porę roku: kolor i gęstość listowia, kwiaty, owoce, liście na ziemi. Widok przechodzi z jednej pory roku w następną dzień po dniu (na początek dąb, sosna, cis, czereśnia i morela). To gatunki proponowane przy sadzeniu drzewa w edytorze, w zakresie wysokości podanym w katalogu.
+- **Obiekty**: mebel z planu, którego nazwa zawiera słowo kluczowe obiektu z katalogu (`Chaise`, `Chair`, `Krzesło`…), jest rysowany tym obiektem, w miejscu i w rozmiarze mebla, zamiast zwykłego prostopadłościanu; gdy plan nadaje meblowi kolor, obiekt przyjmuje go na częściach przeznaczonych do barwienia. Podobnie roślina z planu nazwana jak drzewo z katalogu (`Czereśnia`, `Yew`) jest rysowana jako to drzewo.
+- **Aktualizacje**: integracja pobiera katalog z GitHuba w tle (karta nigdy nie łączy się z siecią) i działa bez połączenia na dołączonej kopii. Urządzenie *House view catalog* ma encję aktualizacji dla każdej sekcji (drzewa, obiekty), przełącznik *Automatyczna aktualizacja* (domyślnie włączony) i przycisk *Aktualizuj teraz*.
+- **Własne wpisy**: dzięki [edytorowi katalogów](https://github.com/Elwinmage/catalog-editor) zapisane drzewo lub obiekt jest od razu używane w widoku, zanim zaproponujesz je do katalogu (albo bez proponowania).
 
 ## Edytor (✎)
 
@@ -177,6 +189,7 @@ pre-commit run --all-files
 - **Strona testowa bez Home Assistant**: `python3 card/test/harness/server.py` (atrapa serwera API), a potem http://localhost:8765/card/test/harness/index.html
 - **Grafiki marki**: `custom_components/house_view/brand/` (ikona i logo, jasne i ciemne), udostępniane przez Home Assistant 2026.3+ bez pośrednictwa repozytorium `home-assistant/brands`. Źródła wektorowe w `assets/brand/`; `scripts/build_brand.sh` odtwarza pliki PNG (`rsvg-convert`, ImageMagick, czcionka Inter).
 - **CI** (`.github/workflows/`): `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + budowanie), `release.yml` (uruchamiany ręcznie z numerem wersji: aktualizuje `manifest.json` i `card/package.json`, buduje kartę, dodaje tag, publikuje wydanie z `house_view.zip`).
+- **Klient katalogu**: `catalog_pack.py` i `catalog_runtime.py` to kopie `reeftech-catalog/client/` (klient zna tylko własne sekcje: `catalog.py` zgłasza mu sekcje domu); `house_catalog_sections.py` i `catalog_builtin*/` to kopie opisu i wpisów z `house-catalog`. Wszystkie zapisuje `scripts/sync_client.py` tych repozytoriów: zmienia się je tam, nigdy tutaj.
 
 `card/src/engine.js` to silnik 3D (jedna instancja na kartę, bez zależności od Home Assistant); `card/src/ha-bridge.js` zamienia stan Home Assistant na dane dla silnika; `card/src/engine/` zawiera moduły prototypu (geometria, roślinność, teren, światła…).
 
@@ -186,7 +199,7 @@ pre-commit run --all-files
 2. ✅ Edytory w karcie: obiekty zewnętrzne, drzewa, poprawki gruntu, własne widoki.
 3. ✅ Pobieranie terenu przez integrację dla Francji (IGN), drogi, zdjęcie gruntu, ogrodzenia, umieszczone encje, robot odkurzający, zoom na pomieszczenie, podgląd pory roku / pogody, kopia w GitHub.
 4. ✅ Inne kraje: rzeźba z Mapterhorn, budynki i drogi z OpenStreetMap (do potwierdzenia kraj po kraju). Następnie: kataster i zdjęcia lotnicze krajów, które publikują je jako otwarte dane.
-5. Katalog (drzewa w czterech porach roku, obiekty) zarządzany przez `catalog_editor`.
+5. ✅ Katalog (drzewa w czterech porach roku, obiekty) czytany z `house-catalog` i edytowany przez `catalog_editor`. Dalej: więcej gatunków i obiektów, modele zraszaczy.
 
 ## Licencja
 

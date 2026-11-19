@@ -4,7 +4,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { normalizeScene } from './engine/scene-model.js';
 import { buildLevelWalls, buildFloor, buildRoof, buildSite } from './engine/geometry.js';
-import { buildFurniture, buildBoxFurnitureMesh, buildFixture, createVegetation, SPECIES } from './engine/catalog.js';
+import {
+  buildFurniture,
+  buildBoxFurnitureMesh,
+  buildFixture,
+  catalogTreeFor,
+  createVegetation,
+  setCatalog,
+  SPECIES,
+} from './engine/catalog.js';
 import { normalizeEdits, outdoorEdit, isDsmRemoved } from './engine/edits.js';
 import { LightSystem } from './engine/lighting.js';
 import { Environment, WEATHER_PRESETS } from './engine/environment.js';
@@ -387,7 +395,10 @@ export class HouseEngine {
     // `_src` tells the tree editor where each one comes from (veg.group.children[i] <-> w.trees[i]).
     const dsmTrees = terr && terr.showTrees !== false ? treesFromDsm(terr.data, terr, sd, (gx, gz) => isDsmRemoved(edits, gx, gz)) : [];
     w.trees = [
-      ...sd.vegetation.map((p, i) => ({ ...p, _src: { kind: 'sd', idx: i } })).filter((p) => !edits.trees.removed.sd.includes(p._src.idx)),
+      // a plant of the plan named after a tree of the catalog ("Cerisier") is drawn as that tree
+      ...sd.vegetation
+        .map((p, i) => ({ ...p, species: catalogTreeFor(p.name) || p.species, _src: { kind: 'sd', idx: i } }))
+        .filter((p) => SPECIES[p.species] && !edits.trees.removed.sd.includes(p._src.idx)),
       ...dsmTrees,
       ...edits.trees.added
         .filter((a) => SPECIES[a.species])
@@ -530,6 +541,15 @@ export class HouseEngine {
     return this.load({ scene: this.sceneData, terrain: this.terrainData, ortho: this.orthoData, edits: this.edits }, { keepLights: true });
   }
 
+  /**
+   * Entries of the house catalog ({ trees: { id: descriptor }, objects: { id: descriptor } }, names in `lang`): the
+   * trees become species to plant, and both are drawn where the plan names them. The view is drawn again with them.
+   */
+  setCatalog(catalog, lang = 'en') {
+    setCatalog(catalog, lang);
+    if (this.world && this.sceneData) this.commit();
+  }
+
   /** Aerial photo document { bbox, lat, lon, north, mime, data (base64) } -> cached texture + its geo-reference. */
   _orthoTexture(doc) {
     if (!doc || !doc.data) return null;
@@ -556,7 +576,8 @@ export class HouseEngine {
   /**
    * Live state from Home Assistant. Every field is optional.
    * @param {{hour?: number, doy?: number, latitude?: number, weather?: string, cloud?: number, precip?: number,
-   *          precipType?: string, wind?: number, temp?: number, snowCover?: number}} s
+   *          precipType?: string, wind?: number, windBearing?: number, temp?: number, snowCover?: number}} s
+   *   wind: 0 (calm) .. 1 (60 km/h and more); windBearing: where it comes from, degrees clockwise from north
    */
   setLive(s) {
     if (!this.world) return;

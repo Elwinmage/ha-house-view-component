@@ -50,6 +50,13 @@
           this.calls.push([domain, service, data]);
         },
         fetchWithAuth: (url, init) => fetch(url, init),
+        // websocket commands of the integration the card uses: the catalog (trees, objects)
+        async callWS(msg) {
+          if (msg.type !== 'house_view/catalog') throw new Error(`unknown command ${msg.type}`);
+          const reply = await fetch(`/harness/catalog/${msg.section || 'trees'}`);
+          if (!reply.ok) throw new Error(`no catalog ${msg.section}`);
+          return reply.json();
+        },
       };
     </script>
     <script type="module" src="/custom_components/house_view/frontend/house-view-card.js"></script>

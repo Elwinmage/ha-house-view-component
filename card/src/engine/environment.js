@@ -1,6 +1,8 @@
 // Sun, sky, weather and surface state (wet / snow) for the scene.
 import * as THREE from 'three';
 import { grassColor } from './catalog.js';
+import { windDrift, rainLook } from '../wind.js';
+import { sunDirection } from '../sun.js';
 
 const DEG = Math.PI / 180;
 const smooth = (a, b, x) => {
@@ -10,16 +12,8 @@ const smooth = (a, b, x) => {
 
 /** Sun elevation (rad) and unit direction toward the sun in world axes (x east, z south). */
 export function sunPosition(doy, hour, latDeg, northOffsetDeg = 0) {
-  const lat = latDeg * DEG;
-  const decl = 23.44 * DEG * Math.sin((2 * Math.PI * (284 + doy)) / 365);
-  const H = (hour - 12) * 15 * DEG;
-  const sinEl = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(H);
-  const el = Math.asin(Math.min(1, Math.max(-1, sinEl)));
-  // azimuth measured from the south, positive toward the west
-  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(lat) - Math.tan(decl) * Math.cos(lat)) + northOffsetDeg * DEG;
-  const ce = Math.cos(el);
-  const dir = new THREE.Vector3(-Math.sin(az) * ce, Math.sin(el), Math.cos(az) * ce);
-  return { elevation: el, dir };
+  const { elevation, dir } = sunDirection(doy, hour, latDeg, northOffsetDeg);
+  return { elevation, dir: new THREE.Vector3(...dir) };
 }
 
 export const WEATHER_PRESETS = {
@@ -32,21 +26,21 @@ export const WEATHER_PRESETS = {
 };
 
 const RAIN_VERT = /* glsl */ `
-uniform float uTime;
+uniform float uFall; // fall phase, integrated on the CPU so that a change of speed never makes the drops jump
 uniform vec3 uBox;
 uniform vec3 uCenter;
-uniform float uWind;
+uniform vec2 uSlant; // horizontal drift (x, z) per metre of fall: the way the wind blows
+uniform float uLen;
 attribute float aEnd;
 attribute float aSeed;
 varying float vEnd;
 void main() {
-  float speed = 16.0 + 6.0 * aSeed;
-  float y = mod(position.y * uBox.y - uTime * speed, uBox.y);
-  vec3 slant = vec3(uWind * 0.25, 0.0, uWind * 0.1);
-  vec3 p = uCenter + vec3((position.x - 0.5) * uBox.x, y, (position.z - 0.5) * uBox.z);
-  p += slant * (uBox.y - y);
-  vec3 up = normalize(vec3(-slant.x, 1.0, -slant.z));
-  p += up * aEnd * 0.9;
+  float y = mod(position.y * uBox.y - uFall * (16.0 + 6.0 * aSeed), uBox.y);
+  // the drift wraps inside the box: a strong wind does not push the rain off the plot
+  vec2 h = mod(position.xz * uBox.xz + uSlant * (uBox.y - y), uBox.xz) - 0.5 * uBox.xz;
+  vec3 p = uCenter + vec3(h.x, y, h.y);
+  vec3 up = normalize(vec3(-uSlant.x, 1.0, -uSlant.y));
+  p += up * aEnd * uLen;
   vEnd = aEnd;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }
@@ -62,14 +56,15 @@ const SNOW_VERT = /* glsl */ `
 uniform float uTime;
 uniform vec3 uBox;
 uniform vec3 uCenter;
-uniform float uWind;
+uniform vec2 uSlant; // horizontal drift (x, z) per metre of fall: the way the wind blows
 uniform float uPx; // pixels per world unit
 attribute float aSeed;
 void main() {
   float speed = 1.1 + 1.2 * aSeed;
   float y = mod(position.y * uBox.y - uTime * speed, uBox.y);
   float sway = sin(uTime * 0.9 + aSeed * 40.0) * 0.5;
-  vec3 p = uCenter + vec3((position.x - 0.5) * uBox.x + sway + uWind * (uBox.y - y) * 0.2, y, (position.z - 0.5) * uBox.z + sway * 0.6);
+  vec2 h = mod(position.xz * uBox.xz + vec2(sway, sway * 0.6) + uSlant * (uBox.y - y), uBox.xz) - 0.5 * uBox.xz;
+  vec3 p = uCenter + vec3(h.x, y, h.y);
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   gl_PointSize = max(2.0, 0.09 * uPx * (0.7 + aSeed * 0.6));
 }
@@ -87,11 +82,14 @@ export class Environment {
     this.scene = scene;
     this.renderer = renderer;
     this.site = site;
-    this.state = { hour: 18.2, doy: 275, weather: 'clear', ...WEATHER_PRESETS.clear };
+    // windBearing: where the wind comes from (degrees clockwise from north); west until a sensor says otherwise
+    this.state = { hour: 18.2, doy: 275, weather: 'clear', windBearing: 270, ...WEATHER_PRESETS.clear };
     this.snowCover = 0;
     this.wetness = 0;
     this.surfaces = []; // { material, base, snow, wet, key }
     this.time = 0;
+    this.rainFall = 0; // fall phase of the rain (see RAIN_VERT)
+    this.rainSpeed = 1;
     this.flash = 0;
     this.nextFlash = 3;
     this.glow = 1;
@@ -206,10 +204,11 @@ export class Environment {
       vertexShader: RAIN_VERT,
       fragmentShader: RAIN_FRAG,
       uniforms: {
-        uTime: { value: 0 },
+        uFall: { value: 0 },
         uBox: { value: box },
         uCenter: { value: center },
-        uWind: { value: 0 },
+        uSlant: { value: new THREE.Vector2() },
+        uLen: { value: 0.9 },
         uColor: { value: new THREE.Color('#c8dcff') },
         uAlpha: { value: 0.5 },
       },
@@ -242,7 +241,7 @@ export class Environment {
         uTime: { value: 0 },
         uBox: { value: box },
         uCenter: { value: center },
-        uWind: { value: 0 },
+        uSlant: { value: new THREE.Vector2() },
         uPx: { value: 30 },
       },
       transparent: true,
@@ -298,14 +297,18 @@ export class Environment {
     this.scene.fog.color.copy(sky);
     this.scene.fog.density = s.fog;
 
-    // weather particles
+    // weather particles: the wind gives the slant and its direction, the intensity the number, speed and length of the drops
+    const look = rainLook(s.precip);
+    const [dx, dz] = windDrift(s.wind, s.windBearing ?? 270, this.site.northOffsetDeg || 0);
     this.rain.visible = s.precipType === 'rain' && s.precip > 0.02;
     this.snow.visible = s.precipType === 'snow' && s.precip > 0.02;
-    this.rain.geometry.setDrawRange(0, Math.floor(this.rainCount * Math.min(1, s.precip)) * 2);
+    this.rain.geometry.setDrawRange(0, Math.floor(this.rainCount * look.share) * 2);
     this.snow.geometry.setDrawRange(0, Math.floor(this.snowCount * Math.min(1, s.precip * 1.4)));
-    this.rainMat.uniforms.uWind.value = s.wind;
-    this.snowMat.uniforms.uWind.value = s.wind;
-    this.rainMat.uniforms.uAlpha.value = 0.25 + 0.4 * (0.4 + 0.6 * day);
+    this.rainMat.uniforms.uSlant.value.set(dx, dz);
+    this.snowMat.uniforms.uSlant.value.set(dx * 0.6, dz * 0.6); // flakes are slow: they drift more per metre, kept readable
+    this.rainMat.uniforms.uLen.value = 0.9 * look.length;
+    this.rainSpeed = look.speed;
+    this.rainMat.uniforms.uAlpha.value = Math.min(1, (0.25 + 0.4 * (0.4 + 0.6 * day)) * look.alpha);
 
     // grass follows the season
     for (const e of this.surfaces) if (e.key === 'grass') grassColor(s.doy, e.base);
@@ -337,7 +340,8 @@ export class Environment {
     this.hemi.intensity = this._hemiBase + flashBoost * 2.2;
 
     // particles
-    this.rainMat.uniforms.uTime.value = this.time;
+    this.rainFall += dt * this.rainSpeed;
+    this.rainMat.uniforms.uFall.value = this.rainFall;
     this.snowMat.uniforms.uTime.value = this.time;
     const frustumH = (camera.top - camera.bottom) / camera.zoom;
     this.snowMat.uniforms.uPx.value = viewportHeightPx / frustumH;

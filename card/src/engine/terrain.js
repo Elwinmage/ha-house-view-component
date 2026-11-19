@@ -9,6 +9,7 @@
 //   the vector layers (optional, BD TOPO / cadastre) are in the same frame as the grid.
 // x = east, z = south in the plan frame, same as the scene model.
 import * as THREE from 'three';
+import { SPECIES } from './catalog.js';
 import { pointInPolygon } from './geometry.js';
 import { compileOps, WALL_T } from './terrain-edit.js';
 
@@ -487,7 +488,7 @@ export function treesFromDsm(t, cfg, sd, isRemoved = null) {
   found.sort((a, b) => b.h - a.h);
   return found.slice(0, 500).map(({ x, z, h, gx, gz }) => {
     const species = h < 4.5 ? 'olive' : 'oak';
-    return { species, at: [x, z], scale: h / (species === 'olive' ? 3.4 : 8.5), _src: { kind: 'dsm', gx, gz } };
+    return { species, at: [x, z], scale: h / SPECIES[species].height, _src: { kind: 'dsm', gx, gz } };
   });
 }
 

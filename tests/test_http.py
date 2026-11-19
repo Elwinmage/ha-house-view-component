@@ -1,5 +1,7 @@
 """Integration tests through the real HA HTTP server (pytest-homeassistant-custom-component)."""
 
+import hashlib
+
 from homeassistant.core import callback
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -103,7 +105,11 @@ async def test_config_flow_single_instance(hass):
 
 
 async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
-    """The card built from /card is served by the integration, at a versioned URL loaded on every dashboard."""
+    """The card built from /card is served by the integration, at a URL loaded on every dashboard.
+
+    The URL carries the version and a digest of the bundle: building the card again changes it, so that the
+    browser never keeps the previous bundle.
+    """
     bundle = tmp_path / "house-view-card.js"
     bundle.write_text("console.log('card');")
     monkeypatch.setattr(house_view, "FRONTEND_FILE", bundle)
@@ -118,7 +124,8 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     res = await client.get("/house_view/house-view-card.js")
     assert res.status == 200
     assert "console.log('card')" in await res.text()
-    assert added == ["/house_view/house-view-card.js?v=0.1.0"]
+    digest = hashlib.sha256(b"console.log('card');").hexdigest()[:8]
+    assert added == [f"/house_view/house-view-card.js?v=0.1.0-{digest}"]
 
 
 async def test_missing_bundle_is_not_fatal(hass, hass_client, hass_admin_user, caplog, tmp_path, monkeypatch):

@@ -42,6 +42,8 @@ Les options se règlent dans l'éditeur visuel de la carte (modifier le tableau 
 type: custom:house-view-card
 weather_entity: weather.maison        # météo en direct (optionnel)
 rain_entity: binary_sensor.pluie      # optionnel : détecteur de pluie ou capteur d'intensité (mm/h) de votre station
+wind_speed_entity: sensor.vent_vitesse  # optionnel : capteur de vitesse du vent (station météo ou service météo internet)
+wind_bearing_entity: sensor.vent_dir   # optionnel : capteur de direction du vent (degrés ou points cardinaux)
 mode: live                            # live (heure réelle) | simulation (curseurs heure / date / météo)
 view: Vue générale                    # vue de départ (optionnel) : le nom affiché sur son bouton
 show_views: true                      # boutons des vues caméra
@@ -66,11 +68,12 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
 - **Pièces ↔ areas** : une pièce du plan est liée à l'area Home Assistant de même nom (accents et casse ignorés). ⚙ liste les pièces sans area correspondante ; ✎ → *Pièces ↔ areas Home Assistant* permet de choisir une autre area, ou aucune, pièce par pièce.
 - **Lumières** : état, couleur et intensité des `light.*` de l'area de chaque pièce.
 - **Météo** : l'entité météo `weather_entity` décide du temps affiché : pluie (`rainy`, `pouring`, `hail`), neige (`snowy`, `snowy-rainy`), orage (`lightning`, `lightning-rainy`), brouillard, nuages ; sa température, son vent et sa nébulosité sont repris s'ils sont fournis. Avec `rain_entity` (détecteur de pluie `binary_sensor`, ou capteur d'intensité en mm/h), la pluie suit ce qui tombe réellement chez vous : il pleut sur le capteur → pluie, plus ou moins dense selon l'intensité mesurée ; le service météo annonce de la pluie mais le capteur est sec → ciel couvert sans pluie (orage : éclairs sans pluie). La neige et l'orage restent décidés par le service météo, un pluviomètre ne les distinguant pas ; un cumul (« pluie du jour » en mm) est ignoré, car il ne dit pas s'il pleut maintenant.
+- **Vent et intensité de la pluie** : la pluie et la neige tombent penchées quand le vent souffle, dans le sens où il souffle : plus le vent est fort, plus elles penchent (calme → verticale, 60 km/h et plus → environ 50°). La direction suit le nord du plan : un vent d'ouest pousse donc la pluie vers le côté est de votre maison. Vitesse et direction viennent de l'entité météo (`wind_speed`, `wind_bearing`), ou de vos propres capteurs avec `wind_speed_entity` (km/h, m/s, mph, kn, ft/s, Beaufort) et `wind_bearing_entity` (degrés, ou points cardinaux comme `NO`) : une station météo, ou les capteurs d'un service météo internet. La quantité de pluie règle l'aspect de la pluie : une bruine est clairsemée, lente et courte, une averse dense, rapide et longue. Elle vient de l'intensité de `rain_entity` (mm/h ; 8 mm/h et plus = averse), sinon de l'entité météo (`pouring` est plus fort que `rainy`). Un capteur indisponible laisse la main à l'entité météo.
 - **Zoom sur une pièce** : un clic zoome sur la pièce (toit et étages supérieurs masqués) ; un deuxième clic sur la même pièce bascule ses lumières ; *← pièce* revient à la vue précédente.
 - **Aperçu** (bouton météo) : force une saison (printemps, été, automne, hiver), une météo (dégagé, nuageux, pluie, orage, neige, brouillard) ou un moment (matin, midi, crépuscule, nuit), combinables ; retour au direct par le bouton *Aperçu … ✕*, ou automatiquement après 3 minutes. En mode simulation, ce sont des raccourcis vers les curseurs.
 - **Caméra** : le bouton en haut à droite débloque ou bloque la caméra sans toucher à la configuration.
 - **Températures** : capteur de température de l'area (réglage de l'area dans Home Assistant), sinon premier `sensor.*` de `device_class: temperature` de l'area ; affichées au survol et en calque (🌡).
-- **Mode simulation** : ☀ ouvre heure (avec défilement), date, préréglage météo, nuages, précipitations, vent, température et neige.
+- **Mode simulation** : ☀ ouvre heure (avec défilement), date, préréglage météo, nuages, précipitations, vent (force et direction), température et neige.
 - **Routes** : dessinées en enrobé sur le relief (désactivables dans ⚙).
 - **Performances** : le rendu s'arrête quand la carte n'est pas visible ; les volumes de lumière ne sont recalculés que si un état utile change.
 
@@ -83,6 +86,15 @@ light_entities: [light.salon, ...]    # optionnel : restreint les lumières pris
 - **Calage** : rotation, miroir et échelle ; *Caler d'un clic* calcule la rotation quand on clique la position réelle du robot sorti de sa base ; *mémoriser* enregistre les coordonnées de la base pour les autres marques.
 - **Pourcentage d'une pièce** : part du sol parcourue par le robot (estimation : 80 % du sol est supposé accessible) ; l'avancement total vient du capteur du robot quand il existe (Roborock : `cleaning_progress`).
 - *Tester l'animation* joue un nettoyage accéléré (avec ou sans anomalie) sans lancer le robot.
+
+## Catalogue : arbres et objets
+
+Les arbres et les meubles ne sont pas codés dans la carte : ils viennent du [catalogue de la maison](https://github.com/Elwinmage/house-catalog), où ajouter une espèce ou un objet est une pull request, pas une nouvelle version de cette intégration.
+
+- **Arbres** : chaque espèce a jusqu'à quatre rendus, un par saison : couleur et densité du feuillage, floraison, fruits, feuilles au sol. La vue passe d'une saison à la suivante jour après jour (chêne, pin, if, cerisier et abricotier pour commencer). Ce sont les espèces proposées quand vous plantez un arbre dans l'éditeur, dans les hauteurs que donne le catalogue.
+- **Objets** : un meuble du plan dont le nom contient un mot-clé d'un objet du catalogue (`Chaise`, `Chair`, `Stuhl`…) est dessiné avec lui, à la place et à la taille du meuble, au lieu d'une simple boîte ; quand le plan donne une couleur au meuble, l'objet la prend sur ses parties teintables. De même, une plante du plan nommée comme un arbre du catalogue (`Cerisier`, `Yew`) est dessinée comme cet arbre.
+- **Mises à jour** : l'intégration télécharge le catalogue depuis GitHub en arrière-plan (la carte n'appelle jamais le réseau) et fonctionne hors ligne avec la copie qu'elle embarque. L'appareil *House view catalog* a une entité de mise à jour par section (arbres, objets), un interrupteur *Mise à jour automatique* (activé par défaut) et un bouton *Mettre à jour maintenant*.
+- **Vos propres entrées** : avec l'[éditeur de catalogues](https://github.com/Elwinmage/catalog-editor), un arbre ou un objet que vous enregistrez est utilisé par la vue aussitôt, avant de le proposer au catalogue (ou sans le proposer).
 
 ## Éditeur (✎)
 
@@ -177,6 +189,7 @@ pre-commit run --all-files
 - **Page de test sans Home Assistant** : `python3 card/test/harness/server.py` (faux serveur de l'API), puis http://localhost:8765/card/test/harness/index.html
 - **Images de marque** : `custom_components/house_view/brand/` (icône et logo, clair et sombre), servies par Home Assistant 2026.3+ sans passer par le dépôt `home-assistant/brands`. Sources vectorielles dans `assets/brand/` ; `scripts/build_brand.sh` régénère les PNG (`rsvg-convert`, ImageMagick, police Inter).
 - **CI** (`.github/workflows/`) : `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + build), `release.yml` (lancé à la main avec la version : met à jour `manifest.json` et `card/package.json`, compile la carte, tague, publie la release avec `house_view.zip`).
+- **Client du catalogue** : `catalog_pack.py` et `catalog_runtime.py` sont des copies de `reeftech-catalog/client/` (le client ne connaît que ses propres sections : `catalog.py` lui déclare celles de la maison) ; `house_catalog_sections.py` et `catalog_builtin*/` sont des copies de la description et des entrées de `house-catalog`. Tous sont écrits par le `scripts/sync_client.py` de ces dépôts : on les modifie là-bas, jamais ici.
 
 `card/src/engine.js` est le moteur 3D (une instance par carte, sans dépendance à Home Assistant) ; `card/src/ha-bridge.js` convertit l'état de Home Assistant en données pour le moteur ; `card/src/engine/` contient les modules du prototype (géométrie, végétation, terrain, lumières…).
 
@@ -186,7 +199,7 @@ pre-commit run --all-files
 2. ✅ Éditeurs dans la carte : objets extérieurs, arbres, corrections du sol, vues personnalisées.
 3. ✅ Récupération du terrain par l'intégration pour la France (IGN), routes, photo au sol, clôtures, entités placées, aspirateur robot, zoom sur une pièce, aperçu saison / météo, sauvegarde GitHub.
 4. ✅ Autres pays : relief Mapterhorn, bâtiments et routes OpenStreetMap (à confirmer pays par pays). Ensuite : cadastre et photo aérienne des pays qui les publient en données ouvertes.
-5. Catalogue (arbres à quatre saisons, objets) géré par `catalog_editor`.
+5. ✅ Catalogue (arbres à quatre saisons, objets) lu depuis `house-catalog` et édité avec `catalog_editor`. Ensuite : davantage d'espèces et d'objets, modèles d'arroseurs.
 
 ## Licence
 

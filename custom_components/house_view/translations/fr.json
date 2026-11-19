@@ -45,5 +45,31 @@
       "cannot_connect": "Dépôt inaccessible avec ce jeton.",
       "too_short": "Au moins 4 caractères."
     }
+  },
+  "exceptions": {
+    "catalog_unknown": {
+      "message": "Le catalogue n'a pas encore été vérifié."
+    },
+    "catalog_incompatible": {
+      "message": "Le catalogue {version} demande la version {minimum} de l'intégration ou plus récente."
+    },
+    "catalog_install_failed": {
+      "message": "Échec de la mise à jour du catalogue : {error}"
+    },
+    "catalog_check_failed": {
+      "message": "Échec de la vérification du catalogue : {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "catalog_auto_update": {
+        "name": "Mise à jour automatique"
+      }
+    },
+    "button": {
+      "catalog_update_now": {
+        "name": "Mettre à jour maintenant"
+      }
+    }
   }
 }

@@ -14,7 +14,13 @@ const T = {
     ed_weather_entity_help: 'Elle décide du temps affiché : pluie, neige, orage, brouillard, nuages.',
     ed_rain_entity: 'Capteur de pluie',
     ed_rain_entity_help:
-      'Facultatif : détecteur de pluie ou capteur d’intensité (mm/h). La pluie affichée suit alors ce qui tombe chez vous ; neige et orage restent décidés par la météo.',
+      'Facultatif : détecteur de pluie ou capteur d’intensité (mm/h), d’une station météo ou d’un service internet. La pluie affichée suit alors ce qui tombe chez vous, plus ou moins dense selon l’intensité ; neige et orage restent décidés par la météo.',
+    ed_wind_speed_entity: 'Capteur de vitesse du vent',
+    ed_wind_speed_entity_help:
+      'Facultatif : plus le vent est fort, plus la pluie et la neige tombent penchées. Vide : le vent de l’entité météo.',
+    ed_wind_bearing_entity: 'Capteur de direction du vent',
+    ed_wind_bearing_entity_help:
+      'Facultatif : d’où vient le vent, en degrés (0 = nord, 90 = est) ou en points cardinaux (N, NE, SO…). La pluie penche dans ce sens, orienté selon le nord du plan. Vide : la direction de l’entité météo.',
     ed_view: 'Vue de départ',
     ed_view_help: 'Nom d’une vue caméra, tel qu’affiché sur ses boutons. Vide : la première.',
     ed_show_views: 'Boutons des vues caméra',
@@ -369,6 +375,8 @@ const T = {
     sim_cloud: 'Nuages',
     sim_precip: 'Précipitations',
     sim_wind: 'Vent',
+    sim_wind_bearing: 'Vent venant de',
+    compass: 'N,NE,E,SE,S,SO,O,NO',
     sim_temp: 'Température',
     sim_snow: 'Neige au sol et sur le toit',
   },
@@ -387,7 +395,13 @@ const T = {
     ed_weather_entity_help: 'It decides the weather shown: rain, snow, thunderstorm, fog, clouds.',
     ed_rain_entity: 'Rain sensor',
     ed_rain_entity_help:
-      'Optional: rain detector or rain rate sensor (mm/h). The rain shown then follows what falls at your place; snow and thunderstorms stay with the weather entity.',
+      'Optional: rain detector or rain rate sensor (mm/h), from a weather station or an internet service. The rain shown then follows what falls at your place, denser or lighter with the rate; snow and thunderstorms stay with the weather entity.',
+    ed_wind_speed_entity: 'Wind speed sensor',
+    ed_wind_speed_entity_help:
+      'Optional: the stronger the wind, the more rain and snow fall at a slant. Empty: the wind of the weather entity.',
+    ed_wind_bearing_entity: 'Wind direction sensor',
+    ed_wind_bearing_entity_help:
+      'Optional: where the wind comes from, in degrees (0 = north, 90 = east) or compass points (N, NE, SW…). The rain leans that way, oriented with the north of the plan. Empty: the direction of the weather entity.',
     ed_view: 'Starting view',
     ed_view_help: 'Name of a camera view, as shown on its button. Empty: the first one.',
     ed_show_views: 'Camera view buttons',
@@ -739,6 +753,8 @@ const T = {
     sim_cloud: 'Clouds',
     sim_precip: 'Precipitation',
     sim_wind: 'Wind',
+    sim_wind_bearing: 'Wind from',
+    compass: 'N,NE,E,SE,S,SW,W,NW',
     sim_temp: 'Temperature',
     sim_snow: 'Snow on the ground and roof',
   },

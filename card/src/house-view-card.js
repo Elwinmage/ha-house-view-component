@@ -8,6 +8,7 @@ import { irrigationStates } from './irrigation.js';
 import { renderFences, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
 import {
   weatherLive,
+  windSensors,
   rainSensor,
   applyRain,
   solarClock,
@@ -25,6 +26,7 @@ import { normalizeEdits, emptyEdits } from './engine/edits.js';
 import { WEATHER_PRESETS } from './engine/environment.js';
 import { SPECIES, seasonName } from './engine/catalog.js';
 import { houseParcel } from './engine/terrain.js';
+import { compassIndex } from './wind.js';
 import { makeT } from './i18n.js';
 import pkg from '../package.json';
 
@@ -191,6 +193,7 @@ class HouseViewCard extends LitElement {
     window.addEventListener('keydown', this._onKey);
     this._updateRunning();
     requestAnimationFrame(this._fit);
+    if (this._engine) this._watchCatalog(); // re-attached (dashboard edit mode): follow the catalog again
   }
 
   disconnectedCallback() {
@@ -203,6 +206,7 @@ class HouseViewCard extends LitElement {
     if (this._vac) this._vac.pause();
     this._irrDemoStop();
     if (this._io) this._io.disconnect();
+    this._unwatchCatalog();
     document.removeEventListener('visibilitychange', this._vis);
     window.removeEventListener('resize', this._fit);
     window.removeEventListener('keydown', this._onKey);
@@ -269,7 +273,52 @@ class HouseViewCard extends LitElement {
     this._engine.onFrame = () => this._placeAnchors();
     this._vac = new VacuumController(this);
     this._updateRunning();
-    await this._reload();
+    this._watchCatalog();
+    await Promise.all([this._loadCatalog(), this._reload()]);
+  }
+
+  /**
+   * Trees and objects of the house catalog. The integration downloads them and merges the entries saved with the
+   * catalog editor; the card only asks it (never the network) and draws them. Without them (an older integration)
+   * the built-in species stay.
+   */
+  async _loadCatalog() {
+    const h = this._hass;
+    if (!h || !h.callWS || !this._engine) return;
+    this._catalog = this._catalog || { trees: {}, objects: {} };
+    // each section on its own: one that cannot be read keeps what it had, and does not hide the other
+    await Promise.all(
+      Object.keys(this._catalog).map(async (section) => {
+        try {
+          const answer = await h.callWS({ type: 'house_view/catalog', section });
+          this._catalog[section] = (answer && answer.data && answer.data.items) || {};
+        } catch (err) {
+          // an older integration does not know the command: nothing to report
+          if (err && err.code === 'unknown_command') console.debug('house-view-card: no catalog in this integration');
+          else console.warn(`house-view-card: the ${section} of the catalog could not be loaded`, err);
+        }
+      }),
+    );
+    try {
+      this._engine.setCatalog(this._catalog, h.language);
+    } catch (err) {
+      console.warn('house-view-card: the catalog could not be drawn', err);
+    }
+    this.requestUpdate();
+  }
+
+  /** A new release, or an entry saved in the catalog editor: the view takes it at once. */
+  _watchCatalog() {
+    const h = this._hass;
+    if (this._catalogUnsub || !h || !h.connection || !h.connection.subscribeMessage) return;
+    this._catalogUnsub = ['trees', 'objects'].map((section) =>
+      h.connection.subscribeMessage(() => this._loadCatalog(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
+    );
+  }
+
+  _unwatchCatalog() {
+    for (const pending of this._catalogUnsub || []) pending.then((unsub) => unsub && unsub());
+    this._catalogUnsub = null;
   }
 
   async _reload() {
@@ -437,7 +486,7 @@ class HouseViewCard extends LitElement {
     const s = this._sim;
     const live = { hour: s.hour, doy: s.doy };
     if (s.weather) live.weather = s.weather;
-    for (const k of ['cloud', 'precip', 'wind', 'temp', 'snowCover']) if (s[k] !== undefined) live[k] = s[k];
+    for (const k of ['cloud', 'precip', 'wind', 'windBearing', 'temp', 'snowCover']) if (s[k] !== undefined) live[k] = s[k];
     this._engine.setLive(live);
   }
 
@@ -455,14 +504,16 @@ class HouseViewCard extends LitElement {
     const lights = roomLights(h, areas, cfg.light_entities || null, placed);
     const entLights = Object.fromEntries([...placed].map((id) => [id, entityLight(h.states[id])]));
     const temps = roomTemps(h, areas);
-    // the weather service decides (rain, snow, storm, fog, clouds); a local rain sensor, when given, corrects the rain
+    // the weather service decides (rain, snow, storm, fog, clouds); a local rain sensor, when given, corrects the rain,
+    // and wind sensors the wind (speed: slant of what falls; bearing: the way it leans)
+    const st = (id) => (id ? h.states[id] : null);
     const weather =
       cfg.mode === 'simulation'
         ? {}
-        : applyRain(
-            weatherLive(cfg.weather_entity ? h.states[cfg.weather_entity] : null),
-            cfg.rain_entity ? rainSensor(h.states[cfg.rain_entity]) : null,
-          );
+        : {
+            ...applyRain(weatherLive(st(cfg.weather_entity), h.language), cfg.rain_entity ? rainSensor(st(cfg.rain_entity)) : null),
+            ...windSensors(st(cfg.wind_speed_entity), st(cfg.wind_bearing_entity), h.language),
+          };
     const sig = JSON.stringify([lights, entLights, weather, temps]);
     if (sig === this._lastLive) return; // nothing relevant changed: skip the rebuild of the light volumes
     this._lastLive = sig;
@@ -1573,8 +1624,8 @@ class HouseViewCard extends LitElement {
               </select>
               <input
                 type="number"
-                min="1"
-                max="30"
+                min=${(SPECIES[ed.treeAdd.species] || {}).minHeight ?? 1}
+                max=${(SPECIES[ed.treeAdd.species] || {}).maxHeight ?? 30}
                 step="0.5"
                 .value=${String(ed.treeAdd.h)}
                 @change=${(e) => ed.setTreeParams({ h: parseFloat(e.target.value) || 8 })}
@@ -1787,6 +1838,16 @@ class HouseViewCard extends LitElement {
       ${this._range(t('sim_cloud'), s.cloud ?? st.cloud ?? 0, 0, 1, 0.01, (v) => this._setSim({ cloud: v }), pct, true)}
       ${this._range(t('sim_precip'), s.precip ?? st.precip ?? 0, 0, 1, 0.01, (v) => this._setSim({ precip: v }), pct, true)}
       ${this._range(t('sim_wind'), s.wind ?? st.wind ?? 0, 0, 1, 0.01, (v) => this._setSim({ wind: v }), pct, true)}
+      ${this._range(
+        t('sim_wind_bearing'),
+        s.windBearing ?? st.windBearing ?? 270,
+        0,
+        355,
+        5,
+        (v) => this._setSim({ windBearing: v }),
+        (v) => `${t('compass').split(',')[compassIndex(v)]} · ${v}°`,
+        true,
+      )}
       ${this._range(
         t('sim_temp'),
         s.temp ?? st.temp ?? 15,

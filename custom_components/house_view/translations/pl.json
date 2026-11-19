@@ -45,5 +45,31 @@
       "cannot_connect": "Repozytorium niedostępne z tym tokenem.",
       "too_short": "Co najmniej 4 znaki."
     }
+  },
+  "exceptions": {
+    "catalog_unknown": {
+      "message": "Katalog nie został jeszcze sprawdzony."
+    },
+    "catalog_incompatible": {
+      "message": "Katalog {version} wymaga wersji {minimum} integracji lub nowszej."
+    },
+    "catalog_install_failed": {
+      "message": "Aktualizacja katalogu nie powiodła się: {error}"
+    },
+    "catalog_check_failed": {
+      "message": "Sprawdzenie katalogu nie powiodło się: {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "catalog_auto_update": {
+        "name": "Automatyczna aktualizacja"
+      }
+    },
+    "button": {
+      "catalog_update_now": {
+        "name": "Aktualizuj teraz"
+      }
+    }
   }
 }

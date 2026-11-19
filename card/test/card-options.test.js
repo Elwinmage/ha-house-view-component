@@ -15,6 +15,8 @@ describe('card option editor', () => {
         'mode',
         'weather_entity',
         'rain_entity',
+        'wind_speed_entity',
+        'wind_bearing_entity',
         'view',
         'show_views',
         'show_levels',

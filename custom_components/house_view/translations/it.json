@@ -45,5 +45,31 @@
       "cannot_connect": "Repository non raggiungibile con questo token.",
       "too_short": "Almeno 4 caratteri."
     }
+  },
+  "exceptions": {
+    "catalog_unknown": {
+      "message": "Il catalogo non è ancora stato verificato."
+    },
+    "catalog_incompatible": {
+      "message": "Il catalogo {version} richiede la versione {minimum} dell'integrazione o successiva."
+    },
+    "catalog_install_failed": {
+      "message": "Aggiornamento del catalogo non riuscito: {error}"
+    },
+    "catalog_check_failed": {
+      "message": "Verifica del catalogo non riuscita: {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "catalog_auto_update": {
+        "name": "Aggiornamento automatico"
+      }
+    },
+    "button": {
+      "catalog_update_now": {
+        "name": "Aggiorna ora"
+      }
+    }
   }
 }

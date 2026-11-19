@@ -45,5 +45,31 @@
       "cannot_connect": "Repository not reachable with this token.",
       "too_short": "At least 4 characters."
     }
+  },
+  "exceptions": {
+    "catalog_unknown": {
+      "message": "The catalog has not been checked yet."
+    },
+    "catalog_incompatible": {
+      "message": "Catalog {version} needs version {minimum} of the integration or newer."
+    },
+    "catalog_install_failed": {
+      "message": "Catalog update failed: {error}"
+    },
+    "catalog_check_failed": {
+      "message": "Catalog check failed: {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "catalog_auto_update": {
+        "name": "Automatic update"
+      }
+    },
+    "button": {
+      "catalog_update_now": {
+        "name": "Update now"
+      }
+    }
   }
 }

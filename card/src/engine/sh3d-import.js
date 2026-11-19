@@ -9,6 +9,7 @@
 //   wall/door/window coordinates are measured at their center, rooms are polygons
 //   usually drawn along the inner faces of the walls.
 import { unzipSync, strFromU8 } from 'fflate';
+import { catalogTreeFor } from './catalog.js';
 import { pointInPolygon, centroid } from './geometry.js';
 
 const OUTDOOR_NAME = /abri|cabanon|remise|portail|portillon|poteau|barri[eè]re|garage|carport|pergola|pont|ponton|bassin|piscine|pool/i;
@@ -315,12 +316,17 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
       sitePool = { x0: x - hx, z0: z - hz, x1: x + hx, z1: z + hz };
       continue;
     }
-    const sp = !inRoom ? vegetationSpecies(name, catalogId, h) : null;
+    // a tree of the catalog named by the plan ("Cerisier", "Yew"), else a generic species by the usual words
+    const sp = !inRoom ? catalogTreeFor(name) || vegetationSpecies(name, catalogId, h) : null;
     if (sp) {
-      vegetation.push({ species: sp, at: [x, z], ...(sp === 'hedge' ? { length: Math.max(w, d) } : {}) });
+      // the name is kept: a tree of the catalog with that name (its keywords) is drawn instead of the generic species
+      vegetation.push({ species: sp, at: [x, z], name, ...(sp === 'hedge' ? { length: Math.max(w, d) } : {}) });
       continue;
     }
-    const color = hex(el.getAttribute('color')) || guessColor(name);
+    const own = hex(el.getAttribute('color'));
+    const color = own || guessColor(name);
+    // colored: the plan gives the piece a colour of its own, which a catalog object takes on its tinted parts
+    const colored = Boolean(own);
     // A piece outside every room, either on a level without walls/rooms (an "annex" level used to place
     // detached objects) or with a typical outdoor name, is anchored to the terrain instead of a level.
     if (!inRoom && ((!lv.rooms.length && !lv.walls.length) || OUTDOOR_NAME.test(name))) {
@@ -329,10 +335,10 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
       if (outdoor.some((o) => o.name === (name || 'objet') && Math.hypot(o.at[0] - x, o.at[1] - z) < 0.05 && Math.abs(o.size[0] - w) < 0.05)) continue;
       const n = (outdoorCount[name] = (outdoorCount[name] || 0) + 1);
       // id = name + occurrence: stable when the piece is moved in SH3D, so manual edits survive a re-import
-      outdoor.push({ id: `${name || 'objet'}#${n}`, name: name || 'objet', at: [x, z], rot: angle, size: [w, h, d], elevation: 0, color, sh3dLevel: lv.name });
+      outdoor.push({ id: `${name || 'objet'}#${n}`, name: name || 'objet', at: [x, z], rot: angle, size: [w, h, d], elevation: 0, color, colored, sh3dLevel: lv.name });
       continue;
     }
-    furniture.push({ kind: 'box', level: lv.id, at: [x, z], rot: angle, size: [w, h, d], elevation: elev, color, name });
+    furniture.push({ kind: 'box', level: lv.id, at: [x, z], rot: angle, size: [w, h, d], elevation: elev, color, colored, name });
   }
 
   // light radius from the size of its room

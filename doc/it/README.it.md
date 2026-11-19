@@ -42,6 +42,8 @@ Le opzioni si impostano nell'editor visuale della scheda (modificare la plancia,
 type: custom:house-view-card
 weather_entity: weather.casa          # meteo in diretta (facoltativo)
 rain_entity: binary_sensor.pioggia    # facoltativo: rilevatore di pioggia o sensore di intensità (mm/h) della vostra stazione
+wind_speed_entity: sensor.vento_vel     # facoltativo: sensore di velocità del vento (stazione o servizio meteo su internet)
+wind_bearing_entity: sensor.vento_dir   # facoltativo: sensore di direzione del vento (gradi o punti cardinali)
 mode: live                            # live (ora reale) | simulation (cursori ora / data / meteo)
 view: Vue générale                    # vista iniziale (facoltativa): il nome mostrato sul suo pulsante
 show_views: true                      # pulsanti delle viste della telecamera
@@ -66,11 +68,12 @@ light_entities: [light.salotto, ...]  # facoltativo: limita le luci considerate
 - **Stanze ↔ aree**: una stanza della pianta è collegata all'area di Home Assistant con lo stesso nome (accenti e maiuscole ignorati). ⚙ elenca le stanze senza area corrispondente; ✎ → *Rooms ↔ Home Assistant areas* permette di scegliere un'altra area, o nessuna, stanza per stanza.
 - **Luci**: stato, colore e intensità delle entità `light.*` dell'area di ogni stanza.
 - **Meteo**: l'entità meteo `weather_entity` decide il tempo mostrato: pioggia (`rainy`, `pouring`, `hail`), neve (`snowy`, `snowy-rainy`), temporale (`lightning`, `lightning-rainy`), nebbia, nuvole; temperatura, vento e nuvolosità vengono ripresi se disponibili. Con `rain_entity` (un rilevatore di pioggia `binary_sensor`, oppure un sensore di intensità in mm/h), la pioggia segue ciò che cade davvero a casa vostra: piove sul sensore → pioggia, più o meno fitta secondo l'intensità misurata; il servizio meteo annuncia pioggia ma il sensore è asciutto → cielo coperto senza pioggia (temporale: lampi senza pioggia). Neve e temporale restano decisi dal servizio meteo, perché un pluviometro non li distingue; un totale («pioggia di oggi» in mm) viene ignorato, perché non dice se sta piovendo adesso.
+- **Vento e intensità della pioggia**: con il vento pioggia e neve cadono inclinate, nel verso in cui soffia: più il vento è forte, più sono inclinate (calma → verticale, 60 km/h e oltre → circa 50°). La direzione segue il nord della pianta: un vento da ovest spinge quindi la pioggia verso il lato est della casa. Velocità e direzione vengono dall'entità meteo (`wind_speed`, `wind_bearing`), oppure dai vostri sensori con `wind_speed_entity` (km/h, m/s, mph, kn, ft/s, Beaufort) e `wind_bearing_entity` (gradi, o punti cardinali come `NO`): una stazione meteo, o i sensori di un servizio meteo su internet. La quantità di pioggia decide l'aspetto della pioggia: una pioviggine è rada, lenta e corta, un acquazzone fitto, veloce e lungo. Viene dall'intensità di `rain_entity` (mm/h; da 8 mm/h acquazzone), altrimenti dall'entità meteo (`pouring` è più forte di `rainy`). Un sensore non disponibile lascia decidere l'entità meteo.
 - **Zoom su una stanza**: un tocco ingrandisce la stanza (tetto e piani superiori nascosti); un secondo tocco sulla stessa stanza commuta le sue luci; *← stanza* torna alla vista precedente.
 - **Anteprima** (pulsante meteo): forza una stagione (primavera, estate, autunno, inverno), un tempo (sereno, nuvoloso, pioggia, temporale, neve, nebbia) o un momento (mattino, mezzogiorno, crepuscolo, notte), anche combinati; si torna alla diretta con il pulsante *Preview … ✕*, oppure automaticamente dopo 3 minuti. In modalità simulazione sono scorciatoie verso i cursori.
 - **Telecamera**: il pulsante in alto a destra sblocca o blocca la telecamera senza toccare la configurazione.
 - **Temperature**: il sensore di temperatura dell'area (impostazione dell'area in Home Assistant), altrimenti il primo `sensor.*` con `device_class: temperature` dell'area; mostrate al passaggio del cursore e come livello (🌡).
-- **Modalità simulazione**: ☀ apre ora (con scorrimento), data, meteo predefinito, nuvole, precipitazioni, vento, temperatura e neve.
+- **Modalità simulazione**: ☀ apre ora (con scorrimento), data, meteo predefinito, nuvole, precipitazioni, vento (forza e direzione), temperatura e neve.
 - **Strade**: disegnate come asfalto sul rilievo (disattivabili in ⚙).
 - **Prestazioni**: il rendering si ferma quando la scheda non è visibile; i volumi di luce vengono ricalcolati solo quando cambia uno stato utile.
 
@@ -83,6 +86,15 @@ light_entities: [light.salotto, ...]  # facoltativo: limita le luci considerate
 - **Calibrazione**: rotazione, specchio e scala; *Calibrate with a tap* calcola la rotazione quando si tocca la posizione reale del robot uscito dalla base; *remember* registra le coordinate della base per le altre marche.
 - **Percentuale di una stanza**: parte del pavimento percorsa dal robot (stima: si suppone accessibile l'80 % del pavimento); l'avanzamento complessivo viene dal sensore del robot quando esiste (Roborock: `cleaning_progress`).
 - *Test the animation* riproduce una pulizia accelerata (con o senza errore) senza avviare il robot.
+
+## Catalogo: alberi e oggetti
+
+Gli alberi e i mobili non sono scritti nella scheda: vengono dal [catalogo della casa](https://github.com/Elwinmage/house-catalog), dove aggiungere una specie o un oggetto è una pull request, non una nuova versione di questa integrazione.
+
+- **Alberi**: ogni specie ha fino a quattro aspetti, uno per stagione: colore e densità del fogliame, fioritura, frutti, foglie a terra. La vista passa da una stagione alla successiva giorno dopo giorno (quercia, pino, tasso, ciliegio e albicocco per cominciare). Sono le specie proposte quando si pianta un albero nell'editor, entro le altezze indicate dal catalogo.
+- **Oggetti**: un mobile della pianta il cui nome contiene una parola chiave di un oggetto del catalogo (`Chaise`, `Chair`, `Sedia`…) viene disegnato con esso, nel posto e con le dimensioni del mobile, invece di una semplice scatola; quando la pianta dà un colore al mobile, l'oggetto lo prende sulle sue parti colorabili. Allo stesso modo una pianta chiamata come un albero del catalogo (`Ciliegio`, `Yew`) viene disegnata come quell'albero.
+- **Aggiornamenti**: l'integrazione scarica il catalogo da GitHub in background (la scheda non accede mai alla rete) e funziona offline con la copia inclusa. Il dispositivo *House view catalog* ha un'entità di aggiornamento per sezione (alberi, oggetti), un interruttore *Aggiornamento automatico* (attivo per impostazione predefinita) e un pulsante *Aggiorna ora*.
+- **Le vostre voci**: con l'[editor dei cataloghi](https://github.com/Elwinmage/catalog-editor), un albero o un oggetto salvato è usato subito dalla vista, prima di proporlo al catalogo (o senza proporlo).
 
 ## Editor (✎)
 
@@ -177,6 +189,7 @@ pre-commit run --all-files
 - **Pagina di prova senza Home Assistant**: `python3 card/test/harness/server.py` (finto server dell'API), poi http://localhost:8765/card/test/harness/index.html
 - **Immagini del marchio**: `custom_components/house_view/brand/` (icona e logo, chiaro e scuro), servite da Home Assistant 2026.3+ senza passare dal repository `home-assistant/brands`. Sorgenti vettoriali in `assets/brand/`; `scripts/build_brand.sh` rigenera i PNG (`rsvg-convert`, ImageMagick, carattere Inter).
 - **CI** (`.github/workflows/`): `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + compilazione), `release.yml` (avviato a mano con la versione: aggiorna `manifest.json` e `card/package.json`, compila la scheda, crea il tag, pubblica il rilascio con `house_view.zip`).
+- **Client del catalogo**: `catalog_pack.py` e `catalog_runtime.py` sono copie di `reeftech-catalog/client/` (il client conosce solo le proprie sezioni: `catalog.py` gli dichiara quelle della casa); `house_catalog_sections.py` e `catalog_builtin*/` sono copie della descrizione e delle voci di `house-catalog`. Tutti sono scritti dallo `scripts/sync_client.py` di quei repository: si modificano lì, mai qui.
 
 `card/src/engine.js` è il motore 3D (un'istanza per scheda, senza dipendenza da Home Assistant); `card/src/ha-bridge.js` converte lo stato di Home Assistant in dati per il motore; `card/src/engine/` contiene i moduli del prototipo (geometria, vegetazione, terreno, luci…).
 
@@ -186,7 +199,7 @@ pre-commit run --all-files
 2. ✅ Editor nella scheda: oggetti esterni, alberi, correzioni del suolo, viste personalizzate.
 3. ✅ Scaricamento del terreno da parte dell'integrazione per la Francia (IGN), strade, foto del suolo, recinzioni, entità collocate, robot aspirapolvere, zoom su una stanza, anteprima stagione / meteo, backup GitHub.
 4. ✅ Altri paesi: rilievo Mapterhorn, edifici e strade OpenStreetMap (da confermare paese per paese). In seguito: catasto e foto aerea dei paesi che li pubblicano come dati aperti.
-5. Catalogo (alberi a quattro stagioni, oggetti) gestito da `catalog_editor`.
+5. ✅ Catalogo (alberi a quattro stagioni, oggetti) letto da `house-catalog` e modificato con `catalog_editor`. Poi: altre specie e oggetti, modelli di irrigatori.
 
 ## Licenza
 

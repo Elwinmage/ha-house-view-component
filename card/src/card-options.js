@@ -39,6 +39,8 @@ export function editorSchema(t) {
         { name: 'mode', selector: { select: { mode: 'dropdown', options: choices('mode', ['live', 'simulation']) } } },
         { name: 'weather_entity', selector: { entity: { domain: 'weather' } } },
         { name: 'rain_entity', selector: { entity: { domain: ['binary_sensor', 'sensor'] } } },
+        { name: 'wind_speed_entity', selector: { entity: { domain: 'sensor' } } },
+        { name: 'wind_bearing_entity', selector: { entity: { domain: 'sensor' } } },
       ],
       true,
     ),

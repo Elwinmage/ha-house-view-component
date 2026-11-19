@@ -6,6 +6,7 @@ The integration stores the plan (scene), the terrain and the manual edits, and s
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -15,6 +16,8 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .catalog import CATALOGS, PLATFORMS
+from .catalog_runtime import async_setup_catalog, async_unload_catalog
 from .const import CARD_URL, CONF_LOCK, DOMAIN
 from .http import all_views
 from .store import HouseViewStore
@@ -33,9 +36,10 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(FRONTEND_FILE), cache_headers=False)])
     manifest = json.loads(await hass.async_add_executor_job((Path(__file__).parent / "manifest.json").read_text))
     if "frontend" in hass.config.components:  # not loaded in headless setups
-        add_extra_js_url(
-            hass, f"{CARD_URL}?v={manifest['version']}"
-        )  # version in the URL busts the browser cache on update
+        # the version and the content of the bundle in the URL: a new release, or a bundle built again under the
+        # same version, busts the browser cache
+        digest = hashlib.sha256(await hass.async_add_executor_job(FRONTEND_FILE.read_bytes)).hexdigest()[:8]
+        add_extra_js_url(hass, f"{CARD_URL}?v={manifest['version']}-{digest}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -50,6 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.http.register_view(view)
         await _async_register_card(hass)
         hass.data[_VIEWS_REGISTERED] = True
+    # trees and objects: downloaded in the background, the built-in snapshot serves meanwhile
+    for spec in CATALOGS:
+        await async_setup_catalog(hass, entry, spec)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
@@ -64,5 +72,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """The views stay registered but answer 404 while the entry is unloaded."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    for spec in CATALOGS:
+        await async_unload_catalog(hass, entry, spec)
     hass.data.pop(DOMAIN, None)
-    return True
+    return unloaded

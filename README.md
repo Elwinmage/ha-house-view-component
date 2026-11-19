@@ -42,6 +42,8 @@ The options are set in the visual editor of the card (edit the dashboard, then *
 type: custom:house-view-card
 weather_entity: weather.home          # live weather (optional)
 rain_entity: binary_sensor.rain       # optional: rain detector or rain rate sensor (mm/h) of your weather station
+wind_speed_entity: sensor.wind_speed   # optional: wind speed sensor (weather station or internet weather service)
+wind_bearing_entity: sensor.wind_dir  # optional: wind direction sensor (degrees or compass points)
 mode: live                            # live (real time) | simulation (time / date / weather sliders)
 view: Vue générale                    # starting view (optional): the name shown on its button
 show_views: true                      # camera view buttons
@@ -66,11 +68,12 @@ light_entities: [light.living, ...]   # optional: restricts the lights taken int
 - **Rooms ↔ areas**: a room of the plan is linked to the Home Assistant area of the same name (accents and case ignored). ⚙ lists the rooms without a matching area; ✎ → *Rooms ↔ Home Assistant areas* lets you pick another area, or none, room by room.
 - **Lights**: state, colour and brightness of the `light.*` entities of the area of each room.
 - **Weather**: the weather entity `weather_entity` decides the weather shown: rain (`rainy`, `pouring`, `hail`), snow (`snowy`, `snowy-rainy`), thunderstorm (`lightning`, `lightning-rainy`), fog, clouds; its temperature, wind and cloud cover are used when provided. With `rain_entity` (a rain detector `binary_sensor`, or a rain rate sensor in mm/h), the rain follows what really falls at your place: rain on the sensor → rain, heavier or lighter with the measured rate; the weather service says rain but the sensor is dry → overcast sky without rain (thunderstorm: lightning without rain). Snow and thunderstorms stay with the weather service, since a rain gauge cannot tell them apart; a cumulated amount ("rain today" in mm) is ignored, as it does not say whether it is raining now.
+- **Wind and rain intensity**: rain and snow fall at a slant when the wind blows, leaning the way it blows: the stronger the wind, the more they lean (calm → vertical, 60 km/h and more → about 50°). The direction follows the north of the plan, so a west wind pushes the rain toward the east side of your house. Wind speed and direction come from the weather entity (`wind_speed`, `wind_bearing`), or from sensors of your own with `wind_speed_entity` (km/h, m/s, mph, kn, ft/s, Beaufort) and `wind_bearing_entity` (degrees, or compass points such as `NW`): a weather station, or the sensors of an internet weather service. The amount of rain sets how the rain looks: a drizzle is sparse, slow and short, a downpour dense, fast and long. It comes from the rate of `rain_entity` (mm/h; 8 mm/h and more is a downpour), else from the weather entity (`pouring` is heavier than `rainy`). A sensor that is unavailable leaves the weather entity in charge.
 - **Zoom on a room**: a tap zooms on the room (roof and upper floors hidden); a second tap on the same room toggles its lights; *← room* goes back to the previous view.
 - **Preview** (weather button): forces a season (spring, summer, autumn, winter), a weather (clear, cloudy, rain, thunderstorm, snow, fog) or a moment (morning, noon, dusk, night), which can be combined; back to live with the *Preview … ✕* button, or automatically after 3 minutes. In simulation mode these are shortcuts to the sliders.
 - **Camera**: the button at the top right unlocks or locks the camera without touching the configuration.
 - **Temperatures**: the temperature sensor of the area (set on the area in Home Assistant), else the first `sensor.*` with `device_class: temperature` of the area; shown on hover and as a layer (🌡).
-- **Simulation mode**: ☀ opens time (with playback), date, weather preset, clouds, precipitation, wind, temperature and snow.
+- **Simulation mode**: ☀ opens time (with playback), date, weather preset, clouds, precipitation, wind (strength and direction), temperature and snow.
 - **Roads**: drawn as asphalt on the relief (can be switched off in ⚙).
 - **Performance**: rendering stops when the card is not visible; the light volumes are only rebuilt when a useful state changes.
 
@@ -83,6 +86,15 @@ light_entities: [light.living, ...]   # optional: restricts the lights taken int
 - **Calibration**: rotation, mirror and scale; *Calibrate with a tap* computes the rotation when you tap the real position of the robot once out of its dock; *remember* stores the coordinates of the dock for other brands.
 - **Percentage of a room**: share of the floor covered by the robot (estimate: 80 % of the floor is assumed reachable); the overall progress comes from the sensor of the robot when there is one (Roborock: `cleaning_progress`).
 - *Test the animation* plays an accelerated cleaning (with or without an error) without starting the robot.
+
+## Catalog: trees and objects
+
+The trees and the pieces of furniture are not built into the card: they come from the [house catalog](https://github.com/Elwinmage/house-catalog), where adding a species or an object is a pull request, not a new version of this integration.
+
+- **Trees**: each species has up to four renderings, one per season: colour and density of the foliage, blossom, fruits, leaves on the ground. The view blends from one season to the next, day after day (oak, pine, yew, cherry tree and apricot tree to start with). They are the species offered when you plant a tree in the editor, within the heights the catalog gives.
+- **Objects**: a piece of furniture of the plan whose name holds a keyword of a catalog object (`Chaise`, `Chair`, `Stuhl`…) is drawn with it, at the place and size of the piece, instead of a plain box; when the plan gives the piece a colour, the object takes it on its tinted parts. Likewise a plant of the plan named after a tree of the catalog (`Cerisier`, `Yew`) is drawn as that tree.
+- **Updates**: the integration downloads the catalog from GitHub in the background (the card never calls the network) and works offline with the copy it ships. The device *House view catalog* has an update entity per section (trees, objects), an *Automatic update* switch (on by default) and an *Update now* button.
+- **Your own entries**: with the [catalog editor](https://github.com/Elwinmage/catalog-editor), a tree or an object you save is used by the view at once, before (or without) proposing it to the catalog.
 
 ## Editor (✎)
 
@@ -177,6 +189,7 @@ pre-commit run --all-files
 - **Test page without Home Assistant**: `python3 card/test/harness/server.py` (fake API server), then http://localhost:8765/card/test/harness/index.html
 - **Brand images**: `custom_components/house_view/brand/` (icon and logo, light and dark), served by Home Assistant 2026.3+ without going through the `home-assistant/brands` repository. Vector sources in `assets/brand/`; `scripts/build_brand.sh` rebuilds the PNG files (`rsvg-convert`, ImageMagick, Inter font).
 - **CI** (`.github/workflows/`): `validate.yml` (hassfest + HACS), `tests.yml` (pre-commit, pytest, vitest + build), `release.yml` (started by hand with the version: updates `manifest.json` and `card/package.json`, builds the card, tags, publishes the release with `house_view.zip`).
+- **Catalog client**: `catalog_pack.py` and `catalog_runtime.py` are copies of `reeftech-catalog/client/` (the client only knows its own sections: `catalog.py` declares the ones of the house to it); `house_catalog_sections.py` and `catalog_builtin*/` are copies of the description and of the entries of `house-catalog`. All are written by the `scripts/sync_client.py` of those repositories: change them there, never here.
 
 `card/src/engine.js` is the 3D engine (one instance per card, no dependency on Home Assistant); `card/src/ha-bridge.js` turns the state of Home Assistant into data for the engine; `card/src/engine/` holds the modules of the prototype (geometry, vegetation, terrain, lights…).
 
@@ -186,7 +199,7 @@ pre-commit run --all-files
 2. ✅ Editors in the card: outdoor objects, trees, ground corrections, custom views.
 3. ✅ Terrain fetched by the integration for France (IGN), roads, ground photo, fences, placed entities, robot vacuum, room zoom, season / weather preview, GitHub backup.
 4. ✅ Other countries: Mapterhorn relief, OpenStreetMap buildings and roads (to be confirmed country by country). Next: cadastre and aerial photo of the countries that publish them as open data.
-5. Catalogue (four-season trees, objects) managed by `catalog_editor`.
+5. ✅ Catalog (four-season trees, objects) read from `house-catalog` and edited with `catalog_editor`. Next: more species and objects, sprinkler models.
 
 ## License
 

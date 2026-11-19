@@ -12,6 +12,23 @@ ROOT = pathlib.Path(__file__).parents[3]  # repository root
 DB = {}
 PASSWORD = sys.argv[2] if len(sys.argv) > 2 else ""  # edit lock, as set in the options of the integration
 TOKENS = set()
+# built-in snapshots of the house catalog: what the integration answers to `house_view/catalog` before any download
+BUILTIN = {"trees": ("catalog_builtin", "tree.json"), "objects": ("catalog_builtin_objects", "object.json")}
+
+
+def catalog(section):
+    """The answer of the websocket command `house_view/catalog`, from the built-in snapshot of a section."""
+    folder, descriptor = BUILTIN[section]
+    base = ROOT / "custom_components" / "house_view" / folder / "items"
+    items = {}
+    for entry in sorted(base.iterdir()) if base.is_dir() else []:
+        url = f"/custom_components/house_view/{folder}/items/{entry.name}"
+        items[entry.name] = json.loads((entry / descriptor).read_text(encoding="utf-8")) | {
+            "source": "builtin",
+            "image": f"{url}/image.webp" if (entry / "image.webp").is_file() else None,
+            "thumb": f"{url}/thumb.webp" if (entry / "thumb.webp").is_file() else None,
+        }
+    return {"section": section, "format": 1, "version": None, "updating": False, "data": {"items": items}}
 
 
 class H(SimpleHTTPRequestHandler):
@@ -34,6 +51,9 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         k = self._key()
+        if self.path.startswith("/harness/catalog/"):
+            section = self.path.rsplit("/", 1)[1]
+            return self._send(200, json.dumps(catalog(section)).encode()) if section in BUILTIN else self._send(404)
         if k is None:
             return super().do_GET()
         if k == "unlock":

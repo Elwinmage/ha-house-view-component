@@ -1,5 +1,6 @@
 // Pure helpers that turn Home Assistant state into the live data the engine understands.
 // No DOM, no three.js: unit-tested in test/.
+import { bearingDeg, windKmh, windStrength } from './wind.js';
 
 const norm = (s) =>
   String(s || '')
@@ -28,20 +29,44 @@ export const WEATHER_MAP = {
   exceptional: 'cloudy',
 };
 
+/** Conditions that say something the preset does not: a downpour, a windy day without a measured speed. */
+const POURING = 1;
+const WINDY = 0.7;
+
 /**
- * Live weather from a `weather.*` state object. Returns the engine fields (preset + measured overrides).
- * Wind speed is read in km/h (HA default unit) and mapped to the engine's 0..1 scale.
+ * Live weather from a `weather.*` state object. Returns the engine fields (preset + measured overrides): the wind
+ * speed in the unit the entity declares (km/h by default) on the engine's 0..1 scale, and where the wind comes from
+ * (`wind_bearing`: degrees, or a compass point read in the language `lang`).
  */
-export function weatherLive(st) {
+export function weatherLive(st, lang = 'en') {
   if (!st) return {};
   const out = {};
   const preset = WEATHER_MAP[st.state];
   if (preset) out.weather = preset;
   const a = st.attributes || {};
   if (st.state === 'partlycloudy') out.cloud = 0.45;
+  if (st.state === 'pouring') out.precip = POURING;
+  if (st.state === 'windy' || st.state === 'windy-variant') out.wind = WINDY;
   if (Number.isFinite(a.cloud_coverage)) out.cloud = Math.min(Math.max(a.cloud_coverage / 100, 0), 1);
   if (Number.isFinite(a.temperature)) out.temp = a.temperature;
-  if (Number.isFinite(a.wind_speed)) out.wind = Math.min(Math.max(a.wind_speed / 60, 0), 1);
+  const kmh = Number.isFinite(a.wind_speed) ? windKmh(a.wind_speed, a.wind_speed_unit) : null;
+  if (kmh !== null) out.wind = windStrength(kmh);
+  const bearing = bearingDeg(a.wind_bearing, lang);
+  if (bearing !== null) out.windBearing = bearing;
+  return out;
+}
+
+/**
+ * Reading of the wind sensors (a weather station, or the sensors of an internet weather service): the fields they
+ * can tell, among { wind (0..1), windBearing (degrees) }. They take over the wind of the weather entity, field by
+ * field: an unavailable sensor leaves what the weather entity says.
+ */
+export function windSensors(speedSt, bearingSt, lang = 'en') {
+  const out = {};
+  const kmh = speedSt ? windKmh(speedSt.state, (speedSt.attributes || {}).unit_of_measurement) : null;
+  if (kmh !== null) out.wind = windStrength(kmh);
+  const bearing = bearingSt ? bearingDeg(bearingSt.state, lang) : null;
+  if (bearing !== null) out.windBearing = bearing;
   return out;
 }
 

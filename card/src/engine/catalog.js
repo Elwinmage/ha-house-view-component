@@ -1,7 +1,19 @@
-// Prototype "catalog": procedural stand-ins for what would be catalog assets
-// (low-poly meshes / sprites per species and per season) in the real project.
+// Vegetation and furniture: a few built-in procedural species and pieces, and the entries of the house catalog
+// (trees, objects: data only, drawn here; see ../catalog-lib.js and doc/format.md of house-catalog).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {
+  BLOSSOM_DENSITY,
+  FORK,
+  crownSolids,
+  drawableObject,
+  drawableTree,
+  fitScale,
+  matchEntry,
+  thinning,
+  treeLook,
+  treeSpecies,
+} from '../catalog-lib.js';
 
 // ---------------------------------------------------------------- helpers
 
@@ -97,6 +109,164 @@ export const SPECIES = {
   planter: { name: 'Jardinière', kind: 'planter', height: 0.9, crown: 0.4, trunkR: 0.05, trunk: '#8b5a3c', deciduous: true, winterScale: 0.15, leaf: { spring: '#f5b3d1', summer: '#ff6f91', autumn: '#d28a3a', winter: '#8a7a5a' } },
 };
 
+const BUILTIN_SPECIES = { ...SPECIES };
+const CATALOG = { trees: {}, objects: {} };
+
+/**
+ * Take the entries of the house catalog: its trees join the species (an id of the catalog replaces the built-in
+ * species of the same name), its objects are drawn in place of the furniture of the plan that names them.
+ * Entries the engine cannot read (a newer format) are left out. `lang`: language of the names.
+ */
+export function setCatalog({ trees = {}, objects = {} } = {}, lang = 'en') {
+  for (const key of Object.keys(SPECIES)) delete SPECIES[key];
+  Object.assign(SPECIES, BUILTIN_SPECIES);
+  CATALOG.trees = {};
+  for (const id of Object.keys(trees).sort()) {
+    if (!drawableTree(trees[id])) continue;
+    CATALOG.trees[id] = trees[id];
+    SPECIES[id] = treeSpecies(id, trees[id], lang);
+  }
+  CATALOG.objects = Object.fromEntries(Object.entries(objects).filter(([, object]) => drawableObject(object)));
+}
+
+/** Species of the catalog a plant of the plan stands for, by its name (keywords of the entries), or null. */
+export const catalogTreeFor = (name) => (name ? matchEntry(name, CATALOG.trees) : null);
+/** Object of the catalog a piece of furniture of the plan stands for, by its name, or null. */
+export function catalogObjectFor(name) {
+  const id = name ? matchEntry(name, CATALOG.objects) : null;
+  return id ? CATALOG.objects[id] : null;
+}
+
+/** Dots on a full crown, at most: flowers, fruits; and fallen leaves on the ground. */
+const MAX_DOTS = { flowers: 170, fruits: 110, fallen: 150 };
+/** Size of a dot, as a share of the crown radius. */
+const DOT_SIZE = { flowers: 0.075, fruits: 0.05, fallen: 0.06 };
+
+/** Every vertex of a clump keeps the centre it shrinks toward when the foliage gets thinner (see thinMaterial). */
+function withCentre(geo, centre) {
+  const out = basic(geo);
+  const n = out.attributes.position.count;
+  const data = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    data[i * 3] = centre[0];
+    // a cone thins toward its axis: its height stays (centre at the height of each vertex)
+    data[i * 3 + 1] = centre[1] === null ? out.attributes.position.getY(i) : centre[1];
+    data[i * 3 + 2] = centre[2];
+  }
+  out.setAttribute('aCentre', new THREE.BufferAttribute(data, 3));
+  return out;
+}
+
+/** A limb between two points, thinner at its end. */
+function limb(from, to, r0, r1, sides = 5) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const g = new THREE.CylinderGeometry(r1, r0, dir.length(), sides);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize()));
+  g.translate((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2);
+  return g;
+}
+
+/**
+ * Geometry of a tree of the catalog, for its default height: trunk and branches, the full crown (thinned by the
+ * material, season after season), and the dots some seasons show: flowers and fruits on the crown, fallen leaves on
+ * the ground. Dots are merged in a fixed order, so that drawing the first ones shows a share of them.
+ */
+function catalogGeometry(tree, id) {
+  const top = tree.height.default;
+  const R = tree.crown_radius;
+  const r = tree.trunk.radius;
+  const fork = tree.trunk.height + (top - tree.trunk.height) * FORK;
+  const trunk = new THREE.CylinderGeometry(r * 0.6, r, fork, 7);
+  trunk.translate(0, fork / 2, 0);
+  const wood = [trunk];
+  if (tree.shape === 'round') {
+    for (let i = 0; i < 5; i++) {
+      const angle = i * 2.4 + 0.5;
+      const reach = R * (0.5 + 0.12 * (i % 3));
+      const from = new THREE.Vector3(0, fork - (fork - tree.trunk.height) * 0.5 * (i % 2), 0);
+      const to = new THREE.Vector3(reach * Math.cos(angle), fork + (top - fork) * (0.35 + 0.1 * (i % 2)), reach * Math.sin(angle));
+      wood.push(limb(from, to, r * 0.4, r * 0.1));
+    }
+  } else {
+    wood.push(limb(new THREE.Vector3(0, fork, 0), new THREE.Vector3(0, top * 0.97, 0), r * 0.6, 0.01, 6));
+  }
+
+  const solids = crownSolids(tree);
+  const centreOf = (s) => (s.kind === 'blob' ? s.at : [s.at[0], null, s.at[2]]);
+  const leaves = mergeGeometries(
+    solids.map((s) => {
+      if (s.kind === 'blob') {
+        const g = jitter(new THREE.IcosahedronGeometry(1, 1), 0.28);
+        g.scale(...s.size);
+        g.translate(...s.at);
+        return withCentre(g, centreOf(s));
+      }
+      const g = jitter(new THREE.ConeGeometry(s.size[0], s.size[1], 8), 0.12);
+      g.translate(s.at[0], s.at[1] + s.size[1] / 2, s.at[2]);
+      return withCentre(g, centreOf(s));
+    }),
+  );
+
+  // the same dots for every tree of the species, whatever the season: only their number and colour change
+  let seed = 7;
+  for (const ch of id) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
+  const rand = mulberry32(seed);
+  const onCrown = () => {
+    const s = solids[Math.floor(rand() * solids.length)];
+    const a = rand() * Math.PI * 2;
+    if (s.kind === 'blob') {
+      const y = -0.6 + rand() * 1.6;
+      const ring = Math.sqrt(1 - y * y);
+      return { s, at: [s.at[0] + s.size[0] * ring * Math.cos(a), s.at[1] + s.size[1] * y, s.at[2] + s.size[2] * ring * Math.sin(a)] };
+    }
+    const up = 0.05 + rand() * 0.85;
+    return { s, at: [s.at[0] + s.size[0] * (1 - up) * Math.cos(a), s.at[1] + s.size[1] * up, s.at[2] + s.size[0] * (1 - up) * Math.sin(a)] };
+  };
+  const has = (key) => Object.values(tree.seasons).some((season) => season[key]);
+  const dots = (key) => {
+    if (!has(key)) return null;
+    const size = R * DOT_SIZE[key];
+    const list = [];
+    for (let i = 0; i < MAX_DOTS[key]; i++) {
+      const { s, at } = onCrown();
+      const g = new THREE.OctahedronGeometry(size, 0);
+      g.translate(...at);
+      list.push(withCentre(g, centreOf(s)));
+    }
+    return mergeGeometries(list);
+  };
+  let fallen = null;
+  if (has('fallen')) {
+    const size = R * DOT_SIZE.fallen;
+    const list = [];
+    for (let i = 0; i < MAX_DOTS.fallen; i++) {
+      const a = rand() * Math.PI * 2;
+      const reach = R * 1.1 * Math.sqrt(rand());
+      const g = new THREE.CircleGeometry(size, 6);
+      g.rotateX(-Math.PI / 2);
+      g.translate(reach * Math.cos(a), 0.04, reach * Math.sin(a));
+      list.push(basic(g));
+    }
+    fallen = mergeGeometries(list);
+  }
+  return { trunk: merge(wood), leaves, leafY: 0, flowers: dots('flowers'), fruits: dots('fruits'), fallen };
+}
+
+/**
+ * A material whose geometry shrinks toward the centres its vertices carry (aCentre): thinner foliage, clump by
+ * clump, without touching the geometry. `thin` is the uniform ({ value }) shared with whoever sets the season.
+ */
+function thinMaterial(material, thin) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uThin = thin;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 aCentre;\nuniform float uThin;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = aCentre + (transformed - aCentre) * uThin;');
+  };
+  material.customProgramCacheKey = () => 'thin';
+  return material;
+}
+
 function speciesGeometry(sp, opts = {}) {
   const c = sp.crown;
   if (sp.kind === 'round') {
@@ -182,9 +352,13 @@ export function createVegetation(placements, surfaces) {
     const ck = key + (opts.length ? `:${opts.length}` : '');
     if (cache.has(ck)) return cache.get(ck);
     const sp = SPECIES[key];
-    const geo = speciesGeometry(sp, opts);
+    const fromCatalog = sp.kind === 'catalog';
+    const geo = fromCatalog ? catalogGeometry(sp.tree, key) : speciesGeometry(sp, opts);
+    const thin = { value: 1 };
     if (!leafMats.has(key)) {
-      const lm = new THREE.MeshStandardMaterial({ color: sp.leaf.all || sp.leaf.summer, roughness: 0.95, flatShading: true });
+      const color = fromCatalog ? sp.tree.seasons.summer.foliage : sp.leaf.all || sp.leaf.summer;
+      const lm = new THREE.MeshStandardMaterial({ color, roughness: 0.95, flatShading: true });
+      if (fromCatalog) thinMaterial(lm, thin);
       leafMats.set(key, lm);
       const entry = { material: lm, key: `leaf:${key}`, snow: sp.deciduous ? 0.12 : 0.6, wet: 0.1, base: lm.color.clone() };
       surfaces.push(entry);
@@ -192,6 +366,20 @@ export function createVegetation(placements, surfaces) {
     }
     const trunkMat = new THREE.MeshStandardMaterial({ color: sp.trunk, roughness: 0.9 });
     const res = { sp, geo, leafMat: leafMats.get(key), trunkMat };
+    if (fromCatalog) {
+      // the shadow of a thinned crown is thinned too; the dots follow the clump they sit on
+      res.thin = thin;
+      res.leafDepth = thinMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), thin);
+      res.dotThin = { value: 1 };
+      const dotMat = () => thinMaterial(new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true }), res.dotThin);
+      res.dots = {};
+      if (geo.flowers) res.dots.flowers = { geo: geo.flowers, mat: dotMat(), per: 24, max: MAX_DOTS.flowers };
+      if (geo.fruits) res.dots.fruits = { geo: geo.fruits, mat: dotMat(), per: 24, max: MAX_DOTS.fruits };
+      if (geo.fallen) {
+        const mat = new THREE.MeshStandardMaterial({ roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+        res.dots.fallen = { geo: geo.fallen, mat, per: 18, max: MAX_DOTS.fallen };
+      }
+    }
     cache.set(ck, res);
     return res;
   };
@@ -208,6 +396,15 @@ export function createVegetation(placements, surfaces) {
     leaves.position.y = res.geo.leafY;
     if (res.sp.kind === 'conifer') leaves.position.y = 0;
     g.add(trunk, leaves);
+    if (res.sp.kind === 'catalog') {
+      leaves.customDepthMaterial = res.leafDepth;
+      for (const [name, dot] of Object.entries(res.dots)) {
+        const mesh = new THREE.Mesh(dot.geo, dot.mat);
+        mesh.receiveShadow = true;
+        mesh.userData.dots = name;
+        g.add(mesh);
+      }
+    }
     const s = p.scale ?? (p.species === 'hedge' ? 1 : 0.9 + rand() * 0.25);
     g.scale.setScalar(s);
     g.position.set(p.at[0], 0, p.at[1]);
@@ -228,7 +425,7 @@ export function createVegetation(placements, surfaces) {
     /** Add n random trees outside the plot, for the performance stress test. */
     addStress(n, plot) {
       const r = mulberry32(Date.now() & 0xffff);
-      const kinds = ['maple', 'oak', 'birch', 'pine'];
+      const kinds = ['maple', 'oak', 'birch', 'pine'].filter((k) => SPECIES[k]);
       let added = 0;
       while (added < n) {
         const x = -40 + r() * 100;
@@ -246,6 +443,24 @@ export function createVegetation(placements, surfaces) {
       for (const [key, sp] of Object.entries(SPECIES)) {
         const entry = leafMats.get(`${key}:entry`);
         if (!entry) continue;
+        if (sp.kind === 'catalog') {
+          // the season of the catalog: foliage colour and density, flowers, fruits, fallen leaves
+          const res = cache.get(key);
+          const look = treeLook(sp.tree, s);
+          entry.base.set(look.foliage);
+          res.thin.value = thinning(look.density);
+          res.leafy = look.density > 0.03;
+          // flowers on bare branches (blossom before the leaves) sit where a light foliage would be
+          res.dotThin.value = Math.max(res.thin.value, thinning(BLOSSOM_DENSITY));
+          for (const [name, dot] of Object.entries(res.dots)) {
+            const scatter = look[name];
+            dot.shown = Boolean(scatter);
+            if (!scatter) continue;
+            dot.mat.color.set(scatter.color);
+            dot.geo.setDrawRange(0, Math.max(1, Math.round(scatter.amount * dot.max)) * dot.per);
+          }
+          continue;
+        }
         if (sp.leaf.all) {
           entry.base.set(sp.leaf.all);
         } else {
@@ -259,6 +474,12 @@ export function createVegetation(placements, surfaces) {
         return { spring: 0.65, summer: 1, autumn: 0.8, winter: sp.winterScale ?? 0 }[season];
       };
       for (const inst of instances) {
+        if (inst.sp.kind === 'catalog') {
+          const res = cache.get(inst.key);
+          inst.leaves.visible = res.leafy;
+          for (const child of inst.leaves.parent.children) if (child.userData.dots) child.visible = res.dots[child.userData.dots].shown;
+          continue;
+        }
         const sc = scaleOf(inst.sp, s.from) * (1 - s.t) + scaleOf(inst.sp, s.to) * s.t;
         if (inst.sp.kind === 'hedge' || inst.sp.kind === 'conifer') {
           inst.leaves.scale.setScalar(1);
@@ -369,11 +590,55 @@ export function buildFixture(light, floorY = 0) {
  * level are merged into one mesh (vertex colors) so they cost a single draw call.
  * item: { at:[x,z], rot, size:[width,height,depth], elevation, color }
  */
+const DEG = Math.PI / 180;
+const UNIT = {
+  box: () => new THREE.BoxGeometry(1, 1, 1),
+  cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
+  sphere: () => new THREE.SphereGeometry(0.5, 16, 10),
+  cone: () => new THREE.ConeGeometry(0.5, 1, 16),
+};
+
+/** A geometry painted in one colour (vertex colours), without index, to be merged with the others. */
+function painted(geo, color) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const col = new THREE.Color(color);
+  const n = g.attributes.position.count;
+  const colors = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) col.toArray(colors, i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return g;
+}
+
+/**
+ * The parts of a catalog object, in its own frame (on the ground, centred, front toward +z), stretched to the size
+ * of the piece of furniture it stands for. Parts marked `tint` take `tint` when the plan gives the piece a colour.
+ */
+export function objectGeometries(object, size, tint) {
+  const fit = new THREE.Matrix4().makeScale(...fitScale(object.parts, size));
+  return object.parts.map((part) => {
+    const g = UNIT[part.shape]();
+    g.scale(part.width, part.height, part.depth);
+    const turn = new THREE.Euler((part.pitch || 0) * DEG, (part.yaw || 0) * DEG, (part.roll || 0) * DEG, 'YXZ');
+    const place = new THREE.Matrix4().makeTranslation(part.x || 0, (part.elevation || 0) + part.height / 2, part.z || 0);
+    g.applyMatrix4(fit.clone().multiply(place).multiply(new THREE.Matrix4().makeRotationFromEuler(turn)));
+    return painted(g, part.tint && tint ? tint : part.color);
+  });
+}
+
 export function buildBoxFurnitureMesh(items, baseY) {
   const geos = [];
   const col = new THREE.Color();
   for (const it of items) {
     const [w, h, d] = it.size;
+    const object = catalogObjectFor(it.name);
+    if (object) {
+      // drawn from the catalog: same place, same footprint and height as the box it replaces
+      const at = new THREE.Matrix4()
+        .makeTranslation(it.at[0], baseY + (it.elevation || 0), it.at[1])
+        .multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0)));
+      for (const g of objectGeometries(object, it.size, it.colored ? it.color : null)) geos.push(g.applyMatrix4(at));
+      continue;
+    }
     const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
     col.set(it.color || '#c8bfae');
     const n = g.attributes.position.count;
