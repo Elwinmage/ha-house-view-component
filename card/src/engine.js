@@ -20,6 +20,7 @@ import { buildTerrain, treesFromDsm, gridToPlan } from './engine/terrain.js';
 import { buildFence } from './fences.js';
 import { buildIrrigation } from './irrigation.js';
 import { buildRobot, buildDock } from './vacuum.js';
+import { rectCorners, pickFurniture } from './zones.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
 
@@ -106,6 +107,8 @@ export class HouseEngine {
     this.irrigOpts = {};
     this.roomFx = null; // { [roomId]: { color, mix, glow, blink } } (vacuum: room being cleaned, done, in error)
     this._robot = null;
+    this._robotMap = null;
+    this._zones = null; // clickable zones (media players, aquariums): see setZones
     this.env = new Environment(this.scene, this.renderer, {
       latitude: 43.6,
       northOffsetDeg: 0,
@@ -128,6 +131,10 @@ export class HouseEngine {
     this._ro.observe(container);
     this._down = null;
     const el = this.renderer.domElement;
+    // zones dragged on their surface in the editor: before the orbit controls (capture), which then stay still
+    el.addEventListener('pointerdown', (ev) => this._zoneDown(ev), true);
+    el.addEventListener('pointermove', (ev) => this._zoneMove(ev), true);
+    el.addEventListener('pointerup', (ev) => this._zoneUp(ev), true);
     el.addEventListener('pointerdown', (ev) => (this._down = [ev.clientX, ev.clientY]));
     el.addEventListener('pointerup', (ev) => this._click(ev));
     el.addEventListener('pointermove', (ev) => this._hover(ev));
@@ -816,7 +823,14 @@ export class HouseEngine {
           if (n.dot(ray.ray.direction) > 0) n.negate(); // the face seen by the camera
           const lv = cand.find((x) => x.mesh === wh.object).level;
           const inside = [wh.point.x + n.x * 0.3, wh.point.z + n.z * 0.3];
-          return { point: wh.point, normal: [n.x, n.z], level: lv.id, room: this.roomAt(lv.id, ...inside), floorY: lv.elevation };
+          return {
+            point: wh.point,
+            normal: [n.x, n.z],
+            level: lv.id,
+            room: this.roomAt(lv.id, ...inside),
+            floorY: lv.elevation,
+            mesh: wh.object,
+          };
         }
       }
     }
@@ -824,7 +838,7 @@ export class HouseEngine {
     const hit = ray.intersectObjects(cand, false)[0];
     if (hit) {
       const f = this.world.floors.find((x) => x.mesh === hit.object);
-      return { point: hit.point, room: f.room.id, level: f.level.id, floorY: hit.point.y };
+      return { point: hit.point, room: f.room.id, level: f.level.id, floorY: hit.point.y, mesh: hit.object };
     }
     let p = null;
     if (this.world.terrain) {
@@ -1020,6 +1034,281 @@ export class HouseEngine {
     this.scene.add(this._trail);
   }
 
+  /**
+   * Picture of the robot's own map laid on a floor, to line it up with the plan (settings of the vacuum):
+   * { image, corners: [[x, z] x 4] for its top-left, top-right, bottom-right and bottom-left pixels, y, level,
+   * opacity }, or null to remove it.
+   */
+  setRobotMap(m) {
+    let M = this._robotMap;
+    if (M && (!m || M.image !== m.image)) {
+      this.scene.remove(M.mesh);
+      M.mesh.geometry.dispose();
+      M.mesh.material.map.dispose();
+      M.mesh.material.dispose();
+      M = this._robotMap = null;
+    }
+    if (!m) return;
+    if (!M) {
+      const tex = new THREE.Texture(m.image);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
+      geo.setIndex([0, 3, 2, 0, 2, 1]);
+      // seen from both sides: a mirrored map turns its triangles over
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+      M = this._robotMap = { image: m.image, mesh: new THREE.Mesh(geo, mat) };
+      M.mesh.name = 'robot-map';
+      M.mesh.renderOrder = 5;
+      M.mesh.raycast = () => {}; // taps go through it, to the floor
+      this.scene.add(M.mesh);
+    }
+    const pos = M.mesh.geometry.attributes.position;
+    m.corners.forEach(([x, z], i) => pos.setXYZ(i, x, (m.y || 0) + 0.04, z));
+    pos.needsUpdate = true;
+    M.mesh.geometry.computeBoundingSphere();
+    M.mesh.material.opacity = m.opacity ?? 0.6;
+    M.mesh.userData.level = m.level || null;
+  }
+
+  // ------------------------------------------------------------ clickable zones
+
+  /**
+   * Zones a tap opens (media players, aquariums): `list` of zones (see zones.js). Drawn only while editing
+   * (`show`), in the colour of their kind, the selected one brighter; otherwise invisible but still tapped.
+   */
+  setZones(list, { show = false, sel = null } = {}) {
+    if (this._zones) {
+      this.scene.remove(this._zones);
+      this._zones.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+    }
+    const g = (this._zones = new THREE.Group());
+    g.name = 'zones';
+    for (const z of list || []) {
+      let geo = null;
+      if (z.shape === 'box' && z.box) {
+        const [w, h, d] = z.box.size;
+        // a hair larger than the piece, so that it is tapped (and drawn) over it
+        geo = new THREE.BoxGeometry(w + 0.04, h + 0.04, d + 0.04);
+        geo.applyMatrix4(
+          new THREE.Matrix4()
+            .makeTranslation(z.box.at[0], z.box.y0 + h / 2, z.box.at[1])
+            .multiply(new THREE.Matrix4().makeRotationY(-(z.box.rot || 0))),
+        );
+      } else if (z.rect) {
+        const c = rectCorners(z.rect);
+        geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(c.flat()), 3));
+        geo.setIndex([0, 3, 2, 0, 2, 1]);
+      }
+      if (!geo) continue;
+      const color = z.kind === 'aquarium' ? '#29d3e8' : '#b47cff';
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: z.id === sel ? 0.55 : 0.3,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        visible: show,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 6;
+      mesh.userData = { zone: z.id, level: z.level || null };
+      g.add(mesh);
+    }
+    this.scene.add(g);
+    this._applyZoneLevels();
+  }
+
+  _applyZoneLevels() {
+    if (!this._zones) return;
+    for (const m of this._zones.children) m.visible = !m.userData.level || this.visibility.levels[m.userData.level] !== false;
+  }
+
+  /**
+   * Surface a click is about to use, lit in yellow: { hit } of pickPoint (the face of the wall, or the floor of the
+   * room), { box } (a piece of furniture), plus `rect` (rectangle of the zone, drawn on it); null to remove it.
+   */
+  setTarget(spec) {
+    const old = this._hl;
+    if (old) {
+      this.scene.remove(old);
+      old.traverse((o) => {
+        if (o.geometry && !o.userData.shared) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+      this._hl = null;
+    }
+    if (!spec) return;
+    const g = (this._hl = new THREE.Group());
+    g.name = 'highlight';
+    const mat = (color, opacity) =>
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+    const hit = spec.hit;
+    if (hit && hit.mesh) {
+      let surface = null;
+      if (hit.normal) {
+        const geo = this._wallFace(hit);
+        if (geo) surface = new THREE.Mesh(geo, mat('#ffe14d', 0.55));
+      } else {
+        // the floor of the room: its own geometry, shared (not disposed here)
+        surface = new THREE.Mesh(hit.mesh.geometry, mat('#ffe14d', 0.45));
+        surface.matrixAutoUpdate = false;
+        surface.matrix.copy(hit.mesh.matrixWorld);
+        surface.userData.shared = true;
+      }
+      if (surface) {
+        surface.renderOrder = 7;
+        g.add(surface);
+      }
+    }
+    if (spec.box) {
+      const [w, h, d] = spec.box.size;
+      const geo = new THREE.BoxGeometry(w + 0.06, h + 0.06, d + 0.06);
+      geo.applyMatrix4(
+        new THREE.Matrix4()
+          .makeTranslation(spec.box.at[0], spec.box.y0 + h / 2, spec.box.at[1])
+          .multiply(new THREE.Matrix4().makeRotationY(-(spec.box.rot || 0))),
+      );
+      const m = new THREE.Mesh(geo, mat('#ffe14d', 0.45));
+      m.renderOrder = 7;
+      g.add(m);
+    }
+    if (spec.rect) {
+      const c = rectCorners(spec.rect);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(c.flat()), 3));
+      geo.setIndex([0, 3, 2, 0, 2, 1]);
+      const m = new THREE.Mesh(geo, mat(spec.color || '#29d3e8', 0.6));
+      m.renderOrder = 8;
+      g.add(m);
+      const edge = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(c.map((p) => new THREE.Vector3(...p))),
+        new THREE.LineBasicMaterial({ color: '#ffffff', depthTest: false }),
+      );
+      edge.renderOrder = 9;
+      g.add(edge);
+    }
+    this.scene.add(g);
+  }
+
+  /** Triangles of a wall mesh in the plane of the face hit, near the hit: the face of that wall (kept for reuse). */
+  _wallFace(hit) {
+    const mesh = hit.mesh;
+    const n = new THREE.Vector3(hit.normal[0], 0, hit.normal[1]);
+    const d = n.dot(hit.point);
+    const key = `${mesh.uuid}|${n.x.toFixed(3)},${n.z.toFixed(3)}|${d.toFixed(2)}`;
+    this._faces = this._faces || new Map();
+    if (this._faces.has(key)) return this._faces.get(key).clone();
+    const pos = mesh.geometry.attributes.position;
+    const idx = mesh.geometry.index;
+    const count = idx ? idx.count : pos.count;
+    const m = mesh.matrixWorld;
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const out = [];
+    const at = (i, v) => v.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m);
+    const tn = new THREE.Vector3();
+    for (let i = 0; i + 2 < count; i += 3) {
+      at(i, a);
+      at(i + 1, b);
+      at(i + 2, c);
+      tn.subVectors(c, b).cross(new THREE.Vector3().subVectors(a, b));
+      if (tn.lengthSq() < 1e-10) continue;
+      tn.normalize();
+      if (Math.abs(Math.abs(tn.dot(n)) - 1) > 1e-3) continue; // not parallel to the face
+      if (Math.abs(n.dot(a) - d) > 0.01) continue; // another plane
+      // the same plane can run through the whole house: keep what is around the hit
+      const cx = (a.x + b.x + c.x) / 3;
+      const cz = (a.z + b.z + c.z) / 3;
+      if (Math.hypot(cx - hit.point.x, cz - hit.point.z) > 8) continue;
+      out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    }
+    if (!out.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+    if (this._faces.size > 50) this._faces.clear();
+    this._faces.set(key, geo);
+    return geo.clone();
+  }
+
+  _zoneDown(ev) {
+    if (!this.zoneDrag || this.picker || ev.button !== 0 || !this.world) return;
+    const id = this.pickZone(ev);
+    const plane = id && this.zoneDrag.start(id);
+    if (!plane) return;
+    const P = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(...plane.normal), new THREE.Vector3(...plane.point));
+    const hit = this.rayAt(ev).ray.intersectPlane(P, new THREE.Vector3());
+    if (!hit) return;
+    this._zd = { id, plane: P, offset: new THREE.Vector3(...plane.point).sub(hit) };
+    this.controls.enabled = false;
+    this.renderer.domElement.setPointerCapture(ev.pointerId);
+    ev.stopImmediatePropagation();
+  }
+
+  _zoneMove(ev) {
+    if (!this._zd) return;
+    ev.stopImmediatePropagation();
+    const hit = this.rayAt(ev).ray.intersectPlane(this._zd.plane, new THREE.Vector3());
+    if (hit) this.zoneDrag.move(this._zd.id, hit.add(this._zd.offset).toArray());
+  }
+
+  _zoneUp(ev) {
+    if (!this._zd) return;
+    ev.stopImmediatePropagation();
+    const { id } = this._zd;
+    this._zd = null;
+    this._down = null; // not a click
+    this._updateControls();
+    this.zoneDrag.end(id);
+  }
+
+  /** Id of the zone under the pointer, or null. */
+  pickZone(ev) {
+    if (!this._zones || !this._zones.children.length) return null;
+    const hit = this.rayAt(ev).intersectObjects(
+      this._zones.children.filter((m) => m.visible),
+      false,
+    )[0];
+    return hit ? hit.object.userData.zone : null;
+  }
+
+  /** Piece of furniture of a visible level under the pointer: { item, box, level } or null. */
+  pickFurnitureAt(ev) {
+    if (!this.world) return null;
+    const ray = this.rayAt(ev).ray;
+    const items = this.world.sd.furniture
+      .filter((f) => f.kind === 'box' && this.visibility.levels[f.level] !== false && this.world.levelsById[f.level])
+      .map((item) => ({ item, base: this.world.levelsById[item.level].elevation }));
+    const p = pickFurniture(ray.origin.toArray(), ray.direction.toArray(), items);
+    return p ? { item: p.item, box: p.box, level: p.item.level } : null;
+  }
+
+  /** Screen position of a point even outside of the view (a corner of a picture partly off screen); null behind the camera. */
+  projectAny(x, y, z) {
+    const v = this._pa || (this._pa = new THREE.Vector3());
+    v.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
+    if (this.camera.isPerspectiveCamera && v.z > -this.camera.near) return null;
+    v.applyMatrix4(this.camera.projectionMatrix);
+    const el = this.renderer.domElement;
+    return [((v.x + 1) / 2) * el.clientWidth, ((1 - v.y) / 2) * el.clientHeight];
+  }
+
   _turnRobot(to, dt) {
     const R = this._robot;
     const da = Math.atan2(Math.sin(to - R.heading), Math.cos(to - R.heading));
@@ -1031,6 +1320,8 @@ export class HouseEngine {
     const R = this._robot;
     const shown = (lv) => !lv || this.visibility.levels[lv] !== false;
     if (this._trail) this._trail.visible = shown(this._trail.userData.level);
+    if (this._robotMap) this._robotMap.mesh.visible = shown(this._robotMap.mesh.userData.level);
+    this._applyZoneLevels();
     if (!R || !R.state) return;
     const g = R.g;
     g.visible = shown(R.state.level);
@@ -1074,6 +1365,8 @@ export class HouseEngine {
 
   _hover(ev, leave = false) {
     if (!this.world) return;
+    if (this.picker && this.pickerMove) this.pickerMove(leave ? null : ev); // the tool of the editor shows its target
+    if (!this.picker) this.renderer.domElement.style.cursor = !leave && !ev.buttons && this.pickZone(ev) ? 'pointer' : '';
     const f = leave || ev.buttons || this.picker ? null : this._pickRoom(ev);
     if (this._hovered && (!f || f.mesh !== this._hovered.mesh)) this._hovered.mesh.material.emissive.setScalar(0);
     if (f === this._hovered) return;
@@ -1087,6 +1380,8 @@ export class HouseEngine {
     if (!this._down || !this.world) return;
     if (Math.hypot(ev.clientX - this._down[0], ev.clientY - this._down[1]) > 4) return;
     if (this.picker) return this.picker(ev, this);
+    const zone = this.opts.onZoneClick ? this.pickZone(ev) : null;
+    if (zone) return this.opts.onZoneClick(zone, ev);
     if (!this.opts.onRoomClick) return;
     const f = this._pickRoom(ev);
     if (f) this.opts.onRoomClick(f.room.id, ev);

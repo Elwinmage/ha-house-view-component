@@ -1,6 +1,7 @@
 // Glue between Home Assistant, the vacuum tracker and the 3D engine: reads the robot state and position, follows the
 // run room by room, and drives the robot model, the room effects and the progress shown by the card.
 import { VAC_DEFAULTS, VacuumTracker, robotToPlan, solveRotation, positionFromAttributes, dockFront } from './vacuum.js';
+import { mapSettings, calibrationOf, mapCorners, planToPixel } from './vacuum-map.js';
 
 const ACTIVE = new Set(['cleaning', 'returning', 'paused', 'error']);
 const ROBOROCK_DOCK = [25500, 25500]; // documented position of the dock in Roborock coordinates
@@ -18,6 +19,10 @@ export class VacuumController {
     this._state = null;
     this._timer = null;
     this._lookup = { at: 0 };
+    this.mapOn = false; // the picture of the robot's map is shown over the plan (settings)
+    this.mapMsg = ''; // why it is not: '' | none (no picture entity) | error (unreadable picture)
+    this._mapPic = null; // { img, w, h }
+    this._mapKey = '';
   }
 
   get hass() {
@@ -52,6 +57,8 @@ export class VacuumController {
     const mine = reg.device_id ? Object.keys(h.entities).filter((e) => h.entities[e].device_id === reg.device_id) : [];
     const byKey = (k) => mine.find((e) => h.entities[e].translation_key === k && h.states[e]) || null;
     const conf = this.card._config;
+    // pictures of the robot's map: image or camera entities of the device, those with calibration points first
+    const pics = mine.filter((e) => /^(image|camera)\./.test(e) && h.states[e] && h.states[e].attributes.entity_picture);
     this._lookup = {
       id,
       at: Date.now(),
@@ -59,6 +66,7 @@ export class VacuumController {
       pos: [id, ...mine].find((e) => h.states[e] && positionFromAttributes(h.states[e].attributes)) || null,
       progress: conf.vacuum_progress_entity || byKey('cleaning_progress'),
       error: byKey('vacuum_error'),
+      map: pics.find((e) => calibrationOf(h.states[e].attributes)) || pics[0] || null,
     };
     return this._lookup;
   }
@@ -150,6 +158,7 @@ export class VacuumController {
       this._startTimer(1000);
     }
     if (ACTIVE.has(st.state) && this.source() === 'entity') this._fromEntity(now);
+    if (this.mapOn) this._loadMap(); // a new picture of the map came in
   }
 
   /** The world was rebuilt or the settings changed: put everything back. */
@@ -161,6 +170,7 @@ export class VacuumController {
     if (this.tracker.pos && (this.running || ACTIVE.has(this.state))) this._place(this.tracker.pos, 0.2, true);
     else this._home();
     this._fx(now, true);
+    if (this.mapOn && !this._loadMap()) this._drawMap();
   }
 
   _begin(startedAt, now) {
@@ -367,6 +377,105 @@ export class VacuumController {
     const id = this.tracker && this.tracker.active;
     const r = id && this.engine.rooms.find((x) => x.id === id);
     return r ? { id, name: r.name, pct: this.tracker.pct(id) } : null;
+  }
+
+  // ---- picture of the robot's map over the plan (settings): turned and moved until it lines up
+
+  /** Entity carrying the picture of the map: the one chosen, else the first image or camera of the vacuum's device. */
+  mapEntity() {
+    const chosen = (this._raw.map || {}).entity;
+    return chosen && this.hass.states[chosen] ? chosen : this._related().map;
+  }
+
+  get mapCfg() {
+    return mapSettings(this._raw, this._related().platform);
+  }
+
+  /** Calibration given by the map entity (pixels -> robot coordinates), or null: the picture is then placed by hand. */
+  mapCalibration() {
+    const e = this.mapEntity();
+    return e && this.hass.states[e] ? calibrationOf(this.hass.states[e].attributes) : null;
+  }
+
+  /** True when the picture is drawn on the plan. */
+  get mapShown() {
+    return this.mapOn && !!this._mapPic && !!this._mapCorners();
+  }
+
+  showMap(on) {
+    if (this.mapOn === !!on) return;
+    this.mapOn = !!on;
+    this.card._robotFloor('map', this.mapOn); // the floors above and the roof would hide it
+    if (this.mapOn) {
+      if (!this._loadMap()) this._drawMap();
+      return;
+    }
+    this._mapPic = null;
+    this._mapKey = '';
+    this.mapMsg = '';
+    if (this.engine) this.engine.setRobotMap(null);
+  }
+
+  /** Fetch the picture when the entity or its picture changed. Returns true when a fetch started. */
+  _loadMap() {
+    const e = this.mapEntity();
+    const pic = e && this.hass.states[e] && this.hass.states[e].attributes.entity_picture;
+    const key = pic ? `${e}|${pic}` : '';
+    if (key === this._mapKey) return false;
+    this._mapKey = key;
+    if (!pic) {
+      this._mapPic = null;
+      this.mapMsg = 'none';
+      this._drawMap();
+      return false;
+    }
+    const img = new Image();
+    const done = (ok) => {
+      if (this._mapKey !== key) return; // another picture was asked for meanwhile
+      // a picture that failed to load keeps the previous one on screen: the robot's map is refreshed often
+      if (ok) this._mapPic = { img, w: img.naturalWidth, h: img.naturalHeight };
+      this.mapMsg = ok || this._mapPic ? '' : 'error';
+      this._drawMap();
+      this.card.requestUpdate();
+    };
+    img.onload = () => done(true);
+    img.onerror = () => done(false);
+    img.src = this.hass.hassUrl ? this.hass.hassUrl(pic) : pic;
+    return true;
+  }
+
+  _mapCorners() {
+    return this._mapPic ? mapCorners(this.cfg, this.mapCfg, this._mapPic, this.mapCalibration(), this.charger) : null;
+  }
+
+  _drawMap() {
+    if (!this.engine) return;
+    const corners = this.mapOn ? this._mapCorners() : null;
+    if (!corners) {
+      this.engine.setRobotMap(null);
+      return;
+    }
+    const d = this._raw.dock;
+    this.engine.setRobotMap({ image: this._mapPic.img, corners, y: d.base ?? 0, level: d.level, opacity: this.mapCfg.opacity });
+  }
+
+  /**
+   * Picture placed by hand: plan point `at` is where the picture shows the dock, so the pixel under it becomes the
+   * one that sits on the dock. Returns false when there is no picture to pin.
+   */
+  pinMap(at) {
+    const px = this._mapPic && planToPixel(this.cfg, this.mapCfg, this._mapPic, at);
+    if (!px) return false;
+    const map = { ...(this._raw.map || {}), pin: [Math.round(px[0] * 10) / 10, Math.round(px[1] * 10) / 10] };
+    this.card._data.edits.vacuum.map = map;
+    this._drawMap();
+    return true;
+  }
+
+  /** Move a picture placed by hand by (dx, dz) meters on the plan. */
+  nudgeMap(dx, dz) {
+    const d = this._raw.dock;
+    return !!d && !!d.at && this.pinMap([d.at[0] - dx, d.at[1] - dz]);
   }
 
   // ---- settings helpers

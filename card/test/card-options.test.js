@@ -21,6 +21,7 @@ describe('card option editor', () => {
         'show_views',
         'show_levels',
         'show_entities',
+        'show_alarms',
         'tap_action',
         'movable_camera',
         'height',

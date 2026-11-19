@@ -206,11 +206,106 @@ export function renderVacuumSetup(card) {
         card._edited(!!r);
       });
     });
-  const mode = tool(ed, 'dock') ? 'dock' : tool(ed, 'dock-aim') ? 'dock-aim' : tool(ed, 'calib') ? 'calib' : null;
+  const mode = ['dock', 'dock-aim', 'calib', 'map-pin'].find((k) => tool(ed, k)) || null;
   const turn = (deg) => {
     vt.turnDock(deg);
     ctl.refresh();
   };
+  // picture of the robot's map laid over the plan: turned (and, without calibration points, pinned and sized) until
+  // its walls follow those of the plan
+  const m = ctl.mapCfg;
+  const mapEntity = ctl.mapEntity();
+  const calibrated = !!ctl.mapCalibration();
+  const saveMap = (patch) => save({ map: { ...(v.map || {}), ...patch } });
+  const pin = () =>
+    vt.pinMap((at) => {
+      ctl.pinMap(at);
+      card._edited(true);
+    });
+  const nudge = (dx, dz) => {
+    if (ctl.nudgeMap(dx, dz)) card._edited(true);
+  };
+  const mapWhy = !dock
+    ? 'vac_map_need_dock'
+    : !mapEntity
+      ? 'vac_map_none'
+      : ctl.mapMsg === 'error'
+        ? 'vac_map_error'
+        : calibrated && !v.origin && !ctl.charger
+          ? 'vac_map_need_origin'
+          : '';
+  const arrow = (label, dx, dz) => html`<button @click=${() => nudge(dx, dz)}>${label}</button>`;
+  const mapBlock = () => html`
+    <label class="chk"
+      ><input
+        type="checkbox"
+        .checked=${ctl.mapOn}
+        @change=${(e) => {
+          ctl.showMap(e.target.checked);
+          card.requestUpdate();
+        }}
+      />
+      ${t('vac_map_show')}</label
+    >
+    ${
+      !ctl.mapOn
+        ? nothing
+        : html`<div class="grid">
+              <span>${t('vac_map_entity')}</span
+              >${card._entityInput(m.entity || mapEntity || '', (id) => saveMap({ entity: id }), ['image', 'camera'])}
+            </div>
+            ${
+              mapWhy
+                ? html`<div class="hint"><span class="err">${t(mapWhy)}</span></div>`
+                : html`${card._range(
+                      t('vac_rot'),
+                      v.rot || 0,
+                      -180,
+                      180,
+                      0.5,
+                      (x) => save({ rot: x }),
+                      (x) => `${Number(x).toFixed(1)}°`,
+                      true,
+                    )}
+                    ${
+                      calibrated
+                        ? nothing
+                        : html`${card._range(
+                              t('vac_map_res'),
+                              m.res * 1000,
+                              2,
+                              60,
+                              0.1,
+                              (x) => saveMap({ res: x / 1000 }),
+                              (x) => `${Number(x).toFixed(1)} mm`,
+                              true,
+                            )}
+                            <div class="row">
+                              <button class=${mode === 'map-pin' ? 'on' : ''} @click=${() => (mode === 'map-pin' ? vt.cancel() : pin())}>
+                                ${t('vac_map_pin')}
+                              </button>
+                            </div>
+                            <div class="row">
+                              <span>${t('vac_map_nudge')}</span>
+                              ${arrow('←', -0.05, 0)}${arrow('↑', 0, -0.05)}${arrow('↓', 0, 0.05)}${arrow('→', 0.05, 0)}
+                            </div>`
+                    }
+                    ${card._range(
+                      t('vac_map_opacity'),
+                      m.opacity,
+                      0.1,
+                      1,
+                      0.05,
+                      (x) => saveMap({ opacity: x }),
+                      (x) => `${Math.round(x * 100)} %`,
+                      true,
+                    )}
+                    <div class="hint">
+                      ${t(mode === 'map-pin' ? 'vac_map_pin_click' : calibrated ? 'vac_map_hint_calib' : 'vac_map_hint')}
+                    </div>`
+            }`
+    }
+  `;
   return html`
     <div class="hint">${(st && st.attributes.friendly_name) || card._vacuum} · ${card._stateText(st)}</div>
     <div class="row">
@@ -272,7 +367,8 @@ export function renderVacuumSetup(card) {
             <button class=${mode === 'calib' ? 'on' : ''} @click=${() => (mode === 'calib' ? vt.cancel() : calib())}>
               ${t('vac_calib')}
             </button>
-            <div class="hint">${t(mode === 'calib' ? 'vac_calib_click' : 'vac_calib_hint')}</div>`
+            <div class="hint">${t(mode === 'calib' ? 'vac_calib_click' : 'vac_calib_hint')}</div>
+            ${mapBlock()}`
     }
     <div class="grid">
       <span>${t('vac_color')}</span>

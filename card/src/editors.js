@@ -25,7 +25,7 @@ export class WorldEditors {
     this.tool = { mode: 'off', pts: [], r: 3, v: 0.5 }; // pts: grid-frame points of the shape being drawn (plan points for 'section')
     this.selOp = -1;
     this.history = []; // undo stack of the tree editor
-    this.clickTool = null; // generic one-at-a-time click tool of a feature editor: { key, click(hit, ev), draft?(d), wall? }
+    this.clickTool = null; // generic one-at-a-time click tool of a feature editor: { key, click(hit, ev), draft?(d), wall?, furniture? }
     this.placing = null; // entity id waiting for its position (next click)
     this.parcelSel = null; // Set of parcel indexes while choosing the parcels of the property
     this.section = null; // { d, ground0, ground, surf, wall } of the last cross-section
@@ -55,7 +55,10 @@ export class WorldEditors {
       this.tool.pts = [];
       this.sectionLine = null;
     }
-    if (keep !== 'click') this.clickTool = null;
+    if (keep !== 'click' && this.clickTool) {
+      if (this.clickTool.leave) this.clickTool.leave();
+      this.clickTool = null;
+    }
     if (keep !== 'sensor') this.placing = null;
     if (keep !== 'parcels') this.parcelSel = null;
   }
@@ -74,6 +77,15 @@ export class WorldEditors {
 
   _syncPicker() {
     this.engine.setPicker(this.active ? (ev) => this._click(ev) : null);
+    this.engine.pickerMove = this.active ? (ev) => this._move(ev) : null;
+  }
+
+  /** Pointer moving with a click tool: the tool shows what a click would use (tool.hover(hit), null off target). */
+  _move(ev) {
+    const t = this.clickTool;
+    if (!t || !t.hover) return;
+    if (!ev) return t.hover(null);
+    t.hover(t.furniture ? this.engine.pickFurnitureAt(ev) : this.engine.pickPoint(ev, !!t.wall));
   }
 
   /**
@@ -81,6 +93,7 @@ export class WorldEditors {
    * mode is active at a time. tool.click(hit, ev) gets the picked point; tool.draft(d) draws its overlay.
    */
   setClickTool(tool) {
+    if (this.clickTool && this.clickTool !== tool && this.clickTool.leave) this.clickTool.leave();
     this._exclusive('click');
     this.clickTool = tool;
     this._syncPicker();
@@ -580,7 +593,8 @@ export class WorldEditors {
     if (this.parcelSel) return this._parcelClick(ev);
     if (this.placing) return this._entityClick(ev);
     if (this.clickTool) {
-      const hit = this.engine.pickPoint(ev, !!this.clickTool.wall);
+      // furniture: the pieces of the plan under the pointer (pickPoint only knows floors and walls)
+      const hit = this.clickTool.furniture ? this.engine.pickFurnitureAt(ev) : this.engine.pickPoint(ev, !!this.clickTool.wall);
       if (hit) this.clickTool.click(hit, ev);
       return;
     }

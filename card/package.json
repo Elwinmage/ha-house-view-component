@@ -5,16 +5,18 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/house-view-card.js --bundle --format=esm --minify --outfile=../custom_components/house_view/frontend/house-view-card.js",
-    "dev": "esbuild src/house-view-card.js --bundle --format=esm --sourcemap --outfile=../custom_components/house_view/frontend/house-view-card.js --watch",
+    "build": "esbuild src/house-view-card.js --bundle --log-override:duplicate-class-member=error --log-override:duplicate-object-key=error --format=esm --minify --outfile=../custom_components/house_view/frontend/house-view-card.js",
+    "dev": "esbuild src/house-view-card.js --bundle --log-override:duplicate-class-member=error --log-override:duplicate-object-key=error --format=esm --sourcemap --outfile=../custom_components/house_view/frontend/house-view-card.js --watch",
     "test": "vitest run",
     "format": "prettier --write \"src/**/*.js\" \"test/**/*.{js,html}\"",
-    "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.{js,html}\""
+    "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.{js,html}\"",
+    "icons": "node scripts/mdi-names.mjs"
   },
   "devDependencies": {
+    "@mdi/svg": "^7.4.47",
     "esbuild": "^0.25.0",
-    "vitest": "^3.0.0",
-    "prettier": "3.10.1"
+    "prettier": "3.10.1",
+    "vitest": "^3.0.0"
   },
   "dependencies": {
     "fflate": "^0.8.3",

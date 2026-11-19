@@ -348,7 +348,7 @@ export class IrrigationTools {
 export class VacuumTools {
   constructor(ed) {
     this.ed = ed;
-    this.mode = null; // dock | calib
+    this.mode = null; // dock | aim | calib | map-pin
   }
 
   get vac() {
@@ -399,6 +399,18 @@ export class VacuumTools {
     this.mode = 'calib';
     this.ed.setClickTool({
       key: 'calib',
+      click: (hit) => {
+        this._leave();
+        done([hit.point.x, hit.point.z]);
+      },
+    });
+  }
+
+  /** Next click tells where the dock is drawn on the picture of the robot's map: `done([x, z])` pins it there. */
+  pinMap(done) {
+    this.mode = 'map-pin';
+    this.ed.setClickTool({
+      key: 'map-pin',
       click: (hit) => {
         this._leave();
         done([hit.point.x, hit.point.z]);

@@ -16,6 +16,13 @@ export function emptyEdits() {
     room_areas: {}, // explicit room id -> HA area id (overrides the match by name)
     irrigation: { soil: 'loam', lines: [], circuits: [] }, // drip lines and sprinkler circuits (see irrigation.js)
     vacuum: {}, // dock position and calibration of the robot vacuum (see VAC_DEFAULTS in vacuum.js)
+    // general sensors and actuators shown on the left, under the level buttons: { id, entity, label, icon, tap: auto|toggle|more-info|none }
+    panel: [],
+    // central alarm badge: alarms found by their kind (auto), entities added by hand, entities left out
+    alarms: { auto: true, rooms: true, extra: [], ignored: [] },
+    // clickable zones: a media player or an aquarium (reeftank), on a piece of furniture or a rectangle drawn on a
+    // floor or a wall (see zones.js)
+    zones: [],
     room_views: {}, // room id -> camera view used when the room is tapped ({ pos, target, zoom, levels, roof })
     pool: { dy: 0 }, // vertical offset of the pool (basin, water, coping) from the ground
     trees: {
@@ -41,6 +48,12 @@ export function normalizeEdits(raw) {
     e.irrigation = { soil: raw.irrigation.soil || 'loam', lines: raw.irrigation.lines || [], circuits: raw.irrigation.circuits || [] };
   }
   if (raw.vacuum && typeof raw.vacuum === 'object') e.vacuum = raw.vacuum;
+  if (Array.isArray(raw.panel)) e.panel = raw.panel;
+  if (Array.isArray(raw.zones)) e.zones = raw.zones;
+  if (raw.alarms && typeof raw.alarms === 'object') {
+    const a = raw.alarms;
+    e.alarms = { auto: a.auto !== false, rooms: a.rooms !== false, extra: Array.isArray(a.extra) ? a.extra : [], ignored: Array.isArray(a.ignored) ? a.ignored : [] };
+  }
   if (raw.pool && Number.isFinite(raw.pool.dy)) e.pool.dy = raw.pool.dy;
   const t = raw.trees || {};
   if (t.removed) {

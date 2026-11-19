@@ -7,6 +7,7 @@ export const DEFAULTS = {
   show_views: true,
   show_levels: true,
   show_entities: true,
+  show_alarms: true,
   tap_action: 'zoom',
   movable_camera: true,
   height: 'fill',
@@ -49,6 +50,7 @@ export function editorSchema(t) {
       { name: 'show_views', selector: { boolean: {} } },
       { name: 'show_levels', selector: { boolean: {} } },
       { name: 'show_entities', selector: { boolean: {} } },
+      { name: 'show_alarms', selector: { boolean: {} } },
       {
         name: 'tap_action',
         selector: { select: { mode: 'dropdown', options: choices('tap_action', ['zoom', 'toggle_lights', 'none']) } },

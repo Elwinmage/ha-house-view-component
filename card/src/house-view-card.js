@@ -7,6 +7,22 @@ import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
 import { renderFences, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
 import {
+  renderGeneral,
+  renderGeneralEditor,
+  renderAlarmBadge,
+  renderAlarmList,
+  renderRoomAlarms,
+  renderAlarmsEditor,
+  alarmsOf,
+  loadAquariums,
+  pushZones,
+  openZone,
+  renderAquariumDialog,
+  renderZoneThumbs,
+  placeZones,
+  renderZonesEditor,
+} from './ui-general.js';
+import {
   weatherLive,
   windSensors,
   rainSensor,
@@ -28,6 +44,7 @@ import { SPECIES, seasonName } from './engine/catalog.js';
 import { houseParcel } from './engine/terrain.js';
 import { compassIndex } from './wind.js';
 import { makeT } from './i18n.js';
+import './pickers.js';
 import pkg from '../package.json';
 
 console.info(
@@ -163,8 +180,15 @@ class HouseViewCard extends LitElement {
       if (this._vac) this._vac.sync();
     }
     // placed sensors and the vacuum show live states: re-render only when one of them changed
-    const watched = [this._vacuum, ...((this._data && this._data.edits.entities) || []).map((x) => x.entity)].filter(Boolean);
-    const sig = watched.map((id) => h.states[id] && h.states[id].last_updated).join('|');
+    const ed = this._data && this._data.edits;
+    const watched = [
+      this._vacuum,
+      ...((ed && ed.entities) || []).map((x) => x.entity),
+      ...((ed && ed.panel) || []).map((x) => x.entity),
+    ].filter(Boolean);
+    // raised alarms: the badge and its list follow them
+    const alarms = ed && this._config.show_alarms !== false ? alarmsOf(this).raised.map((st) => `${st.entity_id}:${st.last_changed}`) : [];
+    const sig = `${watched.map((id) => h.states[id] && h.states[id].last_updated).join('|')}#${alarms.join('|')}`;
     if (sig !== this._watchSig) {
       this._watchSig = sig;
       this.requestUpdate();
@@ -268,13 +292,20 @@ class HouseViewCard extends LitElement {
       movable: this._movable,
       fpsCap: this._config.fps_cap,
       onRoomClick: (roomId) => this._roomClick(roomId),
+      onZoneClick: (id) => openZone(this, id),
       onHover: (info, ev) => this._hover(info, ev),
     });
-    this._engine.onFrame = () => this._placeAnchors();
+    this._engine.onFrame = () => {
+      this._placeAnchors();
+      placeZones(this);
+    };
     this._vac = new VacuumController(this);
     this._updateRunning();
     this._watchCatalog();
     await Promise.all([this._loadCatalog(), this._reload()]);
+    this._aquariums = await loadAquariums(this);
+    this._aquariumsLoaded = true;
+    this.requestUpdate();
   }
 
   /**
@@ -376,6 +407,7 @@ class HouseViewCard extends LitElement {
   _pushIrrigation() {
     const eng = this._engine;
     if (!eng || !eng.world || !this._data) return;
+    pushZones(this);
     const irr = this._data.edits.irrigation;
     const it = this._irrTools;
     const now = Date.now();
@@ -431,25 +463,36 @@ class HouseViewCard extends LitElement {
   }
 
   /** Entity field: the Home Assistant picker when it is loaded, else a text field with suggestions. */
-  _entityInput(value, onPick, domains = null) {
-    if (customElements.get('ha-entity-picker')) {
-      return html`<ha-entity-picker
-        .hass=${this._hass}
-        .value=${value || ''}
-        .includeDomains=${domains || undefined}
-        allow-custom-entity
-        @value-changed=${(e) => {
-          if ((e.detail.value || '') !== (value || '')) onPick(e.detail.value || '');
-        }}
-      ></ha-entity-picker>`;
-    }
-    return html`<input
-      type="text"
-      list="hv-ents"
-      placeholder="switch.…"
+  /**
+   * Entity picker of the editor: the entities of `area` (by default the area of the current room) grouped by device,
+   * the whole house one tap away.
+   */
+  _entityInput(value, onPick, domains = null, area = undefined) {
+    return html`<house-view-entity-picker
+      .hass=${this._hass}
       .value=${value || ''}
-      @change=${(e) => onPick(e.target.value.trim())}
-    />`;
+      .area=${area === undefined ? this._currentArea() : area || ''}
+      .domains=${domains}
+      @value-changed=${(e) => {
+        if ((e.detail.value || '') !== (value || '')) onPick(e.detail.value || '');
+      }}
+    ></house-view-entity-picker>`;
+  }
+
+  /** Icon picker of the editor: the icons are shown while one types. */
+  _iconInput(value, onPick) {
+    return html`<house-view-icon-picker
+      .hass=${this._hass}
+      .value=${value || ''}
+      @value-changed=${(e) => onPick(e.detail.value || '')}
+    ></house-view-icon-picker>`;
+  }
+
+  /** Home Assistant area of the current room: the room zoomed on, else the room of the entity chosen in the editor. */
+  _currentArea() {
+    const eng = this._engine;
+    const room = (eng && eng.focus) || (this._entSel && (this._entities.find((x) => x.id === this._entSel) || {}).room);
+    return (room && this._areas && this._areas[room]) || '';
   }
 
   /** One section of the editor; only one is unfolded at a time and only that one is rendered. */
@@ -465,8 +508,15 @@ class HouseViewCard extends LitElement {
     const next = open ? key : this._section === key ? null : this._section;
     if (next === this._section) return;
     if (this._editors && this._editors.active) this._editors.stop();
+    if (next !== 'vacuum' && this._vac) this._vac.showMap(false); // the picture of the robot's map is a setting aid
     this._section = next;
     this._pushIrrigation();
+    // the aquariums read again: views or sizes changed in ha-reef-card meanwhile
+    if (next === 'zones')
+      loadAquariums(this).then((list) => {
+        this._aquariums = list;
+        this.requestUpdate();
+      });
   }
 
   // ------------------------------------------------------------ live
@@ -998,6 +1048,7 @@ class HouseViewCard extends LitElement {
       this._vacTools = new VacuumTools(this._editors);
     }
     if (next !== 'edit' && this._vac && this._vac.demo) this._vac.stopDemo();
+    if (next !== 'edit' && this._vac) this._vac.showMap(false);
     if (next !== 'edit') this._irrDemoStop();
     this._panel = next;
     this._pushIrrigation();
@@ -1436,46 +1487,14 @@ class HouseViewCard extends LitElement {
       if (!id || !hass.states[id]) return;
       this._entSel = ed.addEntity(id);
     };
-    const entityPicker = customElements.get('ha-entity-picker')
-      ? html`<ha-entity-picker
-          .hass=${hass}
-          .value=${''}
-          .label=${t('entity_add')}
-          @value-changed=${(e) => {
-            add(e.detail.value);
-            e.target.value = '';
-          }}
-        ></ha-entity-picker>`
-      : html`<datalist id="ents">
-            ${Object.keys(hass.states)
-              .sort()
-              .map((id) => html`<option value=${id}>${hass.states[id].attributes.friendly_name || ''}</option>`)}
-          </datalist>
-          <div class="row">
-            <input id="newEntity" type="text" list="ents" placeholder="light.…, sensor.…" />
-            <button
-              @click=${() => {
-                const inp = this.renderRoot.querySelector('#newEntity');
-                add(inp.value);
-                inp.value = '';
-              }}
-            >
-              ${t('entity_add')}
-            </button>
-          </div>`;
-    const iconPicker = (s) =>
-      customElements.get('ha-icon-picker')
-        ? html`<ha-icon-picker
-            .hass=${hass}
-            .value=${s.icon || ''}
-            @value-changed=${(e) => ed.editEntity(s.id, { icon: e.detail.value || '' })}
-          ></ha-icon-picker>`
-        : html`<input
-            type="text"
-            placeholder="mdi:thermometer"
-            .value=${s.icon || ''}
-            @change=${(e) => ed.editEntity(s.id, { icon: e.target.value.trim() })}
-          />`;
+    const entityPicker = html`<house-view-entity-picker
+      .hass=${hass}
+      .value=${''}
+      .area=${this._currentArea()}
+      .label=${t('entity_add')}
+      @value-changed=${(e) => add(e.detail.value)}
+    ></house-view-entity-picker>`;
+    const iconPicker = (s) => this._iconInput(s.icon, (icon) => ed.editEntity(s.id, { icon }));
     const select = (s, key, values, def) =>
       html`<select @change=${(e) => ed.editEntity(s.id, { [key]: e.target.value })}>
         ${values.map((v) => html`<option value=${v} ?selected=${(s[key] || def) === v}>${t(`${key}_${v}`)}</option>`)}
@@ -1781,17 +1800,10 @@ class HouseViewCard extends LitElement {
   _renderEdit() {
     if (!this._editors || !this._engine.world) return nothing;
     const t = this._t;
-    const picker = !!customElements.get('ha-entity-picker');
-    return html`${
-      picker
-        ? nothing
-        : html`<datalist id="hv-ents">
-            ${Object.keys(this._hass.states)
-              .sort()
-              .map((id) => html`<option value=${id}>${this._hass.states[id].attributes.friendly_name || ''}</option>`)}
-          </datalist>`
-    }
-    ${this._sec('entities', `${t('entities')} (${this._entities.length})`, () => this._renderEntities())}
+    return html`${this._sec('entities', `${t('entities')} (${this._entities.length})`, () => this._renderEntities())}
+    ${this._sec('general', `${t('general')} (${this._data.edits.panel.length})`, () => renderGeneralEditor(this))}
+    ${this._sec('alarms', t('alarms'), () => renderAlarmsEditor(this))}
+    ${this._sec('zones', `${t('zones')} (${this._data.edits.zones.length})`, () => renderZonesEditor(this))}
     ${this._sec('rooms', t('rooms'), () => renderRooms(this))}
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
@@ -1922,6 +1934,11 @@ class HouseViewCard extends LitElement {
     this._rev++;
   }
 
+  _renderLeft() {
+    if (this._status !== 'ready' || !this._engine || !this._engine.world) return nothing;
+    return html`<div class="left">${this._renderLevels()} ${renderGeneral(this)}</div>`;
+  }
+
   _renderLevels() {
     const eng = this._engine;
     if (!this._config.show_levels || this._status !== 'ready' || !eng || !eng.world) return nothing;
@@ -1986,7 +2003,7 @@ class HouseViewCard extends LitElement {
     return html` <ha-card>
       <div class="wrap">
         <div id="view"></div>
-        ${this._renderAnchors()} ${this._renderTags()} ${this._renderLevels()}
+        ${this._renderAnchors()} ${renderZoneThumbs(this)} ${this._renderTags()} ${renderRoomAlarms(this)} ${this._renderLeft()}
         ${
           ready && this._config.show_views && this._views.length > 1
             ? html`<div class="views">
@@ -1995,6 +2012,7 @@ class HouseViewCard extends LitElement {
             : nothing
         }
         <div class="toolbar">
+          ${ready ? renderAlarmBadge(this) : nothing}
           ${
             vac
               ? html`<button
@@ -2049,7 +2067,8 @@ class HouseViewCard extends LitElement {
               </div>`
             : nothing
         }
-        ${this._renderPanel()} ${this._renderVacuum()} ${this._renderLock()}
+        ${this._renderPanel()} ${this._renderVacuum()} ${this._renderLock()} ${ready ? renderAlarmList(this) : nothing}
+        ${renderAquariumDialog(this)}
         ${
           this._focus && ready && !this._vacMode
             ? html`<div class="back-row">
@@ -2136,21 +2155,242 @@ class HouseViewCard extends LitElement {
     .overlay.err {
       color: #ff9b9b;
     }
-    .views,
-    .levels {
+    .views {
       position: absolute;
       left: 8px;
+      bottom: 8px;
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       max-width: calc(100% - 60px);
     }
-    .views {
-      bottom: 8px;
+    /* left column: the level buttons, then the general sensors and actuators */
+    .left {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      max-width: calc(100% - 220px);
+      max-height: calc(100% - 60px);
+      pointer-events: none;
+    }
+    .left > * {
+      pointer-events: auto;
     }
     .levels {
-      top: 8px;
-      max-width: calc(100% - 180px);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .general {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      overflow-y: auto;
+      max-height: 100%;
+    }
+    .gen {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(20, 26, 36, 0.72);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 14px;
+      padding: 3px 10px 3px 6px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+    }
+    .gen ha-state-icon {
+      --mdc-icon-size: 18px;
+      display: flex;
+    }
+    .gen small {
+      opacity: 0.7;
+    }
+    .gen.on ha-state-icon {
+      color: #ffd54f;
+    }
+    .gen.alarm {
+      background: rgba(198, 40, 40, 0.85);
+    }
+    .tb.alarm.ok {
+      background: #2e7d32;
+      border-color: transparent;
+    }
+    .tb.alarm.raised {
+      background: #c62828;
+      border-color: transparent;
+      width: auto;
+      padding: 0 8px;
+      gap: 3px;
+      border-radius: 16px;
+      animation: alarm-pulse 1.6s ease-in-out infinite;
+    }
+    .tb.alarm .count {
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 600;
+    }
+    @keyframes alarm-pulse {
+      50% {
+        box-shadow: 0 0 0 4px rgba(198, 40, 40, 0.35);
+      }
+    }
+    .ralarm {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: none;
+      align-items: center;
+      gap: 2px;
+      pointer-events: auto;
+      cursor: pointer;
+      background: #c62828;
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      border-radius: 14px;
+      padding: 2px 7px 2px 4px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+      animation: alarm-pulse 1.6s ease-in-out infinite;
+    }
+    .ralarm[style*='translate'] {
+      display: inline-flex;
+    }
+    .ralarm ha-icon {
+      --mdc-icon-size: 16px;
+      display: flex;
+    }
+    .alarm-list .all {
+      margin-left: auto;
+      margin-right: 6px;
+      text-decoration: underline;
+      opacity: 0.85;
+    }
+    .alarm-list {
+      position: absolute;
+      right: 8px;
+      top: 48px;
+      z-index: 3;
+      width: min(340px, calc(100% - 16px));
+      max-height: calc(100% - 60px);
+      overflow-y: auto;
+      background: rgba(20, 26, 36, 0.94);
+      color: #fff;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+    }
+    .alarm-list .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .alarm-list .al {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 4px 0;
+    }
+    .alarm-list .al.left {
+      opacity: 0.6;
+    }
+    .alarm-list button {
+      background: none;
+      border: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+    .alarm-list .name {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+    }
+    .alarm-list .name ha-state-icon {
+      color: #ff8a80;
+    }
+    .alarm-list .al.left ha-state-icon {
+      color: inherit;
+    }
+    .alarm-list small {
+      opacity: 0.7;
+    }
+    .alarm-list summary {
+      cursor: pointer;
+      margin-top: 6px;
+      opacity: 0.8;
+    }
+    .zthumb {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-origin: 0 0;
+      pointer-events: none;
+      overflow: hidden;
+      border-radius: 2px;
+    }
+    .zthumb > * {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .dialog {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dialog .box {
+      width: min(1100px, calc(100% - 24px));
+      max-height: calc(100% - 24px);
+      overflow: auto;
+      background: var(--card-background-color, #1c1f26);
+      color: var(--primary-text-color, #fff);
+      border-radius: 12px;
+      padding: 8px;
+    }
+    .dialog .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2px 4px 8px;
+    }
+    .dialog .x {
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .panel .zone {
+      border-left: 2px solid rgba(255, 255, 255, 0.12);
+      padding-left: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .panel .zone.open {
+      border-left-color: var(--primary-color, #03a9f4);
     }
     .views button,
     .levels button,
@@ -2367,8 +2607,8 @@ class HouseViewCard extends LitElement {
       text-overflow: ellipsis;
       max-width: 40%;
     }
-    .panel ha-icon-picker,
-    .panel ha-entity-picker {
+    .panel house-view-icon-picker,
+    .panel house-view-entity-picker {
       display: block;
       width: 100%;
     }

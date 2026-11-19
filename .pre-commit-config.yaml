@@ -29,7 +29,7 @@ repos:
         language: node
         additional_dependencies: ["prettier@3.10.1"]
         files: ^card/(src|test)/.*\.(js|html)$
-        exclude: ^card/src/engine/
+        exclude: ^card/src/(engine/|mdi-names\.js$)
       - id: vitest
         name: vitest (card)
         entry: vitest run --root card
