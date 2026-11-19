@@ -16,6 +16,8 @@
 [<img src="https://flagicons.lipis.dev/flags/4x3/pt.svg" style="width: 5%;"/>](../pt/README.pt.md)
 [<img src="https://flagicons.lipis.dev/flags/4x3/it.svg" style="width: 5%;"/>](../it/README.it.md)
 
+📘 **Guía completa** (instalación, configuración, uso, con imágenes), en francés: [GUIDE.fr.md](../fr/GUIDE.fr.md)
+
 Vista pseudo-3D en directo de su casa para Home Assistant: su plano de **Sweet Home 3D** colocado sobre un modelo digital del terreno, con luces, meteorología, sol y estaciones en tiempo real, además de un robot aspirador, el riego del jardín y las vallas. Un único repositorio contiene:
 
 - `custom_components/house_view/`: la **integración** (guarda el plano, el terreno y sus correcciones; descarga el terreno; API HTTP);
@@ -26,7 +28,7 @@ La interfaz de la tarjeta existe en inglés y en francés: en español se muestr
 ## Instalación
 
 1. Instale con HACS (repositorio personalizado, tipo *Integración*), o copie `custom_components/house_view/` en `config/custom_components/`, y reinicie Home Assistant.
-2. Añada la integración *House View*. No hay nada que configurar: la ubicación viene de la configuración de Home Assistant.
+2. Añada la integración *House View*: dé un nombre a la vivienda y su ubicación (la de Home Assistant por defecto). Cada vivienda es una entrada propia: añada la integración otra vez para una segunda vivienda (casa de vacaciones…), con su propio plano, terreno y ediciones; la tarjeta muestra una vivienda, elegida con su opción `home`.
 3. Añada la tarjeta a un panel (`type: custom:house-view-card`).
 4. Abra ⚙ en la tarjeta (solo administradores) para importar su plano `.sh3d`; después descargue el terreno (cartes.gouv.fr en Francia, datos abiertos mundiales en el resto: véase [Fuentes del terreno por país](#fuentes-del-terreno-por-país)) o cargue un terreno `.json`.
 
@@ -40,6 +42,7 @@ Las opciones se ajustan en el editor visual de la tarjeta (edite el panel y puls
 
 ```yaml
 type: custom:house-view-card
+home: 01JXYZ…                         # opcional, varias viviendas: la entrada mostrada (elegida en el editor visual); la primera por defecto
 weather_entity: weather.casa          # meteorología en directo (opcional)
 rain_entity: binary_sensor.lluvia     # opcional: detector de lluvia o sensor de intensidad (mm/h) de su estación
 wind_speed_entity: sensor.viento_vel    # opcional: sensor de velocidad del viento (estación o servicio meteorológico de internet)
@@ -60,12 +63,16 @@ movable_camera: true                  # cámara móvil (giro, zoom, desplazamien
 height: fill                          # fill (altura de la pantalla bajo el borde superior de la tarjeta) | aspect (16/10) | 600 | "70vh"
 min_height: 320                       # altura mínima en modo fill (px)
 fps_cap: 30                           # límite de imágenes por segundo (pantallas de pared, tabletas)
+year_seconds: 10                      # 📅 : recorre las estaciones de un año entero en estos segundos (5 a 60)
+toolbar_buttons: [preview]            # herramientas que quedan en la barra (preview, year, camera, sim, edit, setup); las demás están en el menú ⋮
+hide_menu: false                      # true: sin menú ⋮ para los usuarios que no son administradores (pantalla de pared)
 light_entities: [light.salon, ...]    # opcional: limita las luces que se tienen en cuenta
 ```
 
 ## Vista en directo
 
-- **Latitud, longitud, zona horaria**: se leen de la configuración de Home Assistant. Las estaciones de la vegetación se invierten en el hemisferio sur.
+- **Barra** (arriba a la derecha): el distintivo de alarmas, los robots aspiradores y el menú ⋮, que agrupa las herramientas ocasionales (vista previa de estación / tiempo / hora, simular un año, bloqueo de la cámara, simulación, demo) y, para los administradores, el editor ✎ y la configuración ⚙. La opción `toolbar_buttons` deja algunas en la barra; `hide_menu` oculta el menú a los usuarios que no son administradores.
+- **Latitud, longitud, zona horaria**: los de la vivienda (elegidos al añadirla; la configuración de Home Assistant por defecto). Las estaciones de la vegetación y del césped siguen el clima de la latitud: cuatro estaciones en zona templada; desde 50° hacia los polos, un invierno cada vez más largo y un verano corto (todavía invierno a finales de abril a 68°); entre los trópicos, sin invierno pero con una estación de lluvias y una estación seca (los árboles conservan sus hojas, el césped amarillea un poco en la estación seca, menos cerca del ecuador), que la vista previa de estaciones ofrece en lugar de las cuatro estaciones. Todo se invierte en el hemisferio sur.
 - **Habitaciones ↔ áreas**: una habitación del plano se vincula al área de Home Assistant del mismo nombre (sin distinguir acentos ni mayúsculas). ⚙ lista las habitaciones sin área correspondiente; ✎ → *Rooms ↔ Home Assistant areas* permite elegir otra área, o ninguna, habitación por habitación.
 - **Luces**: estado, color e intensidad de las `light.*` del área de cada habitación.
 - **Meteorología**: la entidad `weather_entity` decide el tiempo mostrado: lluvia (`rainy`, `pouring`, `hail`), nieve (`snowy`, `snowy-rainy`), tormenta (`lightning`, `lightning-rainy`), niebla, nubes; se usan su temperatura, su viento y su nubosidad si están disponibles. Con `rain_entity` (un detector de lluvia `binary_sensor`, o un sensor de intensidad en mm/h), la lluvia sigue lo que realmente cae en su casa: llueve sobre el sensor → lluvia, más o menos densa según la intensidad medida; el servicio meteorológico anuncia lluvia pero el sensor está seco → cielo cubierto sin lluvia (tormenta: relámpagos sin lluvia). La nieve y la tormenta las sigue decidiendo el servicio meteorológico, porque un pluviómetro no las distingue; un acumulado («lluvia de hoy» en mm) se ignora, ya que no indica si llueve ahora.
@@ -88,6 +95,7 @@ light_entities: [light.salon, ...]    # opcional: limita las luces que se tienen
 - **Alineación con el mapa del robot**: *Show the map of the robot over the plan* coloca la imagen que el robot dibuja del suelo (una entidad `image.*` o `camera.*` de su dispositivo) sobre el suelo de la base, semitransparente, con las plantas superiores ocultas. La base es el punto fijo: gire la imagen con el control de giro hasta que sus paredes sigan las del plano; el giro obtenido es el que se aplica al robot. Si la entidad proporciona `calibration_points` (extractores de mapas, *Roborock Custom Map*), la imagen se coloca sola. Si no (entidades de imagen de la integración oficial de Roborock), pulse donde la imagen dibuja la base (*The dock is here on the map*), desplácela en pasos de 5 cm y ajuste el tamaño de un píxel si las habitaciones son demasiado grandes o pequeñas (12,5 mm por defecto para Roborock, 50 mm en los demás casos).
 - **Porcentaje de una habitación**: parte del suelo recorrida por el robot (estimación: se supone accesible el 80 % del suelo); el progreso total viene del sensor del robot cuando existe (Roborock: `cleaning_progress`).
 - *Test the animation* reproduce una limpieza acelerada (con o sin error) sin poner en marcha el robot.
+- **Varios robots**: cada `vacuum.*` tiene su botón en la barra de herramientas, su selección de habitaciones, su robot 3D, su trayecto y sus colores de habitación. En ✎ → *Robot vacuum*, la lista *Robot* elige el que se configura (base, posición, calibración y mapa son propios de cada robot); *Show this robot* lo quita de la vista y de la barra (un robot de otra vivienda, por ejemplo).
 
 ## Catálogo: árboles y objetos
 
@@ -100,13 +108,16 @@ Los árboles y los muebles no están programados en la tarjeta: proceden del [ca
 
 ## Editor (✎)
 
-Reservado a los administradores. Solo hay una sección desplegada a la vez; todo se guarda en el archivo de ediciones, aparte del plano y del terreno; Escape cancela el trazado en curso.
+Reservado a los administradores. El editor es un menú de secciones: una sección se abre en su propia ventana encima del menú, y un elemento de una lista (una línea de riego, una zona, una entidad del panel general, una puerta…) abre su ventana de edición encima de la sección; la flecha ← de una ventana vuelve a la de debajo. Todo se guarda en el archivo de ediciones, aparte del plano y del terreno; Escape cancela el trazado en curso.
 
-- **Entidades colocadas** (sensores, luces, interruptores, selectores…): se colocan con una pulsación y se mueven arrastrando su etiqueta (con el editor abierto). Fijación al suelo (por defecto: la etiqueta permanece en su habitación sea cual sea el ángulo), a la pared (del lado de la habitación, oculta cuando la pared se ve por detrás) o libre en altura; una etiqueta tapada por una planta superior o por el tejado no se muestra. Distintivo (icono + valor) o solo icono; color, texto, icono (selector de iconos de Home Assistant con vista previa); visible siempre, en la vista de su planta o al hacer zoom en su habitación; pulsación = más información, conmutar o nada. En el editor la lista está plegada: solo se despliega la entidad elegida. Las entidades se eligen entre las de la habitación actual, agrupadas por dispositivo (toda la casa a una casilla, con búsqueda); los iconos se muestran mientras se escribe su nombre.
+- **Entidades colocadas** (sensores, luces, interruptores, selectores…): se colocan con una pulsación y se mueven arrastrando su etiqueta (con el editor abierto). Fijación al suelo (por defecto: la etiqueta permanece en su habitación sea cual sea el ángulo), a la pared (del lado de la habitación, oculta cuando la pared se ve por detrás) o libre en altura; una etiqueta tapada por una planta superior o por el tejado no se muestra, salvo una etiqueta *Shown over the roof*; mientras *Placed entities* está abierto en el editor, todas las etiquetas se muestran (atenuadas cuando la casa las tapa), para colocar y arrastrar una entidad en cualquier sitio, habitaciones incluidas. Distintivo (icono + valor) o solo icono; color, texto, icono (selector de iconos de Home Assistant con vista previa); visible en la vista general (siempre, o en la vista de su planta; *Shown over the roof* permite leer de lejos la temperatura de una habitación); pulsación = más información, conmutar o nada. En el editor la lista está plegada: solo se despliega la entidad elegida. Las entidades se eligen entre las de la habitación actual, agrupadas por dispositivo (toda la casa a una casilla, con búsqueda); los iconos se muestran mientras se escribe su nombre.
 - **Panel general** (a la izquierda, bajo los botones de los niveles): sensores y actuadores de toda la casa (temperatura exterior, central de alarma…), en el orden elegido, con su etiqueta y su icono; una pulsación conmuta lo que se puede conmutar y abre el diálogo de los demás (o a elegir: conmutar, diálogo, nada).
 - **Alarmas**: una insignia arriba a la derecha, verde con una marca cuando todo va bien, roja con una campana y el número entre paréntesis cuando hay alarmas activas; una pulsación abre su lista (pulsar una = su diálogo). Detectadas automáticamente: sensores de problema, humo, gas, monóxido de carbono, fuga de agua, calor, frío y sabotaje, y centrales de alarma disparadas (incluidas las alarmas de reeftank); se pueden añadir entidades a mano, e ignorar una alarma desde la propia lista (campana tachada) o desde el editor. Cada habitación con alarmas activas (habitación vinculada a un área de Home Assistant) muestra también una campana roja con su número; una pulsación abre la lista de esa habitación (*All* vuelve a toda la casa); estas insignias de habitación se desactivan en el editor. Opción `show_alarms`.
 - **Zonas pulsables**: un reproductor multimedia sobre un mueble del plano (pulsado en el editor) o sobre un rectángulo colocado en una pared o un suelo; un acuario de reeftank sobre un rectángulo con las medidas del tanque (su frente en una pared, su parte superior en un suelo). Una pulsación abre el reproductor, o la vista del acuario de ha-reef-card en una ventana; el rectángulo de un acuario muestra esa vista en directo, con los peces moviéndose (opción por zona), en la vista del acuario elegida para la zona (si no, su vista por defecto). Al colocarla, la pared o el suelo bajo el puntero se ilumina y el rectángulo se dibuja en él; una zona se mueve arrastrándola sobre su superficie. Se ajustan el ancho, el alto, la altura del centro (pared) o el giro (suelo).
 - **Luces colocadas**: una `light.*` colocada se convierte en una fuente de luz en ese punto de la habitación (foco, lámpara colgante, lámpara, regleta o invisible; altura y alcance ajustables; en la pared: un aplique a la altura pulsada), gobernada por su propio estado y color. Las demás luces del área siguen iluminando toda la habitación.
+- **Entidades de una habitación**: con zoom en una habitación solo se muestran las entidades de esa habitación; las de la vista general desaparecen (el robot aspirador sigue moviéndose si está allí). En el editor, una pulsación en una habitación hace zoom en ella y la edición pasa a ser la de la habitación (banda roja arriba): las entidades añadidas entonces se colocan en su suelo, en una pared o en el aire, y solo pertenecen a esa habitación. Desaparecen al elegir otra habitación o al volver a la vista general. Una entidad de la vista general colocada en una habitación pasa a esa habitación con su ajuste *Its room only*.
+- **Puertas y ventanas** (*Doors and windows*): las aberturas del plano de Sweet Home 3D, por planta y habitación, o elegidas con una pulsación en la vista (la abertura bajo el puntero se ilumina). Cada una puede vincularse a un sensor abierto / cerrado (`binary_sensor`), a un abridor motorizado (`cover` de la ventana) y, en ventanas y puertas correderas, a una persiana enrollable (`cover`). Una habitación con una sola ventana se vincula sola al sensor de ventana, al abridor y a la persiana de su área cuando hay uno de cada; una habitación con una sola puerta, a su sensor de puerta; un vínculo elegido a mano tiene prioridad, y un vínculo automático puede quitarse. En la vista las hojas (una, dos a partir de 1,10 m) se abren hacia dentro, una corredera se desliza, una puerta gira (una puerta interior recibe su hoja una vez vinculada) y la persiana baja por la cara exterior hasta la posición del `cover` (`current_position`, con suavidad).
+- **Piscinas y estanques** (*Pools and ponds*): se dibujan vistos desde arriba, como rectángulo (dos esquinas opuestas) o forma libre (punto a punto, *Finish*), con un nombre, un color de agua y una profundidad (0,2 a 6 m). El terreno se excava: una piscina tiene paredes verticales, fondo plano y coronación, un estanque un fondo en pendiente y una orilla de guijarros; el suelo alrededor se nivela y el agua se mueve. Un robot limpiafondos puede vincularse a una entidad (`binary_sensor`, `switch`, `input_boolean` o `vacuum`): recorre el fondo mientras está activa y, si no, queda aparcado. La piscina del plano de Sweet Home 3D se queda como está.
 - **Vista por habitación**: con zoom en una habitación y el editor abierto, *📷 Room view* guarda la cámara y las plantas visibles; una pulsación en esa habitación abre después esa vista en lugar del zoom automático. *Automatic view* vuelve a él.
 - **Vallas** (*Fences*): cada lado tiene su tipo (malla, madera, muro, seto, o abierto para un portón) y su altura. Dos formas de crear una: *Fence from the cadastre* (las parcelas de la casa están preseleccionadas, pulse para añadir o quitar las parcelas vecinas de la misma propiedad; se valla el contorno del conjunto) o *Draw a fence* (pulsaciones sucesivas, se recomienda la vista cenital «Dessus»; cada lado toma el tipo elegido en la paleta, un color por tipo). *Edit the sides*: cambiar el tipo de un lado con una pulsación, cortar un lado en dos (una parte en muro, la otra en malla), eliminar un punto.
 - **Riego** (*Watering*):
@@ -117,6 +128,7 @@ Reservado a los administradores. Solo hay una sección desplegada a la vez; todo
 
 ## Configuración (⚙)
 
+- **Demo** (para grabar o presentar la vista sin mostrar su casa ni su ubicación): *Load the demo* añade una vivienda «Démo» con una casa ficticia de dos plantas (el archivo de Sweet Home 3D `custom_components/house_view/demo/demo-maison.sh3d` puede abrirse y retocarse), un terreno en tres terrazas con un huerto de frutales, una piscina, un estanque, una valla, riego, un robot aspirador y persianas, en un lugar ficticio (45° N). Sus viviendas no se tocan. Sus entidades las simula la tarjeta (no se crea nada en Home Assistant y no aparece nada de su casa): un escenario del día, a 1 h cada 2 s, abre y cierra las persianas, enciende las luces, riega al amanecer, lanza el aspirador por la mañana y el robot de piscina por la tarde, provoca una fuga de agua antes de la cena… El botón 🎬 de la barra lo pausa, ajusta la hora y lanza un evento a mano (persianas, luces, aspirador, riego, robots, fuga, humo); una pulsación en una entidad simulada la conmuta. *Reset the demo* la deja como se entrega, *Leave the demo* vuelve a su vivienda; la vivienda de demostración se elimina como cualquier otra entrada. Sus acuarios reales (reeftank) pueden colocarse en ella. Los archivos se generan con `npm run demo` en `card/`. La vivienda de demostración empieza vacía y plana, para grabarla desde el principio: importe `demo-maison.sh3d` (*Download demo-maison.sh3d* en ⚙) con *Import a .sh3d* y luego obtenga el terreno: la descarga pasa por sus etapas y trae el terreno de la demo, sin ningún acceso a la red.
 - **Plano**: *Import a .sh3d* lee su archivo de Sweet Home 3D en el navegador y lista lo encontrado (plantas, habitaciones, muros, luces…).
 - **Descarga del terreno** (*Terrain (DTM)*): la propia integración descarga el relieve y su entorno, alrededor de las coordenadas de Home Assistant (modificables). La fuente depende del país de la configuración de Home Assistant (*Automatic*), o se impone en el formulario:
   - **France: cartes.gouv.fr (IGN)**: suelo LiDAR HD a 0,5 m (RGE ALTI a 1 m en su defecto), modelo de superficie (ajuste automático, árboles), edificios, carreteras y catastro (BD TOPO, parcelario), fotografía aérea o mapa del IGN proyectado sobre el suelo. Si el IGN no tiene datos en ese lugar, las fuentes mundiales toman el relevo;
@@ -166,7 +178,9 @@ Con un modelo de 30 m el terreno es solo un plano inclinado: las correcciones de
 
 | Ruta | GET | POST | DELETE |
 |---|---|---|---|
-| `/api/house_view/info` | estado + ubicación de Home Assistant | | |
+| `/api/house_view/homes` | viviendas configuradas: `[{id, title}]` | | |
+| `/api/house_view/demo` | plano de la casa de demostración (admin) | crea la vivienda de demostración o la deja como se entrega → `{home}` (admin) | |
+| `/api/house_view/info` | estado, nombre y ubicación de la vivienda | | |
 | `/api/house_view/scene` | plano | sustituye (admin) | |
 | `/api/house_view/terrain` | malla de alturas | sustituye (admin) | elimina (admin) |
 | `/api/house_view/edits` | correcciones | sustituye (admin) | elimina (admin) |
@@ -175,9 +189,11 @@ Con un modelo de 30 m el terreno es solo un plano inclinado: las correcciones de
 | `/api/house_view/github` | | `{"action": "backup" \| "restore"}` (admin) | |
 | `/api/house_view/unlock` | `{locked, unlocked}` | `{"password"}` → token (admin) | vuelve a bloquear |
 
+Con varias viviendas, cada ruta acepta `?home=<id de la entrada>` (sin él, la primera vivienda).
+
 Cuando hay una contraseña de edición, las escrituras (POST / DELETE anteriores) exigen además la cabecera `X-House-View-Unlock` con el token devuelto por `/unlock`; de lo contrario responden 423.
 
-Cada documento se valida (`validate.py`) y se guarda en `.storage/house_view.<clave>`; cada escritura lanza el evento `house_view_updated` (`key`, `updated`). Los documentos son voluminosos (un terreno ocupa varios MB): viajan por HTTP (límite de Home Assistant de 16 MB por petición), no por el websocket.
+Cada documento se valida (`validate.py`) y se guarda en `.storage/house_view.<clave>` (vivienda creada antes de la versión 0.2) o en `.storage/house_view.<id de la vivienda>.<clave>`; cada escritura lanza el evento `house_view_updated` (`key`, `updated`, `home`). Eliminar una vivienda elimina sus documentos. Los documentos son voluminosos (un terreno ocupa varios MB): viajan por HTTP (límite de Home Assistant de 16 MB por petición), no por el websocket.
 
 ## Desarrollo y pruebas
 
@@ -205,6 +221,7 @@ pre-commit run --all-files
 3. ✅ Descarga del terreno por la integración para Francia (IGN), carreteras, foto del suelo, vallas, entidades colocadas, robot aspirador, zoom en una habitación, vista previa de estación / tiempo, copia en GitHub.
 4. ✅ Otros países: relieve de Mapterhorn, edificios y carreteras de OpenStreetMap (por confirmar país por país). Después: catastro y fotografía aérea de los países que los publican como datos abiertos.
 5. ✅ Catálogo (árboles de cuatro estaciones, objetos) leído de `house-catalog` y editado con `catalog_editor`. Después: más especies y objetos, modelos de aspersores.
+6. ✅ Varias viviendas, varios robots aspiradores, entidades de una habitación con zoom, puertas / ventanas / persianas vinculadas a Home Assistant, piscinas y estanques excavados en el terreno, editor en ventanas.
 
 ## Licencia
 

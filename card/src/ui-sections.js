@@ -306,7 +306,40 @@ export function renderVacuumSetup(card) {
             }`
     }
   `;
+  // every vacuum of Home Assistant can be set up; the one chosen is the one of the toolbar too
+  const robots = Object.keys(card._hass.states).filter((e) => e.startsWith('vacuum.'));
+  const shown = card._vacuumIds;
+  const choose = (id) => {
+    vt.cancel();
+    ctl.showMap(false);
+    card._vacCur = id;
+    if (!shown.includes(id)) card._vacCfg(id, true).hidden = false; // set up here: shown from now on
+    card._edited(true);
+  };
   return html`
+    <div class="grid">
+      <span>${t('vac_robot')}</span>
+      <select @change=${(e) => choose(e.target.value)}>
+        ${robots.map(
+          (id) =>
+            html`<option value=${id} ?selected=${id === card._vacuum}>
+              ${card._hass.states[id].attributes.friendly_name || id}${shown.includes(id) ? '' : ` (${t('vac_robot_hidden')})`}
+            </option>`,
+        )}
+      </select>
+    </div>
+    <label class="chk"
+      ><input
+        type="checkbox"
+        .checked=${!v.hidden}
+        ?disabled=${!v.hidden && shown.length <= 1}
+        @change=${(e) => {
+          card._vacCfg(card._vacuum, true).hidden = !e.target.checked;
+          card._edited(true);
+        }}
+      />
+      ${t('vac_robot_show')}</label
+    >
     <div class="hint">${(st && st.attributes.friendly_name) || card._vacuum} · ${card._stateText(st)}</div>
     <div class="row">
       <button class=${mode === 'dock' ? 'on' : ''} @click=${() => (mode === 'dock' ? vt.cancel() : vt.placeDock())}>
@@ -433,36 +466,40 @@ export function renderIrrigation(card) {
       </div>
       ${
         on
-          ? html`<div class="grid">
-                <span>${t('name')}</span
-                ><input type="text" .value=${ln.name || ''} @change=${(e) => it.editLine(ln.id, { name: e.target.value })} />
-                <span>${t('irr_color')}</span>
-                <select @change=${(e) => it.editLine(ln.id, { color: e.target.value })}>
-                  ${['black', 'brown', 'green', 'none'].map((k) => html`<option value=${k} ?selected=${(ln.color || 'black') === k}>${t(`irr_color_${k}`)}</option>`)}
-                </select>
-                <span>${t('irr_flow')}</span>${num(ln.flow || 2, (v) => it.editLine(ln.id, { flow: Math.max(v, 0.1) }), 0.1, 0.1)}
-                <span>${t('irr_spacing')}</span
-                >${num(ln.spacing || 0.3, (v) => it.editLine(ln.id, { spacing: Math.max(v, 0.1) }), 0.05, 0.1)}
-              </div>
-              <label>${t('irr_switch')}</label>
-              ${card._entityInput(ln.entity, (id) => it.editLine(ln.id, { entity: id }), ['switch', 'valve', 'input_boolean'])}
-              ${
-                isDraw
-                  ? html`<div class="hint">${t('irr_draw_hint')}</div>
-                      <div class="row">
-                        <button class="on" ?disabled=${drawing.pts.length < 2} @click=${() => it.finishLine()}>
-                          ${t('finish')} (${drawing.pts.length})
-                        </button>
-                        <button ?disabled=${!drawing.pts.length} @click=${() => it.undoPoint()}>${t('undo_point')}</button>
-                        <button @click=${() => it.cancel()}>${t('cancel_pick')}</button>
+          ? card._asWindow(
+              ln.name || `${t('irr_line')} ${i + 1}`,
+              html`<div class="grid">
+                  <span>${t('name')}</span
+                  ><input type="text" .value=${ln.name || ''} @change=${(e) => it.editLine(ln.id, { name: e.target.value })} />
+                  <span>${t('irr_color')}</span>
+                  <select @change=${(e) => it.editLine(ln.id, { color: e.target.value })}>
+                    ${['black', 'brown', 'green', 'none'].map((k) => html`<option value=${k} ?selected=${(ln.color || 'black') === k}>${t(`irr_color_${k}`)}</option>`)}
+                  </select>
+                  <span>${t('irr_flow')}</span>${num(ln.flow || 2, (v) => it.editLine(ln.id, { flow: Math.max(v, 0.1) }), 0.1, 0.1)}
+                  <span>${t('irr_spacing')}</span
+                  >${num(ln.spacing || 0.3, (v) => it.editLine(ln.id, { spacing: Math.max(v, 0.1) }), 0.05, 0.1)}
+                </div>
+                <label>${t('irr_switch')}</label>
+                ${card._entityInput(ln.entity, (id) => it.editLine(ln.id, { entity: id }), ['switch', 'valve', 'input_boolean'])}
+                ${
+                  isDraw
+                    ? html`<div class="hint">${t('irr_draw_hint')}</div>
+                        <div class="row">
+                          <button class="on" ?disabled=${drawing.pts.length < 2} @click=${() => it.finishLine()}>
+                            ${t('finish')} (${drawing.pts.length})
+                          </button>
+                          <button ?disabled=${!drawing.pts.length} @click=${() => it.undoPoint()}>${t('undo_point')}</button>
+                          <button @click=${() => it.cancel()}>${t('cancel_pick')}</button>
+                        </div>`
+                    : html`<div class="row">
+                        <button @click=${() => it.drawLine(ln.id)}>${t('irr_redraw')}</button>
+                        ${ln.pts.length > 1 ? html`<button @click=${() => it.drawLine(ln.id, true)}>${t('irr_extend')}</button>` : nothing}
+                        ${previewBtn(ln)}
+                        <button @click=${() => it.removeLine(ln.id)}>${t('delete')}</button>
                       </div>`
-                  : html`<div class="row">
-                      <button @click=${() => it.drawLine(ln.id)}>${t('irr_redraw')}</button>
-                      ${ln.pts.length > 1 ? html`<button @click=${() => it.drawLine(ln.id, true)}>${t('irr_extend')}</button>` : nothing}
-                      ${previewBtn(ln)}
-                      <button @click=${() => it.removeLine(ln.id)}>${t('delete')}</button>
-                    </div>`
-              }`
+                }`,
+              () => open(ln.id),
+            )
           : nothing
       }
     </div>`;
@@ -506,18 +543,22 @@ export function renderIrrigation(card) {
       </div>
       ${
         on
-          ? html`<div class="grid">
-                <span>${t('name')}</span
-                ><input type="text" .value=${c.name || ''} @change=${(e) => it.editCircuit(c.id, { name: e.target.value })} />
-              </div>
-              <label>${t('irr_switch')}</label>
-              ${card._entityInput(c.entity, (id) => it.editCircuit(c.id, { entity: id }), ['switch', 'valve', 'input_boolean'])}
-              ${c.heads.map((h, k) => head(c, h, k))}
-              <div class="row">
-                <button @click=${() => it.addHead(c.id)}>＋ ${t('irr_head')}</button>
-                ${previewBtn(c)}
-                <button @click=${() => it.removeCircuit(c.id)}>${t('irr_del_circuit')}</button>
-              </div>`
+          ? card._asWindow(
+              c.name || `${t('irr_circuit')} ${i + 1}`,
+              html`<div class="grid">
+                  <span>${t('name')}</span
+                  ><input type="text" .value=${c.name || ''} @change=${(e) => it.editCircuit(c.id, { name: e.target.value })} />
+                </div>
+                <label>${t('irr_switch')}</label>
+                ${card._entityInput(c.entity, (id) => it.editCircuit(c.id, { entity: id }), ['switch', 'valve', 'input_boolean'])}
+                ${c.heads.map((h, k) => head(c, h, k))}
+                <div class="row">
+                  <button @click=${() => it.addHead(c.id)}>＋ ${t('irr_head')}</button>
+                  ${previewBtn(c)}
+                  <button @click=${() => it.removeCircuit(c.id)}>${t('irr_del_circuit')}</button>
+                </div>`,
+              () => open(c.id),
+            )
           : nothing
       }
     </div>`;

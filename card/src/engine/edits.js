@@ -14,8 +14,14 @@ export function emptyEdits() {
     //   tap: toggle|more-info, kind / radius (lights: fixture and reach of the light source) }
     entities: [],
     room_areas: {}, // explicit room id -> HA area id (overrides the match by name)
+    // entities listed on the left while zoomed on a room: room id -> { list: [entity ids], all: every entity of its area }
+    room_entities: {},
+    openings: {}, // openingKey -> { contact, opener, shutter } set by hand ('' = none)
+    pools: [], // drawn pools and ponds: { id, kind, shape, pts, frame, color, depth, robot }
     irrigation: { soil: 'loam', lines: [], circuits: [] }, // drip lines and sprinkler circuits (see irrigation.js)
-    vacuum: {}, // dock position and calibration of the robot vacuum (see VAC_DEFAULTS in vacuum.js)
+    // robot vacuums: dock position and calibration of each one (see VAC_DEFAULTS in vacuum.js), `entity` naming it;
+    // '' for the settings of the single robot of the first versions, taken by the card's robot
+    vacuums: [],
     // general sensors and actuators shown on the left, under the level buttons: { id, entity, label, icon, tap: auto|toggle|more-info|none }
     panel: [],
     // central alarm badge: alarms found by their kind (auto), entities added by hand, entities left out
@@ -43,11 +49,16 @@ export function normalizeEdits(raw) {
   if (Array.isArray(raw.entities)) e.entities = raw.entities;
   else if (Array.isArray(raw.sensors)) e.entities = raw.sensors; // first name of the list (0.2 previews)
   if (raw.room_areas && typeof raw.room_areas === 'object') e.room_areas = raw.room_areas;
+  if (raw.room_entities && typeof raw.room_entities === 'object') e.room_entities = raw.room_entities;
+  if (raw.openings && typeof raw.openings === 'object' && !Array.isArray(raw.openings)) e.openings = raw.openings;
+  if (Array.isArray(raw.pools)) e.pools = raw.pools.filter((p) => p && typeof p === 'object' && p.id);
   if (raw.room_views && typeof raw.room_views === 'object') e.room_views = raw.room_views;
   if (raw.irrigation && typeof raw.irrigation === 'object') {
     e.irrigation = { soil: raw.irrigation.soil || 'loam', lines: raw.irrigation.lines || [], circuits: raw.irrigation.circuits || [] };
   }
-  if (raw.vacuum && typeof raw.vacuum === 'object') e.vacuum = raw.vacuum;
+  if (Array.isArray(raw.vacuums)) e.vacuums = raw.vacuums.filter((v) => v && typeof v === 'object');
+  else if (raw.vacuum && typeof raw.vacuum === 'object' && Object.keys(raw.vacuum).length)
+    e.vacuums = [{ entity: '', ...raw.vacuum }]; // one robot before: its settings, for the robot of the card
   if (Array.isArray(raw.panel)) e.panel = raw.panel;
   if (Array.isArray(raw.zones)) e.zones = raw.zones;
   if (raw.alarms && typeof raw.alarms === 'object') {

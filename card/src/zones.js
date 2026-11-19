@@ -64,6 +64,23 @@ export function aquariumSize(dims, floor) {
   return [dims.length / 100, other / 100];
 }
 
+/**
+ * New size of a rectangle keeping the ratio `ratio` (width / height): the side changed in `patch` ({ w } or { h })
+ * drives the other one. Without a ratio, the patch is applied as is.
+ */
+export function keepRatio(rect, patch, ratio) {
+  if (!(ratio > 0)) return { ...rect, ...patch };
+  if (patch.w !== undefined) return { ...rect, ...patch, w: patch.w, h: patch.w / ratio };
+  if (patch.h !== undefined) return { ...rect, ...patch, h: patch.h, w: patch.h * ratio };
+  return { ...rect, ...patch };
+}
+
+/** Box of a fit inside a box: the largest W x H of ratio `ratio` (width / height) inside `bw` x `bh`. */
+export function fitRatio(bw, bh, ratio) {
+  if (!(ratio > 0) || !(bw > 0) || !(bh > 0)) return [bw, bh];
+  return bw / bh > ratio ? [bh * ratio, bh] : [bw, bw / ratio];
+}
+
 /** Box of a piece of furniture of the plan, standing on level elevation `base`. */
 export function boxOf(item, base) {
   return { at: [...item.at], rot: item.rot || 0, size: [...item.size], y0: base + (item.elevation || 0) };

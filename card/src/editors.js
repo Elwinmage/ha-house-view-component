@@ -85,7 +85,13 @@ export class WorldEditors {
     const t = this.clickTool;
     if (!t || !t.hover) return;
     if (!ev) return t.hover(null);
-    t.hover(t.furniture ? this.engine.pickFurnitureAt(ev) : this.engine.pickPoint(ev, !!t.wall));
+    t.hover(this._pickFor(t, ev));
+  }
+
+  /** What a click tool works on: its own picking (`pick(ev)`), a piece of furniture, or a point of a floor or wall. */
+  _pickFor(t, ev) {
+    if (t.pick) return t.pick(ev);
+    return t.furniture ? this.engine.pickFurnitureAt(ev) : this.engine.pickPoint(ev, !!t.wall);
   }
 
   /**
@@ -562,7 +568,8 @@ export class WorldEditors {
     s.base = round(hit.floorY ?? p.y, 100); // floor / ground height under the entity
     s.level = hit.level;
     s.room = hit.room;
-    if (s.scope === 'room' && !s.room) s.scope = s.level ? 'level' : 'general';
+    // an entity of a room layer stays in it wherever it is put (on a wall seen from the room, in the air...)
+    if (s.scope === 'room' && !(s.layer || s.room)) s.scope = s.level ? 'level' : 'general';
     if (s.scope === 'level' && !s.level) s.scope = 'general';
     return true;
   }
@@ -594,7 +601,7 @@ export class WorldEditors {
     if (this.placing) return this._entityClick(ev);
     if (this.clickTool) {
       // furniture: the pieces of the plan under the pointer (pickPoint only knows floors and walls)
-      const hit = this.clickTool.furniture ? this.engine.pickFurnitureAt(ev) : this.engine.pickPoint(ev, !!this.clickTool.wall);
+      const hit = this._pickFor(this.clickTool, ev);
       if (hit) this.clickTool.click(hit, ev);
       return;
     }

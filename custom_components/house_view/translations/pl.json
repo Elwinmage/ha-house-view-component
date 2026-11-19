@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Przechowuje plan, teren i poprawki dla karty House View. Lokalizacja pochodzi z konfiguracji Home Assistant."
+        "title": "Dodaj mieszkanie",
+        "description": "Każde mieszkanie ma swój plan, teren i poprawki; karta pokazuje jedno z nich. Lokalizacja ustawia słońce i teren.",
+        "data": {
+          "name": "Nazwa mieszkania",
+          "location": "Lokalizacja"
+        }
       }
     },
+    "error": {
+      "name_required": "Nadaj mieszkaniu nazwę.",
+      "name_taken": "Inne mieszkanie ma już tę nazwę."
+    },
     "abort": {
-      "single_instance_allowed": "House View jest już skonfigurowany."
+      "demo_exists": "Dom demonstracyjny już istnieje."
     }
   },
   "options": {

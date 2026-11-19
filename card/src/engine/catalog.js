@@ -1,6 +1,7 @@
 // Vegetation and furniture: a few built-in procedural species and pieces, and the entries of the house catalog
 // (trees, objects: data only, drawn here; see ../catalog-lib.js and doc/format.md of house-catalog).
 import * as THREE from 'three';
+import { climateFor, seasonBlend as climateBlend } from '../climate.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BLOSSOM_DENSITY,
@@ -63,30 +64,18 @@ function blob(r, sx, sy, sz, ox, oy, oz) {
 
 // ---------------------------------------------------------------- seasons
 
-const ANCHORS = [
-  ['winter', 15],
-  ['spring', 105],
-  ['summer', 200],
-  ['autumn', 290],
-  ['winter', 380],
-];
+// the climate of the home (set from its latitude by the engine) decides when the seasons come
+let CLIMATE = climateFor(45);
 
-export function seasonBlend(doy) {
-  let d = doy;
-  if (d < 15) d += 365;
-  for (let i = 0; i < ANCHORS.length - 1; i++) {
-    if (d <= ANCHORS[i + 1][1]) {
-      const t = (d - ANCHORS[i][1]) / (ANCHORS[i + 1][1] - ANCHORS[i][1]);
-      return { from: ANCHORS[i][0], to: ANCHORS[i + 1][0], t };
-    }
-  }
-  return { from: 'winter', to: 'winter', t: 0 };
+/** Latitude of the home: four seasons, long polar winters, or wet / dry seasons between the tropics. */
+export function setClimate(latitude) {
+  CLIMATE = climateFor(latitude);
+  return CLIMATE;
 }
 
-export function seasonName(doy) {
-  const s = seasonBlend(doy);
-  const n = s.t < 0.5 ? s.from : s.to;
-  return { winter: 'hiver', spring: 'printemps', summer: 'été', autumn: 'automne' }[n];
+/** Season blend of day `doy` (calendar) for the climate of the home. */
+export function seasonBlend(doy) {
+  return climateBlend(doy, CLIMATE);
 }
 
 const GRASS = { winter: '#7d8a62', spring: '#79bd48', summer: '#5f9e3b', autumn: '#9b9a46' };

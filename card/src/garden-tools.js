@@ -346,13 +346,15 @@ export class IrrigationTools {
 }
 
 export class VacuumTools {
-  constructor(ed) {
+  /** `settings()`: the settings of the robot being set up (created when missing). */
+  constructor(ed, settings) {
     this.ed = ed;
+    this.settings = settings;
     this.mode = null; // dock | aim | calib | map-pin
   }
 
   get vac() {
-    return this.ed.edits.vacuum;
+    return this.settings();
   }
 
   /** Next click (on a floor) places the dock. */

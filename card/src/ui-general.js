@@ -3,7 +3,7 @@
 import { html, nothing } from 'lit';
 import { alarmList, tapAction, roomAlarms } from './alarms.js';
 import { areaOfEntity } from './ha-bridge.js';
-import { rectAt, aquariumSize, onFloor, boxOf, rectCorners, quadMatrix } from './zones.js';
+import { rectAt, aquariumSize, onFloor, boxOf, rectCorners, quadMatrix, keepRatio, fitRatio } from './zones.js';
 
 /** Element of ha-reef-card that draws an aquarium of reeftank (its aquarium view). */
 export const AQUARIUM_CARD = 'reef-aquarium-card';
@@ -29,28 +29,27 @@ function tapGeneral(card, g) {
   else if (action === 'more-info') card._moreInfo(g.entity);
 }
 
+/** A button of the left column: icon, label, state; a tap toggles it or opens its dialog. */
+function generalButton(card, g) {
+  const hass = card._hass;
+  const st = hass.states[g.entity];
+  const on = st && ['on', 'open', 'unlocked', 'playing', 'home', 'heat', 'cool'].includes(st.state);
+  const armed = st && g.entity.startsWith('alarm_control_panel.') && st.state.startsWith('armed');
+  const label = g.label || (st && st.attributes.friendly_name) || g.entity;
+  return html`<button
+    class=${`gen ${on || armed ? 'on' : ''} ${st && st.state === 'triggered' ? 'alarm' : ''}`}
+    title=${`${label} : ${card._stateText(st)}`}
+    @click=${() => tapGeneral(card, g)}
+  >
+    <ha-state-icon .hass=${hass} .stateObj=${st} .icon=${g.icon || undefined}></ha-state-icon>
+    <span class="v">${g.label ? html`<small>${g.label}</small> ` : nothing}${card._stateText(st)}</span>
+  </button>`;
+}
+
 export function renderGeneral(card) {
   const list = (card._data && card._data.edits.panel) || [];
   if (!list.length) return nothing;
-  const hass = card._hass;
-  return html`<div class="general">
-    ${list
-      .filter((g) => g.entity)
-      .map((g) => {
-        const st = hass.states[g.entity];
-        const on = st && ['on', 'open', 'unlocked', 'playing', 'home', 'heat', 'cool'].includes(st.state);
-        const armed = st && g.entity.startsWith('alarm_control_panel.') && st.state.startsWith('armed');
-        const label = g.label || (st && st.attributes.friendly_name) || g.entity;
-        return html`<button
-          class=${`gen ${on || armed ? 'on' : ''} ${st && st.state === 'triggered' ? 'alarm' : ''}`}
-          title=${`${label} : ${card._stateText(st)}`}
-          @click=${() => tapGeneral(card, g)}
-        >
-          <ha-state-icon .hass=${hass} .stateObj=${st} .icon=${g.icon || undefined}></ha-state-icon>
-          <span class="v">${g.label ? html`<small>${g.label}</small> ` : nothing}${card._stateText(st)}</span>
-        </button>`;
-      })}
-  </div>`;
+  return html`<div class="general">${list.filter((g) => g.entity).map((g) => generalButton(card, g))}</div>`;
 }
 
 export function renderGeneralEditor(card) {
@@ -68,40 +67,67 @@ export function renderGeneralEditor(card) {
     [list[i], list[j]] = [list[j], list[i]];
     save();
   };
+  const hass = card._hass;
+  const name = (g) =>
+    g.label || (hass.states[g.entity] && hass.states[g.entity].attributes.friendly_name) || g.entity || t('picker_choose');
   return html`<div class="hint">${t('general_hint')}</div>
-    ${list.map(
-      (g, i) =>
-        html`<div class="zone">
-          <div class="grid">
-            <span>${t('vac_pos_entity')}</span>${card._entityInput(g.entity, (id) => set(g, { entity: id }), null, '')}
-            <span>${t('entity_label')}</span
-            ><input type="text" .value=${g.label || ''} @change=${(e) => set(g, { label: e.target.value.trim() })} />
-            <span>${t('entity_icon')}</span>${card._iconInput(g.icon, (icon) => set(g, { icon }))}
-            <span>${t('general_tap')}</span>
-            <select @change=${(e) => set(g, { tap: e.target.value })}>
-              ${['auto', 'toggle', 'more-info', 'none'].map(
-                (v) => html`<option value=${v} ?selected=${(g.tap || 'auto') === v}>${t(`general_tap_${v.replace('-', '_')}`)}</option>`,
-              )}
-            </select>
-          </div>
-          <div class="row">
-            <button ?disabled=${i === 0} @click=${() => move(i, -1)}>↑</button>
-            <button ?disabled=${i === list.length - 1} @click=${() => move(i, 1)}>↓</button>
-            <button
-              @click=${() => {
-                list.splice(i, 1);
-                save();
-              }}
-            >
-              ${t('delete')}
-            </button>
-          </div>
-        </div>`,
-    )}
+    ${list.map((g, i) => {
+      const open = card._genSel === g.id;
+      return html`<div class=${`ent ${open ? 'open' : ''}`}>
+        <div
+          class="ent-head"
+          @click=${() => {
+            card._genSel = open ? null : g.id;
+            card.requestUpdate();
+          }}
+        >
+          <ha-state-icon .hass=${hass} .stateObj=${hass.states[g.entity]} .icon=${g.icon || undefined}></ha-state-icon>
+          <span class="grow">${name(g)}</span>
+          <span>${open ? '▾' : '▸'}</span>
+        </div>
+        ${
+          open
+            ? card._asWindow(
+                name(g),
+                html`<div class="grid">
+                    <span>${t('vac_pos_entity')}</span>${card._entityInput(g.entity, (id) => set(g, { entity: id }), null, '')}
+                    <span>${t('entity_label')}</span
+                    ><input type="text" .value=${g.label || ''} @change=${(e) => set(g, { label: e.target.value.trim() })} />
+                    <span>${t('entity_icon')}</span>${card._iconInput(g.icon, (icon) => set(g, { icon }))}
+                    <span>${t('general_tap')}</span>
+                    <select @change=${(e) => set(g, { tap: e.target.value })}>
+                      ${['auto', 'toggle', 'more-info', 'none'].map(
+                        (v) =>
+                          html`<option value=${v} ?selected=${(g.tap || 'auto') === v}>${t(`general_tap_${v.replace('-', '_')}`)}</option>`,
+                      )}
+                    </select>
+                  </div>
+                  <div class="row">
+                    <button ?disabled=${i === 0} @click=${() => move(i, -1)}>↑</button>
+                    <button ?disabled=${i === list.length - 1} @click=${() => move(i, 1)}>↓</button>
+                    <button
+                      @click=${() => {
+                        list.splice(i, 1);
+                        save();
+                      }}
+                    >
+                      ${t('delete')}
+                    </button>
+                  </div> `,
+                () => {
+                  card._genSel = null;
+                },
+              )
+            : nothing
+        }
+      </div>`;
+    })}
     <div class="row">
       <button
         @click=${() => {
-          list.push({ id: newId('g'), entity: '', tap: 'auto' });
+          const g = { id: newId('g'), entity: '', tap: 'auto' };
+          list.push(g);
+          card._genSel = g.id; // its window opens at once
           save();
         }}
       >
@@ -109,8 +135,6 @@ export function renderGeneralEditor(card) {
       </button>
     </div>`;
 }
-
-// ---------------------------------------------------------------- central alarm badge
 
 export function alarmsOf(card) {
   return alarmList(card._hass.states, card._data ? card._data.edits.alarms : null);
@@ -426,12 +450,18 @@ export function renderZoneThumbs(card) {
   );
   if (!zones.length) return nothing;
   return html`<div class="anchors">
-    ${zones.map(
-      (z) =>
-        html`<div class="zthumb" data-zone=${z.id} style=${`width:${THUMB_W}px;height:${Math.round((THUMB_W * z.rect.h) / z.rect.w)}px`}>
-          ${aquariumElement(card, z.aquarium, `zone:${z.id}`, z.view)}
-        </div>`,
-    )}
+    ${zones.map((z) => {
+      const W = THUMB_W;
+      const H = Math.round((THUMB_W * z.rect.h) / z.rect.w);
+      // the picture keeps the proportions of the tank inside the zone (never stretched)
+      const a = (card._aquariums || []).find((x) => x.id === z.aquarium);
+      const size = a && aquariumSize(a.dims, onFloor(z.rect));
+      const [fw, fh] = fitRatio(W, H, size ? size[0] / size[1] : 0);
+      const el = aquariumElement(card, z.aquarium, `zone:${z.id}`, z.view);
+      el.style.width = `${Math.round(fw)}px`;
+      el.style.height = `${Math.round(fh)}px`;
+      return html`<div class="zthumb" data-zone=${z.id} style=${`width:${W}px;height:${H}px`}>${el}</div>`;
+    })}
   </div>`;
 }
 
@@ -571,8 +601,15 @@ export function renderZonesEditor(card) {
   const where = (z) =>
     !z.shape ? t('zone_unplaced') : z.shape === 'box' ? t('zone_on_object') : onFloor(z.rect) ? t('zone_on_floor') : t('zone_on_wall');
   const rng = (label, value, min, max, step, apply, fmt) => card._range(label, value, min, max, step, apply, fmt, true);
+  // an aquarium keeps its proportions (those of the tank, else the current ones): its picture is never stretched
   const setRect = (z, patch) => {
-    z.rect = { ...z.rect, ...patch };
+    let ratio = null;
+    if (z.kind === 'aquarium' && ('w' in patch || 'h' in patch)) {
+      const a = aquariums.find((x) => x.id === z.aquarium);
+      const size = a && aquariumSize(a.dims, onFloor(z.rect));
+      ratio = size ? size[0] / size[1] : z.rect.w / z.rect.h;
+    }
+    z.rect = keepRatio(z.rect, patch, ratio);
     save();
   };
   // view of the aquarium shown on the zone and opened by a tap ('' = its default view)
@@ -729,7 +766,15 @@ export function renderZonesEditor(card) {
             <b>${z.name || (z.kind === 'media' ? z.entity : '') || t(z.kind === 'media' ? 'zone_media' : 'zone_aquarium')}</b>
             <small>${where(z)}</small>
           </div>
-          ${sel === z ? body(z) : nothing}
+          ${
+            sel === z
+              ? card._asWindow(z.name || t(z.kind === 'media' ? 'zone_media' : 'zone_aquarium'), body(z), () => {
+                  card._zoneSel = null;
+                  ed.setClickTool(null);
+                  pushZones(card);
+                })
+              : nothing
+          }
         </div>`,
     )}
     <div class="row">

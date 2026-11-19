@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 
 from .catalog import CATALOGS, PLATFORMS
 from .catalog_runtime import async_setup_catalog, async_unload_catalog
-from .const import CARD_URL, CONF_LOCK, DOMAIN
+from .const import CARD_URL, CONF_DEMO, CONF_LOCATION, CONF_LOCK, CONF_STORAGE, DOMAIN
 from .http import all_views
 from .store import HouseViewStore
 
@@ -42,12 +42,21 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         add_extra_js_url(hass, f"{CARD_URL}?v={manifest['version']}-{digest}")
 
 
+def _store_of(hass: HomeAssistant, entry: ConfigEntry) -> HouseViewStore:
+    store = HouseViewStore(hass, entry.data.get(CONF_STORAGE, DOMAIN))
+    store.title = entry.title
+    store.location = entry.data.get(CONF_LOCATION)
+    store.demo = bool(entry.data.get(CONF_DEMO))
+    return store
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Load the stored documents and expose them over HTTP."""
-    store = HouseViewStore(hass)
+    """Load the stored documents of the home and expose them over HTTP."""
+    store = _store_of(hass, entry)
     await store.async_load()
     store.options = dict(entry.options)
-    hass.data[DOMAIN] = store
+    # one store per home, in the order the homes were set up (the first one answers requests naming no home)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = store
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     if not hass.data.get(_VIEWS_REGISTERED):  # routes cannot be removed: register once per run
         for view in all_views():
@@ -63,8 +72,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """New GitHub settings or edit password: used by the next request, nothing to reload."""
-    store = hass.data.get(DOMAIN)
+    store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if store is not None:
+        store.title = entry.title
         if store.options.get(CONF_LOCK) != entry.options.get(CONF_LOCK):
             store.unlocks.clear()  # password changed or removed: the cards have to unlock again
         store.options = dict(entry.options)
@@ -75,5 +85,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     for spec in CATALOGS:
         await async_unload_catalog(hass, entry, spec)
-    hass.data.pop(DOMAIN, None)
+    homes = hass.data.get(DOMAIN, {})
+    homes.pop(entry.entry_id, None)
+    if not homes:
+        hass.data.pop(DOMAIN, None)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """A home deleted: its documents go with it."""
+    await _store_of(hass, entry).async_remove_all()

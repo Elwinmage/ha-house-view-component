@@ -2,6 +2,7 @@
 // openings, floor slabs, roofs, and the outdoor site (ground, pool, deck, fence).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { openingKey } from '../openings.js';
 
 const EPS = 1e-4;
 
@@ -154,6 +155,7 @@ export function buildLevelWalls(level, openings, mats) {
   const interiorGeos = [];
   const frameGeos = [];
   const panes = [];
+  const metas = []; // every opening: moving parts and editor picking
 
   level.walls.forEach((wall, wi) => {
     const T = wall.thickness;
@@ -225,6 +227,22 @@ export function buildLevelWalls(level, openings, mats) {
       const o = p.o;
       const cx = wall.a[0] + ux * p.t;
       const cz = wall.a[1] + uz * p.t;
+      const out = outwardDir(level, o.room, [cx, cz], [ux, uz]);
+      metas.push({
+        key: openingKey(o),
+        o,
+        type: o.type,
+        room: o.room || null,
+        level: level.id,
+        exterior: wall.exterior,
+        width: o.width,
+        height: p.h,
+        sill: o.sill,
+        thickness: T,
+        center: [cx, level.elevation + o.sill + p.h / 2, cz],
+        rotY,
+        side: out[0] * -uz + out[1] * ux > 0 ? 1 : -1, // +1: the local z of the opening points outward
+      });
       const ft2 = 0.06; // frame bar thickness
       const bars = [
         [o.width, ft2, 0, o.sill + p.h - ft2 / 2],
@@ -244,6 +262,7 @@ export function buildLevelWalls(level, openings, mats) {
       }
       if (o.type === 'window' || o.type === 'patio' || (o.type === 'door' && wall.exterior)) {
         panes.push({
+          key: openingKey(o),
           kind: o.type === 'door' ? 'leaf' : 'glass',
           room: o.room || null,
           exterior: wall.exterior,
@@ -254,7 +273,7 @@ export function buildLevelWalls(level, openings, mats) {
           thickness: T,
           center: [cx, level.elevation + o.sill + p.h / 2, cz],
           rotY,
-          out: outwardDir(level, o.room, [cx, cz], [ux, uz]),
+          out,
         });
       }
     }
@@ -274,6 +293,7 @@ export function buildLevelWalls(level, openings, mats) {
     interior: merge(interiorGeos, mats.interior, `walls-int-${level.id}`),
     frames: merge(frameGeos, mats.frame, `frames-${level.id}`),
     panes,
+    metas,
   };
 }
 
@@ -390,6 +410,7 @@ export function buildSite(site, snowables, terrain = null) {
     hole.lineTo(pool.x1, -pool.z0);
     gs.holes.push(hole);
   }
+  for (const h of site.holes || []) gs.holes.push(new THREE.Path(h.map(([x, z]) => new THREE.Vector2(x, -z)))); // drawn pools
   let groundMat;
   if (terrain) {
     groundMat = terrain.material; // ground mesh comes from the terrain builder

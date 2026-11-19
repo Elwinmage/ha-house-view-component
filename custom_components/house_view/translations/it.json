@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Salva la planimetria, il terreno e le correzioni per la scheda House View. La posizione proviene dalla configurazione di Home Assistant."
+        "title": "Aggiungi un'abitazione",
+        "description": "Ogni abitazione ha la sua pianta, il suo terreno e le sue correzioni; una scheda ne mostra una. La posizione colloca il sole e il terreno.",
+        "data": {
+          "name": "Nome dell'abitazione",
+          "location": "Posizione"
+        }
       }
     },
+    "error": {
+      "name_required": "Dai un nome all'abitazione.",
+      "name_taken": "Un'altra abitazione ha già questo nome."
+    },
     "abort": {
-      "single_instance_allowed": "House View è già configurato."
+      "demo_exists": "L'abitazione dimostrativa esiste già."
     }
   },
   "options": {

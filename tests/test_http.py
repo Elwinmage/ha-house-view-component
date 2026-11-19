@@ -1,6 +1,7 @@
 """Integration tests through the real HA HTTP server (pytest-homeassistant-custom-component)."""
 
 import hashlib
+from unittest.mock import patch
 
 from homeassistant.core import callback
 from homeassistant.setup import async_setup_component
@@ -95,13 +96,72 @@ async def test_unloaded_entry_answers_404(hass, hass_client, hass_admin_user):
     assert (await client.get("/api/house_view/info")).status == 404
 
 
-async def test_config_flow_single_instance(hass):
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    assert r["type"] == "form"
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {})
-    assert r["type"] == "create_entry"
-    r2 = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    assert r2["type"] == "abort"
+async def test_config_flow_one_entry_per_home(hass):
+    """Each home has a name (unique) and a location, and its own storage."""
+    # the homes created are not set up here: the flow is tested alone
+    with patch("custom_components.house_view.async_setup_entry", return_value=True):
+        r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        assert r["type"] == "form"
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"name": " "})
+        assert r["errors"] == {"name": "name_required"}
+        r = await hass.config_entries.flow.async_configure(
+            r["flow_id"], {"name": "Maison", "location": {"latitude": 1.5, "longitude": 2.5, "radius": 100}}
+        )
+        assert r["type"] == "create_entry"
+        assert r["title"] == "Maison"
+        assert r["data"]["location"] == {"latitude": 1.5, "longitude": 2.5}
+        first = r["data"]["storage"]
+        r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"name": "Maison"})
+        assert r["errors"] == {"name": "name_taken"}
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"name": "Chalet"})
+        assert r["type"] == "create_entry"
+        assert r["data"]["location"] == {"latitude": hass.config.latitude, "longitude": hass.config.longitude}
+        assert r["data"]["storage"] != first
+
+
+async def test_homes_are_kept_apart(hass, hass_client, hass_admin_user):
+    """Two homes: each request names its home (?home=<entry id>); without it, the first home answers."""
+    assert await async_setup_component(hass, "http", {})
+    old = MockConfigEntry(domain=DOMAIN, title="Maison", data={})  # set up before homes existed: original storage
+    chalet = MockConfigEntry(
+        domain=DOMAIN,
+        title="Chalet",
+        data={"storage": "house_view.chalet", "location": {"latitude": 45, "longitude": 6}},
+    )
+    for e in (old, chalet):
+        e.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_client()
+    homes = await (await client.get("/api/house_view/homes")).json()
+    assert homes == [{"id": old.entry_id, "title": "Maison"}, {"id": chalet.entry_id, "title": "Chalet"}]
+
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_updated", callback(lambda e: events.append((e.data["key"], e.data["home"]))))
+    assert (await client.post(f"/api/house_view/scene?home={chalet.entry_id}", json=SCENE)).status == 200
+    assert (await client.get("/api/house_view/scene")).status == 404  # the first home has none
+    assert await (await client.get(f"/api/house_view/scene?home={chalet.entry_id}")).json() == SCENE
+    assert (await client.get("/api/house_view/scene?home=nope")).status == 404
+    info = await (await client.get(f"/api/house_view/info?home={chalet.entry_id}")).json()
+    assert (info["home"], info["title"], info["latitude"], info["longitude"]) == (chalet.entry_id, "Chalet", 45, 6)
+    info = await (await client.get("/api/house_view/info")).json()
+    assert (info["home"], info["latitude"]) == (old.entry_id, hass.config.latitude)
+    await hass.async_block_till_done()
+    assert events == [("scene", chalet.entry_id)]
+
+    # a renamed home; a deleted home takes its documents along, the other keeps them
+    hass.config_entries.async_update_entry(old, title="Maison principale")
+    await hass.async_block_till_done()
+    assert (await (await client.get("/api/house_view/homes")).json())[0]["title"] == "Maison principale"
+    assert (await client.post("/api/house_view/scene", json=SCENE)).status == 200
+    assert await hass.config_entries.async_remove(chalet.entry_id)
+    await hass.async_block_till_done()
+    assert [h["id"] for h in await (await client.get("/api/house_view/homes")).json()] == [old.entry_id]
+    assert await (await client.get("/api/house_view/scene")).json() == SCENE
+    assert await hass.config_entries.async_remove(old.entry_id)
+    await hass.async_block_till_done()
+    assert await (await client.get("/api/house_view/homes")).json() == []
 
 
 async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
@@ -125,7 +185,7 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     assert res.status == 200
     assert "console.log('card')" in await res.text()
     digest = hashlib.sha256(b"console.log('card');").hexdigest()[:8]
-    assert added == [f"/house_view/house-view-card.js?v=0.1.0-{digest}"]
+    assert added == [f"/house_view/house-view-card.js?v=0.2.0-{digest}"]
 
 
 async def test_missing_bundle_is_not_fatal(hass, hass_client, hass_admin_user, caplog, tmp_path, monkeypatch):
@@ -174,9 +234,73 @@ async def test_document_too_large(hass, hass_client, hass_admin_user):
 async def test_serialized_form_is_cached_and_refreshed(hass, hass_client, hass_admin_user):
     client = await _setup(hass, hass_client, hass_admin_user)
     await client.post("/api/house_view/scene", json=SCENE)
-    store = hass.data[DOMAIN]
+    store = next(iter(hass.data[DOMAIN].values()))
     first = store.get_bytes("scene")
     assert store.get_bytes("scene") is first  # cached
     other = {"levels": [{"id": "l1", "elevation": 2.5, "rooms": []}]}
     await client.post("/api/house_view/scene", json=other)
     assert await (await client.get("/api/house_view/scene")).json() == other
+
+
+async def test_demo_home(hass, hass_client, hass_admin_user, hass_read_only_access_token, monkeypatch):
+    """The card asks for the demo home: created once with the shipped documents, put back as shipped next time."""
+    client = await _setup(hass, hass_client, hass_admin_user)
+    reader = await hass_client(hass_read_only_access_token)
+    assert (await reader.post("/api/house_view/demo")).status == 401
+    assert (await reader.get("/api/house_view/demo")).status == 401
+
+    r = await client.post("/api/house_view/demo")
+    assert r.status == 200
+    home = (await r.json())["home"]
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_get_entry(home)
+    assert entry.title == "Démo"
+    assert entry.data["demo"] is True
+    assert entry.data["location"] == {"latitude": 45.0, "longitude": 2.0}
+    info = await (await client.get(f"/api/house_view/info?home={home}")).json()
+    assert info["demo"] is True
+    assert (info["has_scene"], info["has_terrain"], info["has_edits"]) == (False, False, True)  # flat, no plan
+    assert (info["latitude"], info["longitude"]) == (45.0, 2.0)
+    assert (await (await client.get("/api/house_view/info")).json())["demo"] is False  # the first home
+
+    # the plan of the house, imported by the card
+    house = await (await client.get("/api/house_view/demo")).read()
+    assert house[:2] == b"PK"
+
+    # the terrain fetch of the demo home: its steps, then the fictitious terrain centred on the plan (no network)
+    monkeypatch.setattr(house_view.http, "DEMO_PACE", 0)
+    params = {"lat": 45, "lon": 2, "center": [10, 5]}
+    r = await client.post(f"/api/house_view/fetch?home={home}", json=params)
+    assert r.status == 202
+    for _ in range(50):
+        await hass.async_block_till_done()
+        job = await (await client.get(f"/api/house_view/fetch?home={home}")).json()
+        if job["state"] == "done":
+            break
+    assert job["state"] == "done"
+    got = await (await client.get(f"/api/house_view/terrain?home={home}")).json()
+    assert got["center"] == [10, 5]
+    assert got["s"]
+
+    # a second time: the same home, its plan and terrain dropped (imported, fetched again), its edits as shipped
+    assert (await client.post(f"/api/house_view/scene?home={home}", json=SCENE)).status == 200
+    assert (await client.post(f"/api/house_view/edits?home={home}", json={"version": 1})).status == 200
+    r = await client.post("/api/house_view/demo")
+    assert (await r.json())["home"] == home
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 2
+    info = await (await client.get(f"/api/house_view/info?home={home}")).json()
+    assert info["has_scene"] is False
+    assert info["has_terrain"] is False
+    assert info["fetch"] == {"state": "idle"}
+    edits = await (await client.get(f"/api/house_view/edits?home={home}")).json()
+    assert edits["pools"]
+
+    # a second demo entry is refused by the flow
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "demo"})
+    assert result["type"] == "abort"
+    assert result["reason"] == "demo_exists"
+
+    # the demo entry not loaded (yet): the card is told to try again
+    await hass.config_entries.async_unload(home)
+    await hass.async_block_till_done()
+    assert (await client.post("/api/house_view/demo")).status == 409

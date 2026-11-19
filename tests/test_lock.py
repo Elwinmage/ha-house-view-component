@@ -141,7 +141,7 @@ async def test_too_many_wrong_passwords(hass, hass_client, hass_admin_user):
     r = await client.post(f"{API}/unlock", json={"password": PASSWORD})  # even the right one has to wait
     assert r.status == 429
     assert 0 < (await r.json())["retry_after"] <= UNLOCK_PENALTY
-    hass.data[DOMAIN].unlocks._blocked_until = 0.0  # the wait is over
+    next(iter(hass.data[DOMAIN].values())).unlocks._blocked_until = 0.0  # the wait is over
     assert await _unlock(client)
 
 

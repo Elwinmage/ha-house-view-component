@@ -13,10 +13,10 @@ function server(password = 's3same') {
   const reply = (status, body) => ({ status, ok: status < 300, json: async () => body, text: async () => JSON.stringify(body) });
   const hass = {
     async fetchWithAuth(url, init = {}) {
-      const path = url.replace('/api/house_view/', '');
+      const [path, query = ''] = url.replace('/api/house_view/', '').split('?');
       const method = init.method || 'GET';
       const token = (init.headers || {})[HEADER];
-      calls.push({ path, method, token, body: init.body });
+      calls.push({ path, query, method, token, body: init.body });
       if (path === 'missing') return reply(404, {});
       if (path === 'info') return reply(200, { has_scene: false, locked: !!password });
       if (path === 'unlock') {
@@ -142,5 +142,30 @@ describe('edit lock on the client side', () => {
     expect(await api.setEdits({})).toEqual({ ok: true });
     expect(await api._json('missing')).toBeNull(); // no /unlock route before this version
     await expect(api._json('broken', { method: 'POST' })).rejects.toThrow('broken: HTTP 500');
+  });
+});
+
+describe('homes', () => {
+  it('names its home in every request and keeps the unlock of each home apart', async () => {
+    HouseViewApi._auth.clear();
+    const s = server();
+    const chalet = new HouseViewApi(s.hass, 'entry 2');
+    await chalet.info();
+    expect(s.calls.at(-1)).toMatchObject({ path: 'info', query: 'home=entry%202' });
+    expect(await chalet.unlock('s3same')).toEqual({ ok: true });
+    expect(chalet.hasToken).toBe(true);
+    // the first home was not unlocked by the password given for the chalet
+    const first = new HouseViewApi(s.hass);
+    expect(first.hasToken).toBe(false);
+    expect(HouseViewApi.token).toBeNull();
+    // a card showing the same home shares the unlock
+    expect(new HouseViewApi(s.hass, 'entry 2').hasToken).toBe(true);
+  });
+
+  it('lists the homes', async () => {
+    const homes = [{ id: 'a', title: 'Maison' }];
+    const hass = { fetchWithAuth: async (url) => ({ ok: url === '/api/house_view/homes', json: async () => homes }) };
+    expect(await new HouseViewApi(hass, 'a').homes()).toEqual(homes);
+    expect(await new HouseViewApi({ fetchWithAuth: async () => ({ ok: false }) }).homes()).toEqual([]);
   });
 });

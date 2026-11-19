@@ -34,9 +34,25 @@ export class HouseViewCardEditor extends LitElement {
     if (this._lang !== lang || !this._tr) {
       this._lang = lang;
       this._tr = makeT(lang);
-      this._schema = editorSchema(this._tr); // kept: a new schema at every render would fold the sections again
+      this._schema = editorSchema(this._tr, this._homes || []); // kept: a new one at every render folds the sections
     }
     return this._tr;
+  }
+
+  /** The homes of the integration, read once: the form offers them when there are several. */
+  async _loadHomes() {
+    if (this._homesAsked || !this.hass || !this.hass.fetchWithAuth) return;
+    this._homesAsked = true;
+    try {
+      const res = await this.hass.fetchWithAuth('/api/house_view/homes');
+      this._homes = res.ok ? await res.json() : [];
+    } catch (e) {
+      this._homes = [];
+    }
+    if (this._homes.length > 1) {
+      this._schema = editorSchema(this._t, this._homes);
+      this.requestUpdate();
+    }
   }
 
   _text(key) {
@@ -53,6 +69,7 @@ export class HouseViewCardEditor extends LitElement {
 
   render() {
     if (!this.hass || !this._config) return nothing;
+    this._loadHomes();
     const t = this._t;
     return html`<ha-form
         .hass=${this.hass}

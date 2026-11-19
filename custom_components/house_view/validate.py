@@ -69,10 +69,10 @@ def validate_edits(doc: Any) -> None:
         raise ValueError("edits.views must be a list")
     if "registration" in doc and not isinstance(doc["registration"], dict):
         raise ValueError("edits.registration must be an object")
-    for key in ("fences", "entities", "sensors", "panel", "zones"):
+    for key in ("fences", "entities", "sensors", "panel", "zones", "vacuums", "pools"):
         if key in doc and not isinstance(doc[key], list):
             raise ValueError(f"edits.{key} must be a list")
-    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms"):
+    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings"):
         if key in doc and not isinstance(doc[key], dict):
             raise ValueError(f"edits.{key} must be an object")
 

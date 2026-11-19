@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Speichert Ihren Grundriss, das Gelände und Ihre Korrekturen für die House-View-Karte. Der Standort stammt aus der Home-Assistant-Konfiguration."
+        "title": "Wohnung hinzufügen",
+        "description": "Jede Wohnung hat ihren Plan, ihr Gelände und ihre Korrekturen; eine Karte zeigt eine davon. Der Standort bestimmt Sonne und Gelände.",
+        "data": {
+          "name": "Name der Wohnung",
+          "location": "Standort"
+        }
       }
     },
+    "error": {
+      "name_required": "Geben Sie der Wohnung einen Namen.",
+      "name_taken": "Eine andere Wohnung trägt bereits diesen Namen."
+    },
     "abort": {
-      "single_instance_allowed": "House View ist bereits eingerichtet."
+      "demo_exists": "Das Demo-Zuhause existiert bereits."
     }
   },
   "options": {

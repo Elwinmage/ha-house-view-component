@@ -16,6 +16,8 @@
 [<img src="https://flagicons.lipis.dev/flags/4x3/pt.svg" style="width: 5%;"/>](doc/pt/README.pt.md)
 [<img src="https://flagicons.lipis.dev/flags/4x3/it.svg" style="width: 5%;"/>](doc/it/README.it.md)
 
+📘 **Full user guide** (installation, configuration, usage, with pictures), in French: [GUIDE.fr.md](doc/fr/GUIDE.fr.md)
+
 A live pseudo-3D view of your house for Home Assistant: your **Sweet Home 3D** plan on a digital terrain model, with lights, weather, sun and seasons in real time, plus a robot vacuum, garden watering and fences. One repository holds:
 
 - `custom_components/house_view/`: the **integration** (stores the plan, the terrain and your edits; fetches the terrain; HTTP API);
@@ -26,7 +28,7 @@ The card interface exists in English and French; the options of the integration 
 ## Installation
 
 1. Install with HACS (custom repository, type *Integration*), or copy `custom_components/house_view/` into `config/custom_components/`, then restart Home Assistant.
-2. Add the *House View* integration. There is nothing to set: the location comes from the Home Assistant configuration.
+2. Add the *House View* integration: give the home a name and its location (the location of Home Assistant by default). Each home is an entry of its own: add the integration again for a second home (a holiday house…), with its own plan, terrain and edits; the card shows one home, chosen with its `home` option.
 3. Add the card to a dashboard (`type: custom:house-view-card`).
 4. Open ⚙ in the card (administrators only) to import your `.sh3d` plan, then fetch the terrain (cartes.gouv.fr in France, worldwide open data elsewhere: see [Terrain sources by country](#terrain-sources-by-country)) or load a terrain `.json`.
 
@@ -40,6 +42,7 @@ The options are set in the visual editor of the card (edit the dashboard, then *
 
 ```yaml
 type: custom:house-view-card
+home: 01JXYZ…                         # optional, several homes: the entry shown (chosen in the visual editor); the first one by default
 weather_entity: weather.home          # live weather (optional)
 rain_entity: binary_sensor.rain       # optional: rain detector or rain rate sensor (mm/h) of your weather station
 wind_speed_entity: sensor.wind_speed   # optional: wind speed sensor (weather station or internet weather service)
@@ -60,12 +63,16 @@ movable_camera: true                  # movable camera (orbit, zoom, pan); false
 height: fill                          # fill (screen height below the top of the card) | aspect (16/10) | 600 | "70vh"
 min_height: 320                       # minimum height in fill mode (px)
 fps_cap: 30                           # frames per second limit (wall screens, tablets)
+year_seconds: 10                      # 📅 button: plays the seasons of a whole year in this many seconds (5 to 60)
+toolbar_buttons: [preview]            # tools kept in the toolbar (preview, year, camera, sim, edit, setup); the others are in the ⋮ menu
+hide_menu: false                      # true: no ⋮ menu for the users who are not administrators (wall screen)
 light_entities: [light.living, ...]   # optional: restricts the lights taken into account
 ```
 
 ## Live view
 
-- **Latitude, longitude, time zone**: read from the Home Assistant configuration. The seasons of the vegetation are reversed in the southern hemisphere.
+- **Toolbar** (top right): the alarm badge, the robot vacuums and the ⋮ menu, which holds the occasional tools (season / weather / time preview, simulate a year, camera lock, simulation, demo) and, for administrators, the editor ✎ and the setup ⚙. The option `toolbar_buttons` keeps some of them in the toolbar; `hide_menu` hides the menu from the users who are not administrators.
+- **Latitude, longitude, time zone**: those of the home (set when it is added; the Home Assistant configuration by default). The seasons of the vegetation and of the grass follow the climate of the latitude: four seasons in temperate lands; from 50° toward the poles, a winter that grows longer and a short summer (still winter at the end of April at 68°); between the tropics, no winter but a wet and a dry season (the trees keep their leaves, the grass yellows a little in the dry season, less near the equator), which the season preview offers instead of the four seasons. Everything is reversed in the southern hemisphere.
 - **Rooms ↔ areas**: a room of the plan is linked to the Home Assistant area of the same name (accents and case ignored). ⚙ lists the rooms without a matching area; ✎ → *Rooms ↔ Home Assistant areas* lets you pick another area, or none, room by room.
 - **Lights**: state, colour and brightness of the `light.*` entities of the area of each room.
 - **Weather**: the weather entity `weather_entity` decides the weather shown: rain (`rainy`, `pouring`, `hail`), snow (`snowy`, `snowy-rainy`), thunderstorm (`lightning`, `lightning-rainy`), fog, clouds; its temperature, wind and cloud cover are used when provided. With `rain_entity` (a rain detector `binary_sensor`, or a rain rate sensor in mm/h), the rain follows what really falls at your place: rain on the sensor → rain, heavier or lighter with the measured rate; the weather service says rain but the sensor is dry → overcast sky without rain (thunderstorm: lightning without rain). Snow and thunderstorms stay with the weather service, since a rain gauge cannot tell them apart; a cumulated amount ("rain today" in mm) is ignored, as it does not say whether it is raining now.
@@ -88,6 +95,7 @@ light_entities: [light.living, ...]   # optional: restricts the lights taken int
 - **Lining up with the map of the robot**: *Show the map of the robot over the plan* lays the picture the robot draws of the floor (an `image.*` or `camera.*` entity of its device) over the floor of the dock, half transparent, the floors above being hidden. The dock is the fixed point: turn the picture with the rotation slider until its walls follow those of the plan; the rotation found is the one applied to the robot. When the entity gives `calibration_points` (map extractors, *Roborock Custom Map*), the picture places itself. Otherwise (image entities of the official Roborock integration), tap where the picture draws the dock (*The dock is here on the map*), move it by steps of 5 cm, and set the size of a pixel if the rooms are too large or too small (12.5 mm by default for Roborock, 50 mm otherwise).
 - **Percentage of a room**: share of the floor covered by the robot (estimate: 80 % of the floor is assumed reachable); the overall progress comes from the sensor of the robot when there is one (Roborock: `cleaning_progress`).
 - *Test the animation* plays an accelerated cleaning (with or without an error) without starting the robot.
+- **Several robots**: each `vacuum.*` has its own button in the toolbar, its own room selection and its own 3D robot, path and room colours. In ✎ → *Robot vacuum*, the *Robot* list chooses the one being set up (dock, position, calibration, map are kept per robot); *Show this robot* hides one from the view and the toolbar (a robot of another home, for example).
 
 ## Catalog: trees and objects
 
@@ -100,13 +108,16 @@ The trees and the pieces of furniture are not built into the card: they come fro
 
 ## Editor (✎)
 
-For administrators. One section is unfolded at a time; everything is saved in the edits file, apart from the plan and the terrain; Escape cancels the drawing in progress.
+For administrators. The editor is a menu of sections: a section opens in its own window over the menu, and an item of a list (a watering line, a zone, an entity of the general panel, a door…) opens its editing window over the section; the arrow ← of a window goes back to the one underneath. Everything is saved in the edits file, apart from the plan and the terrain; Escape cancels the drawing in progress.
 
-- **Placed entities** (sensors, lights, switches, selects…): placed with a tap, then moved by dragging their label (editor open). Fixed to the floor (default: the label stays in its room whatever the angle), to a wall (room side, hidden when the wall is seen from behind) or free in height; a label hidden by an upper floor or the roof is not shown. Badge (icon + value) or icon only; colour, label, icon (Home Assistant icon picker with preview); visible always, on the view of its floor or when zoomed on its room; tap = more-info, toggle or nothing. In the editor the list is folded: only the chosen entity is unfolded. Entities are chosen from those of the current room, grouped by device (the whole house one tick away, with a search); icons are shown while one types their name.
+- **Placed entities** (sensors, lights, switches, selects…): placed with a tap, then moved by dragging their label (editor open). Fixed to the floor (default: the label stays in its room whatever the angle), to a wall (room side, hidden when the wall is seen from behind) or free in height; a label hidden by an upper floor or the roof is not shown, except a label *shown over the roof*; while *Placed entities* is open in the editor, every label shows (dimmed when the house hides it), so an entity can be placed and dragged anywhere, rooms included. Badge (icon + value) or icon only; colour, label, icon (Home Assistant icon picker with preview); shown in the general view (always, or on the view of its floor; *Shown over the roof* lets the temperature of a room be read from afar); tap = more-info, toggle or nothing. In the editor the list is folded: only the chosen entity is unfolded. Entities are chosen from those of the current room, grouped by device (the whole house one tick away, with a search); icons are shown while one types their name.
 - **General panel** (left, under the level buttons): sensors and actuators of the whole house (outdoor temperature, alarm panel…), in the order chosen, with their label and icon; a tap toggles what can be toggled and opens the dialog of the others (or as chosen: toggle, dialog, nothing).
 - **Alarms**: a badge at the top right, green with a tick when all is well, red with a bell and the count in brackets when alarms are raised; a tap opens their list (tap one = its dialog). Found automatically: problem, smoke, gas, carbon monoxide, water leak, heat, cold and tamper sensors and triggered alarm panels (reeftank alarms included); entities can be added by hand, and an alarm can be left out from the list itself (bell crossed out) or from the editor. Each room with raised alarms (room linked to a Home Assistant area) also shows a red bell with their count; a tap opens the list of that room (*All* goes back to the whole house); these room badges can be switched off in the editor. Option `show_alarms`.
 - **Clickable zones**: a media player on a piece of furniture of the plan (tap it in the editor) or on a rectangle laid on a wall or a floor; an aquarium of reeftank on a rectangle at the size of the tank (its front on a wall, its top on a floor). A tap opens the player, or the view of the aquarium of ha-reef-card in a window; the rectangle of an aquarium shows that view live, fish moving (option per zone), in the view of the aquarium chosen for the zone (its default view otherwise). While placing, the wall or floor under the pointer is lit and the rectangle drawn on it; a zone is moved by dragging it on its surface. Width, height, height of the centre (wall) or rotation (floor) can be adjusted.
 - **Placed lights**: a placed `light.*` becomes a light source at that spot of the room (spot, pendant, lamp, strip or invisible; height and reach adjustable; on a wall: a wall lamp at the height tapped), driven by its own state and colour. The other lights of the area keep lighting the whole room.
+- **Entities of a room**: zoomed on a room, only the entities of that room show; those of the general view disappear (the robot vacuum still moves if it is there). In the editor, a tap on a room zooms on it and the editing becomes that of the room (red banner at the top): the entities added then are placed on its floor, on a wall or in the air, and belong to that room only. They disappear when another room is chosen or back to the general view. An entity of the general view standing in a room moves into that room with its *Its room only* setting.
+- **Doors and windows** (*Doors and windows*): the openings of the Sweet Home 3D plan, listed by level and room, or picked with a tap on the view (the opening under the pointer is lit). Each can be linked to an open / closed sensor (`binary_sensor`), a motorised opener (`cover` of the window) and, for windows and patio doors, a roller shutter (`cover`). A room with a single window is linked on its own to the window sensor, the opener and the shutter of its area when there is one of each; a room with a single door to its door sensor; a link set by hand wins, and an automatic link can be removed. In the view the casements (one, two past 1.10 m) open inward, a patio door slides, a door leaf turns (an inner door gets its leaf once linked), and the roller shutter comes down on the outer face to the position of the `cover` (`current_position`, smoothly).
+- **Pools and ponds** (*Pools and ponds*): drawn from above, as a rectangle (two opposite corners) or a free shape (point by point, *Finish*), with a name, a water colour and a depth (0.2 to 6 m). The ground is dug: a pool has vertical walls, a flat bottom and a coping, a pond a sloping bottom and a pebble bank; the ground around is levelled and the water moves. A cleaning robot can be linked to an entity (`binary_sensor`, `switch`, `input_boolean` or `vacuum`): it travels the bottom while it is on, and stays parked otherwise. The pool of the Sweet Home 3D plan stays as it is.
 - **Room view**: zoomed on a room, with the editor open, *📷 Room view* saves the camera and the visible levels; a tap on that room then opens this view instead of the automatic zoom. *Automatic view* goes back to it.
 - **Fences** (*Fences*): each side has its type (mesh, wood, wall, hedge, or open for a gate) and its height. Two ways to create one: *Fence from the cadastre* (the parcels of the house are preselected, tap to add or remove the neighbouring parcels of the same property; the outline of the whole is fenced) or *Draw a fence* (successive taps, the "Dessus" top view is recommended; each side takes the type chosen in the palette, one colour per type). *Edit the sides*: change the type of a side with a tap, cut a side in two (one part as a wall, the other as mesh), remove a point.
 - **Watering** (*Watering*):
@@ -117,6 +128,7 @@ For administrators. One section is unfolded at a time; everything is saved in th
 
 ## Setup (⚙)
 
+- **Demo** (to film or present the view without showing your house or where it is): *Load the demo* adds a home "Démo" with a fictitious two-storey house (the Sweet Home 3D file `custom_components/house_view/demo/demo-maison.sh3d` can be opened and reworked), a terrain of three plateaus with an orchard, a pool, a pond, a fence, watering, a robot vacuum and shutters, at a fictitious place (45° N). Your homes are left alone. Its entities are simulated by the card (nothing is created in Home Assistant, and nothing of your home is shown): a scenario of the day, at 1 h every 2 s, opens and closes the shutters, switches the lights, waters at dawn, runs the vacuum in the morning and the pool robot in the afternoon, raises a water leak before dinner… The 🎬 button of the toolbar pauses it, sets the hour and triggers an event by hand (shutters, lights, vacuum, watering, robots, leak, smoke); a tap on a simulated entity switches it. *Reset the demo* puts it back as shipped, *Leave the demo* comes back to your home; the demo home can be removed like any other entry. Your real aquariums (reeftank) can still be placed in it. The files are generated by `npm run demo` in `card/`. The demo home starts empty and flat, to be filmed from the start: import `demo-maison.sh3d` (*Download demo-maison.sh3d* in ⚙) with *Import a .sh3d*, then *Fetch the terrain*: the fetch goes through its steps and brings the terrain of the demo, without any network access.
 - **Plan**: *Import a .sh3d* reads your Sweet Home 3D file in the browser and lists what was found (levels, rooms, walls, lights…).
 - **Fetching the terrain** (*Terrain (DTM)*): the integration fetches the relief and its surroundings itself, around the coordinates of Home Assistant (editable). The source follows the country of the Home Assistant configuration (*Automatic*), or is forced in the form:
   - **France: cartes.gouv.fr (IGN)**: LiDAR HD ground at 0.5 m (RGE ALTI at 1 m otherwise), surface model (automatic registration, trees), buildings, roads and cadastre (BD TOPO, parcels), aerial photo or IGN map draped on the ground. When the IGN has no data for the place, the worldwide sources take over;
@@ -166,7 +178,9 @@ With a 30 m model the terrain is only a tilted plane: the ground corrections of 
 
 | Route | GET | POST | DELETE |
 |---|---|---|---|
-| `/api/house_view/info` | state + Home Assistant location | | |
+| `/api/house_view/homes` | homes set up: `[{id, title}]` | | |
+| `/api/house_view/demo` | plan of the demo house (admin) | creates the demo home or puts it back as shipped → `{home}` (admin) | |
+| `/api/house_view/info` | state, name and location of the home | | |
 | `/api/house_view/scene` | plan | replaces (admin) | |
 | `/api/house_view/terrain` | height grid | replaces (admin) | removes (admin) |
 | `/api/house_view/edits` | edits | replaces (admin) | removes (admin) |
@@ -175,9 +189,11 @@ With a 30 m model the terrain is only a tilted plane: the ground corrections of 
 | `/api/house_view/github` | | `{"action": "backup" \| "restore"}` (admin) | |
 | `/api/house_view/unlock` | `{locked, unlocked}` | `{"password"}` → token (admin) | locks again |
 
+With several homes, every route takes `?home=<entry id>` (the first home without it).
+
 When an edit password is set, the writes (POST / DELETE above) also need the `X-House-View-Unlock` header with the token returned by `/unlock`; otherwise they answer 423.
 
-Each document is validated (`validate.py`) and kept in `.storage/house_view.<key>`; each write fires the `house_view_updated` event (`key`, `updated`). The documents are large (a terrain is several MB): they travel over HTTP (Home Assistant limit of 16 MB per request), not over the websocket.
+Each document is validated (`validate.py`) and kept in `.storage/house_view.<key>` (home set up before version 0.2) or `.storage/house_view.<home id>.<key>`; each write fires the `house_view_updated` event (`key`, `updated`, `home`). Removing a home removes its documents. The documents are large (a terrain is several MB): they travel over HTTP (Home Assistant limit of 16 MB per request), not over the websocket.
 
 ## Development and tests
 
@@ -205,6 +221,7 @@ pre-commit run --all-files
 3. ✅ Terrain fetched by the integration for France (IGN), roads, ground photo, fences, placed entities, robot vacuum, room zoom, season / weather preview, GitHub backup.
 4. ✅ Other countries: Mapterhorn relief, OpenStreetMap buildings and roads (to be confirmed country by country). Next: cadastre and aerial photo of the countries that publish them as open data.
 5. ✅ Catalog (four-season trees, objects) read from `house-catalog` and edited with `catalog_editor`. Next: more species and objects, sprinkler models.
+6. ✅ Several homes, several robot vacuums, entities of a room when zoomed, doors / windows / roller shutters linked to Home Assistant, pools and ponds dug in the ground, editor in windows.
 
 ## License
 

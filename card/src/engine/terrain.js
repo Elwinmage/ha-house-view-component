@@ -12,6 +12,9 @@ import * as THREE from 'three';
 import { SPECIES } from './catalog.js';
 import { pointInPolygon } from './geometry.js';
 import { compileOps, WALL_T } from './terrain-edit.js';
+import { poolValid, centroidOf, inPolygon, nearestOnOutline } from '../pools.js';
+
+const smooth01 = (u) => u * u * (3 - 2 * u);
 
 export function parseTerrain(text) {
   const t = typeof text === 'string' ? JSON.parse(text) : text;
@@ -170,7 +173,41 @@ export function buildTerrain(t, sd, cfg) {
   };
   // manual corrections (retaining walls, terraces, brushes) applied on top of the LiDAR ground
   const eops = cfg.ops && cfg.ops.length ? compileOps(cfg.ops, gridToPlan(t, cfg), (alt) => alt - zRef + base) : null;
-  const raw = eops ? (x, z) => eops.apply(x, z, raw0(x, z), raw0) : raw0;
+  const raw1 = eops ? (x, z) => eops.apply(x, z, raw0(x, z), raw0) : raw0;
+  // pools and ponds drawn in the editor: a flat rim around them, the ground is cut out over their outline
+  const digs = (cfg.pools || [])
+    .filter(poolValid)
+    .map((pl) => {
+      const conv = pl.frame === 'plan' ? (x, z) => [x, z] : gridToPlan(t, cfg);
+      const poly = pl.pts.map(([x, z]) => conv(x, z));
+      const [cx, cz] = centroidOf(poly);
+      return { id: pl.id, poly, rim: raw1(cx, cz) };
+    });
+  const RIM = 0.6; // flat band around the water
+  const FEATHER = 2;
+  const raw = digs.length
+    ? (x, z) => {
+        let h = raw1(x, z);
+        for (const d of digs) {
+          const q = inPolygon(d.poly, x, z) ? 0 : nearestOnOutline(d.poly, x, z).d;
+          if (q >= RIM + FEATHER) continue;
+          const k = q <= RIM ? 1 : 1 - smooth01((q - RIM) / FEATHER);
+          h += (d.rim - h) * k;
+        }
+        return h;
+      }
+    : raw1;
+  // vertices near an outline are moved onto it (just outside), so the cut follows the drawn shape
+  const snapPool = (x, z) => {
+    for (const d of digs) {
+      const q = nearestOnOutline(d.poly, x, z);
+      if (q.d >= cell * 0.75) continue;
+      const out = inPolygon(d.poly, x, z) ? -1 : 1;
+      if (q.d < 1e-6) return [x, z];
+      return [q.px + ((x - q.px) / q.d) * 0.03 * out, q.pz + ((z - q.pz) / q.d) * 0.03 * out];
+    }
+    return [x, z];
+  };
   const surf = (x, z) => {
     const [gx, gz] = toGrid(x, z);
     return gridHeight(t, gx, gz, t.s) - zRef + base;
@@ -212,6 +249,7 @@ export function buildTerrain(t, sd, cfg) {
       let x = x0 + i * cell;
       let z = z0 + j * cell;
       if (eops && eops.walls.length) [x, z] = eops.snap(x, z, cell);
+      if (digs.length) [x, z] = snapPool(x, z);
       const k = (j * (nx + 1) + i) * 3;
       pos[k] = x;
       pos[k + 1] = meshHeight(x, z) - 0.02;
@@ -228,6 +266,12 @@ export function buildTerrain(t, sd, cfg) {
       const b = a + 1;
       const c = a + (nx + 1);
       const d = c + 1;
+      if (digs.length) {
+        // centre of the (snapped) cell inside a drawn pool: cut out
+        const mx = (pos[a * 3] + pos[b * 3] + pos[c * 3] + pos[d * 3]) / 4;
+        const mz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2] + pos[d * 3 + 2]) / 4;
+        if (digs.some((g) => inPolygon(g.poly, mx, mz))) continue;
+      }
       idx.push(a, c, b, b, c, d); // counter-clockwise seen from +y
     }
   }
@@ -445,7 +489,7 @@ export function buildTerrain(t, sd, cfg) {
     }
     return out;
   };
-  return { group, material, heightAt, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
+  return { group, material, heightAt, digs, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
 }
 
 /**

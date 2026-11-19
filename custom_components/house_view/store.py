@@ -16,9 +16,13 @@ from .lock import Unlocks
 class HouseViewStore:
     """One JSON document per key in `.storage`, with a cached serialized form for the HTTP API."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, prefix: str = DOMAIN) -> None:
         self._hass = hass
-        self._stores = {k: Store[Any](hass, STORAGE_VERSION, f"{DOMAIN}.{k}") for k in KEYS}
+        self.prefix = prefix
+        self._stores = {k: Store[Any](hass, STORAGE_VERSION, f"{prefix}.{k}") for k in KEYS}
+        self.title = ""  # name of the home (config entry title)
+        self.location: dict[str, float] | None = None  # latitude, longitude of the home; None: the HA location
+        self.demo = False  # the demo home: fictitious documents, entities simulated by the card
         self._data: dict[str, Any] = dict.fromkeys(KEYS)
         self._bytes: dict[str, bytes | None] = dict.fromkeys(KEYS)
         self.updated: dict[str, str | None] = dict.fromkeys(KEYS)
@@ -58,6 +62,11 @@ class HouseViewStore:
         self.updated[key] = stamp
         await self._stores[key].async_save({"doc": doc, "updated": stamp})
         return stamp
+
+    async def async_remove_all(self) -> None:
+        """Remove every document of the home (its config entry is deleted)."""
+        for key in KEYS:
+            await self.async_remove(key)
 
     async def async_remove(self, key: str) -> None:
         self._data[key] = None

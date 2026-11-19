@@ -8,8 +8,10 @@ const ROBOROCK_DOCK = [25500, 25500]; // documented position of the dock in Robo
 const NO_VALUE = new Set(['unknown', 'unavailable', 'none', 'ok', '']);
 
 export class VacuumController {
-  constructor(card) {
+  /** `entity`: the vacuum this controller follows. */
+  constructor(card, entity) {
     this.card = card;
+    this._entity = entity;
     this.tracker = null;
     this.raw = null; // last robot coordinates { x, y, a }
     this.charger = null; // dock coordinates when the source gives them
@@ -29,22 +31,28 @@ export class VacuumController {
     return this.card._hass;
   }
 
+  /** The engine, through the slot of this robot (its own robot, trail, map and room effects). */
   get engine() {
-    return this.card._engine;
+    return this.card._engine && this.card._engine.robotSlot(this._entity);
   }
 
   get entity() {
-    return this.card._vacuum;
+    return this._entity;
   }
 
   get cfg() {
-    const c = { ...VAC_DEFAULTS, ...((this.card._data && this.card._data.edits.vacuum) || {}) };
+    const c = { ...VAC_DEFAULTS, ...this._raw };
     if (!c.origin && this.source() === 'roborock') c.origin = ROBOROCK_DOCK;
     return c;
   }
 
+  /** Settings of this robot as stored ({} before any); `_rawW`: the same, created to be written. */
   get _raw() {
-    return (this.card._data && this.card._data.edits.vacuum) || {};
+    return this.card._vacCfg(this._entity) || {};
+  }
+
+  get _rawW() {
+    return this.card._vacCfg(this._entity, true);
   }
 
   /** Entities of the vacuum's device, looked up at most every 30 s: position carrier, progress, error. */
@@ -64,7 +72,8 @@ export class VacuumController {
       at: Date.now(),
       platform: reg.platform || '',
       pos: [id, ...mine].find((e) => h.states[e] && positionFromAttributes(h.states[e].attributes)) || null,
-      progress: conf.vacuum_progress_entity || byKey('cleaning_progress'),
+      // the progress sensor of the options belongs to the robot of the options
+      progress: (id === conf.vacuum_entity && conf.vacuum_progress_entity) || byKey('cleaning_progress'),
       error: byKey('vacuum_error'),
       map: pics.find((e) => calibrationOf(h.states[e].attributes)) || pics[0] || null,
     };
@@ -174,7 +183,8 @@ export class VacuumController {
   }
 
   _begin(startedAt, now) {
-    this.tracker.start(this.card._vacPlan || null, startedAt);
+    const plan = this.card._vacPlan;
+    this.tracker.start(plan && plan.entity === this._entity ? plan.rooms : null, startedAt);
     this.sim = this.source() === 'none';
     if (this.sim) this.tracker.plan(this._raw.dock && this._raw.dock.at);
     this._nextPoll = now;
@@ -182,7 +192,8 @@ export class VacuumController {
 
   _end(now) {
     this.tracker.stop(now);
-    this.card._vacPlan = null;
+    const plan = this.card._vacPlan;
+    if (plan && plan.entity === this._entity) this.card._vacPlan = null;
   }
 
   /** Robot on its dock (when the dock is placed). */
@@ -467,7 +478,7 @@ export class VacuumController {
     const px = this._mapPic && planToPixel(this.cfg, this.mapCfg, this._mapPic, at);
     if (!px) return false;
     const map = { ...(this._raw.map || {}), pin: [Math.round(px[0] * 10) / 10, Math.round(px[1] * 10) / 10] };
-    this.card._data.edits.vacuum.map = map;
+    this._rawW.map = map;
     this._drawMap();
     return true;
   }
@@ -484,14 +495,14 @@ export class VacuumController {
   async captureOrigin() {
     const raw = await this.readRaw();
     if (!raw) return false;
-    this.card._data.edits.vacuum.origin = this.charger || [raw.x, raw.y];
+    this._rawW.origin = this.charger || [raw.x, raw.y];
     return true;
   }
 
   /** Second calibration point: the robot is at plan point `at` right now. Returns { rot, ratio } or null. */
   solve(at) {
     const r = this.raw ? solveRotation(this.cfg, this.raw, at, this.charger) : null;
-    if (r) this.card._data.edits.vacuum.rot = r.rot;
+    if (r) this._rawW.rot = r.rot;
     return r;
   }
 

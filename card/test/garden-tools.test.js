@@ -44,7 +44,7 @@ describe('watering test (accelerated, valves closed)', () => {
 describe('dock orientation', () => {
   it('turns by steps and aims at a click', () => {
     const ed = fakeEd({ vacuum: {} });
-    const vt = new VacuumTools(ed);
+    const vt = new VacuumTools(ed, () => ed.edits.vacuum); // the settings of the robot being set up
     vt.turnDock(90); // no dock yet: nothing
     vt.aimDock();
     expect(ed.clickTool).toBeNull();
@@ -63,5 +63,16 @@ describe('dock orientation', () => {
     vt.placeDock();
     ed.clickTool.click({ point: { x: 1.234, z: 2 }, level: 'l1', floorY: 2.6 });
     expect(ed.edits.vacuum.dock).toEqual({ at: [1.23, 2], level: 'l1', base: 2.6, dir: 0 }); // moving the dock keeps its direction
+  });
+});
+
+describe('robots', () => {
+  it('reads the settings of a robot list, and of the single robot of the first versions', async () => {
+    const { normalizeEdits } = await import('../src/engine/edits.js');
+    expect(normalizeEdits({ vacuum: { rot: 12 } }).vacuums).toEqual([{ entity: '', rot: 12 }]);
+    expect(normalizeEdits({ vacuum: {} }).vacuums).toEqual([]);
+    const two = [{ entity: 'vacuum.a', rot: 1 }, { entity: 'vacuum.b' }];
+    expect(normalizeEdits({ vacuum: { rot: 12 }, vacuums: two }).vacuums).toEqual(two);
+    expect(normalizeEdits({}).vacuums).toEqual([]);
   });
 });

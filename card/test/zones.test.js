@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { rectAxes, rectCorners, rectAt, aquariumSize, boxOf, rayBox, pickFurniture, quadMatrix, applyQuad, onFloor } from '../src/zones.js';
+import {
+  rectAxes,
+  rectCorners,
+  rectAt,
+  aquariumSize,
+  boxOf,
+  rayBox,
+  pickFurniture,
+  quadMatrix,
+  applyQuad,
+  onFloor,
+  keepRatio,
+  fitRatio,
+} from '../src/zones.js';
 import { alarmList, isAlarmKind, isRaised, tapAction, polyCentre, roomAlarms } from '../src/alarms.js';
 
 const near = (a, b, d = 6) => a.forEach((x, i) => expect(x).toBeCloseTo(b[i], d));
@@ -222,5 +235,21 @@ describe('alarms of the rooms', () => {
     ]);
     expect(out[1].pos).toEqual([11, 3.05, 1]);
     expect(roomAlarms([], rooms, areas, () => 'cuisine')).toEqual([]);
+  });
+});
+
+describe('aquarium proportions', () => {
+  it('keeps the ratio when one side changes', () => {
+    const r = { c: [0, 1, 0], w: 1.2, h: 0.6 };
+    expect(keepRatio(r, { h: 0.9 }, 2)).toMatchObject({ w: 1.8, h: 0.9, c: [0, 1, 0] });
+    expect(keepRatio(r, { w: 1 }, 2)).toMatchObject({ w: 1, h: 0.5 });
+    expect(keepRatio(r, { rot: 10 }, 2)).toMatchObject({ w: 1.2, h: 0.6, rot: 10 });
+    expect(keepRatio(r, { h: 0.9 }, null)).toMatchObject({ w: 1.2, h: 0.9 });
+  });
+
+  it('fits a picture without stretching it', () => {
+    expect(fitRatio(360, 180, 3)).toEqual([360, 120]);
+    expect(fitRatio(360, 180, 1)).toEqual([180, 180]);
+    expect(fitRatio(360, 180, 0)).toEqual([360, 180]);
   });
 });

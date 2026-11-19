@@ -11,6 +11,7 @@ import {
   catalogTreeFor,
   createVegetation,
   setCatalog,
+  setClimate,
   SPECIES,
 } from './engine/catalog.js';
 import { normalizeEdits, outdoorEdit, isDsmRemoved } from './engine/edits.js';
@@ -21,6 +22,9 @@ import { buildFence } from './fences.js';
 import { buildIrrigation } from './irrigation.js';
 import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, pickFurniture } from './zones.js';
+import { OpeningsFx } from './engine/openings-3d.js';
+import { buildPools } from './engine/pools-3d.js';
+import { poolValid } from './pools.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
 
@@ -121,7 +125,6 @@ export class HouseEngine {
     this.visibility = { roof: true, levels: {} };
     this.views = [];
     this.tween = null;
-    this.vegDoyShift = 0; // 182 in the southern hemisphere: vegetation seasons are reversed
     this.running = false;
     this.disposed = false;
     this._last = 0;
@@ -186,13 +189,14 @@ export class HouseEngine {
         const k = lightsOverride && lightsOverride.find((x) => x.id === l.id);
         return k ? { ...l, on: k.on, color: k.color, brightness: k.brightness } : { ...l };
       }),
-      terrain: terr ? buildTerrain(terr.data, sd, { ...terr, ops: edits.terrain }) : null,
+      terrain: terr ? buildTerrain(terr.data, sd, { ...terr, ops: edits.terrain, pools: edits.pools }) : null,
       levelsById: {},
       roof: null,
       site: null,
       veg: null,
       surfaces,
       walls: [], // { mesh, level }: wall picking (wall-mounted labels) and label occlusion
+      openings: new OpeningsFx(), // moving parts of the doors and windows
     };
 
     const mats = {
@@ -262,13 +266,10 @@ export class HouseEngine {
       const boxMesh = buildBoxFurnitureMesh(boxes, level.elevation);
       if (boxMesh) g.add(boxMesh);
 
+      for (const m of walls.metas) w.openings.register(m, g);
       for (const p of walls.panes) {
         if (p.kind === 'glass') {
-          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(p.width, p.height), glassFor(p.room));
-          mesh.position.set(...p.center);
-          mesh.rotation.y = p.rotY;
-          mesh.renderOrder = 5;
-          g.add(mesh);
+          w.openings.glass(p.key, glassFor(p.room));
           if (level === groundLevel && p.exterior && p.room) {
             const sm = new THREE.MeshBasicMaterial({
               map: spillTex,
@@ -288,25 +289,26 @@ export class HouseEngine {
             g.add(spill);
             w.spills.push({ room: p.room, mesh: spill });
           }
-        } else {
-          const mesh = new THREE.Mesh(
-            new THREE.BoxGeometry(p.width - 0.04, p.height - 0.02, Math.min(0.05, p.thickness * 0.5)),
-            new THREE.MeshStandardMaterial({ color: '#7a4f33', roughness: 0.8 }),
-          );
-          mesh.position.set(...p.center);
-          mesh.rotation.y = p.rotY;
-          mesh.castShadow = true;
-          g.add(mesh);
-        }
+        } else w.openings.leaf(p.key);
       }
     }
 
+    w.openings.set(this._openingStates);
     w.roof = buildRoof(sd.roof, roofMat, gableMat);
     if (w.roof) root.add(w.roof);
 
     sd.site.poolDy = edits.pool.dy;
+    // pools and ponds drawn in the editor: dug in the terrain (rim height from it), or in the flat ground
+    const pools = edits.pools || [];
+    const digs = w.terrain
+      ? w.terrain.digs
+      : pools.filter((p) => poolValid(p) && p.frame === 'plan').map((p) => ({ id: p.id, poly: p.pts, rim: 0 }));
+    sd.site.holes = w.terrain ? [] : digs.map((d) => d.poly);
     w.site = buildSite(sd.site, surfaces, w.terrain);
     root.add(w.site.group);
+    w.pools = buildPools(digs.map((d) => ({ ...pools.find((p) => p.id === d.id), ...d })));
+    w.pools.setRobots(this._poolRobots);
+    root.add(w.pools.group);
 
     // detached objects (shed, gate...) : anchored to the terrain, whatever level they were drawn on in SH3D
     w.outdoor = [];
@@ -357,9 +359,10 @@ export class HouseEngine {
     w.irrigation = buildIrrigation(edits.irrigation || {}, w.anchor, w.groundAt);
     root.add(w.irrigation.group);
 
-    // dock of the robot vacuum
-    const vac = edits.vacuum || {};
-    if (vac.dock && vac.dock.at) {
+    // docks of the robot vacuums (each robot its own; the single robot of the first versions in `vacuum`)
+    const robots = edits.vacuums && edits.vacuums.length ? edits.vacuums : [edits.vacuum || {}];
+    for (const vac of robots) {
+      if (vac.hidden || !vac.dock || !vac.dock.at) continue;
       const dock = buildDock();
       dock.position.set(vac.dock.at[0], (vac.dock.base ?? 0) + 0.005, vac.dock.at[1]);
       dock.rotation.y = Math.PI / 2 - ((vac.dock.dir ?? 90) * Math.PI) / 180; // model front is +x; dir is a compass angle
@@ -518,7 +521,7 @@ export class HouseEngine {
     if (this.world) this._disposeWorld(this.world);
     this.tween = null;
     this.env.setSite(sd.site);
-    this.vegDoyShift = (sd.site.latitude ?? 43.6) < 0 ? 182 : 0;
+    setClimate(sd.site.latitude ?? 43.6);
     this.orthoData = data.ortho || null;
     const terr = terrainConfig(data.terrain, edits, sd, this._orthoTexture(this.orthoData));
     this.sceneData = data.scene;
@@ -527,7 +530,7 @@ export class HouseEngine {
     this.world = this._buildWorld(sd, terr, edits, keptLights);
     for (const e of this.world.surfaces) this.env.registerSurface(e);
     this.env.applyState();
-    this.world.veg.apply((this.env.state.doy + this.vegDoyShift) % 365);
+    this.world.veg.apply(this.env.state.doy);
     this.visibility.roof = true;
     this.visibility.levels = Object.fromEntries(sd.levels.map((l) => [l.id, true]));
     if (keptVis) Object.assign(this.visibility, keptVis);
@@ -591,14 +594,16 @@ export class HouseEngine {
     const env = this.env;
     if (s.latitude !== undefined && Math.abs(s.latitude - env.site.latitude) > 1e-6) {
       env.site.latitude = s.latitude;
-      this.vegDoyShift = s.latitude < 0 ? 182 : 0;
+      // the seasons of the vegetation and of the grass follow the climate of the latitude
+      setClimate(s.latitude);
+      this.world.veg.apply(env.state.doy);
     }
     const prevDoy = env.state.doy;
     const { weather, snowCover, latitude, ...rest } = s;
     if (weather && WEATHER_PRESETS[weather]) env.setWeather(weather);
     env.setState(rest);
     if (snowCover !== undefined) env.snowCover = snowCover;
-    if (env.state.doy !== prevDoy) this.world.veg.apply((env.state.doy + this.vegDoyShift) % 365);
+    if (env.state.doy !== prevDoy) this.world.veg.apply(env.state.doy);
     this._refreshLights();
   }
 
@@ -969,11 +974,47 @@ export class HouseEngine {
     this.irrigOpts = opts;
   }
 
-  /** Per-room effects: { [roomId]: { color, mix (0..1 tint), glow (0..1 shimmer), blink (red alarm) } }; null to clear. */
-  setRoomFx(fx) {
-    this.roomFx = fx && Object.keys(fx).length ? fx : null;
+  /**
+   * Per-room effects: { [roomId]: { color, mix (0..1 tint), glow (0..1 shimmer), blink (red alarm) } }; null to clear.
+   * `key`: who sets them (each robot its own); the rooms show all of them.
+   */
+  setRoomFx(fx, key = '') {
+    this._fxBy = this._fxBy || new Map();
+    if (fx && Object.keys(fx).length) this._fxBy.set(key, fx);
+    else this._fxBy.delete(key);
+    const all = Object.assign({}, ...this._fxBy.values());
+    this.roomFx = Object.keys(all).length ? all : null;
     this._fxDirty = true;
     this.applyLayer();
+  }
+
+  /**
+   * The robot `key` (its vacuum entity): an object with the robot methods of the engine (setRobot, robotPos,
+   * setTrail, setRobotMap, setRoomFx) acting on its own robot, trail and map; everything else is the engine's.
+   */
+  robotSlot(key) {
+    this._slots = this._slots || new Map();
+    let s = this._slots.get(key);
+    if (!s) {
+      s = Object.create(this);
+      s._robot = null;
+      s._trail = null;
+      s._robotMap = null;
+      s.setRoomFx = (fx) => this.setRoomFx(fx, key);
+      this._slots.set(key, s);
+    }
+    return s;
+  }
+
+  /** A robot gone (no longer shown): its robot, trail, map and room effects are removed. */
+  dropRobotSlot(key) {
+    const s = this._slots && this._slots.get(key);
+    if (!s) return;
+    if (s._robot) this.scene.remove(s._robot.g);
+    s.setTrail(null);
+    s.setRobotMap(null);
+    s.setRoomFx(null);
+    this._slots.delete(key);
   }
 
   _animateFx(t) {
@@ -1278,6 +1319,53 @@ export class HouseEngine {
     this.zoneDrag.end(id);
   }
 
+  /** Doors and windows: { openingKey: { open: 0..1, shutter: closed fraction or null } }; they move to it. */
+  setOpenings(map) {
+    this._openingStates = map || null;
+    if (this.world) this.world.openings.set(this._openingStates);
+  }
+
+  /** Cleaning robots of the drawn pools: { poolId: running }. */
+  setPoolRobots(map) {
+    this._poolRobots = map || null;
+    if (this.world) this.world.pools.setRobots(this._poolRobots);
+  }
+
+  /** Key of the door or window under the pointer (not behind a wall), or null. */
+  pickOpening(ev) {
+    if (!this.world) return null;
+    const rc = this.rayAt(ev);
+    const shown = (lv) => this.visibility.levels[lv] !== false;
+    const wall = rc.intersectObjects(
+      this.world.walls.filter((x) => shown(x.level.id)).map((x) => x.mesh),
+      false,
+    )[0];
+    return this.world.openings.pick(rc.ray, shown, wall ? wall.distance + 0.4 : Infinity);
+  }
+
+  /** Lit frame around an opening (editor), null to remove it. */
+  setOpeningTarget(key) {
+    if (this._opHl) {
+      this._opHl.parent.remove(this._opHl);
+      this._opHl.geometry.dispose();
+      this._opHl.material.dispose();
+      this._opHl = null;
+    }
+    const it = key && this.world && this.world.openings.items.get(key);
+    if (!it) return;
+    const m = it.meta;
+    const geo = new THREE.BoxGeometry(m.width + 0.08, m.height + 0.08, m.thickness + 0.1);
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ color: '#ffe14d', transparent: true, opacity: 0.45, depthWrite: false }),
+    );
+    mesh.position.set(...m.center);
+    mesh.rotation.y = m.rotY;
+    mesh.renderOrder = 8;
+    it.group.add(mesh);
+    this._opHl = mesh;
+  }
+
   /** Id of the zone under the pointer, or null. */
   pickZone(ev) {
     if (!this._zones || !this._zones.children.length) return null;
@@ -1424,7 +1512,10 @@ export class HouseEngine {
     if (this.world.site.waterMat) this.world.site.waterMat.opacity = 0.76 + 0.03 * Math.sin(this.env.time * 1.3);
     if (this.world.irrigation.count) this.world.irrigation.update(this.irrigState, Date.now(), this.irrigOpts);
     if (this.roomFx || this._fxDirty) this._animateFx(now / 1000);
+    if (this.world.openings.busy) this.world.openings.tick(realDt);
+    if (this.world.pools.items.length) this.world.pools.tick(realDt, now / 1000);
     this._animateRobot(realDt, now / 1000);
+    if (this._slots) for (const s of this._slots.values()) this._animateRobot.call(s, realDt, now / 1000);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     if (this.onFrame) this.onFrame();

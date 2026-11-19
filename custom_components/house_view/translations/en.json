@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Stores your plan, terrain and corrections for the House View card. The location comes from your Home Assistant configuration."
+        "title": "Add a home",
+        "description": "Each home has its plan, its terrain and its corrections; a card shows one of them. The location places the sun and the terrain.",
+        "data": {
+          "name": "Name of the home",
+          "location": "Location"
+        }
       }
     },
+    "error": {
+      "name_required": "Give the home a name.",
+      "name_taken": "Another home already has this name."
+    },
     "abort": {
-      "single_instance_allowed": "House View is already set up."
+      "demo_exists": "The demo home already exists."
     }
   },
   "options": {

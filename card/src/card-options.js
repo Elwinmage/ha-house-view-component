@@ -13,13 +13,18 @@ export const DEFAULTS = {
   height: 'fill',
   min_height: 320,
   fps_cap: 30,
+  year_seconds: 10,
+  hide_menu: false,
   vacuum_poll: 15,
   vacuum_rate: 1,
   vacuum_show_floor: false,
 };
 
-/** ha-form schema of the options, grouped in foldable sections (the keys stay at the top level of the config). */
-export function editorSchema(t) {
+/**
+ * ha-form schema of the options, grouped in foldable sections (the keys stay at the top level of the config).
+ * `homes`: the homes of the integration ([{ id, title }]); with more than one, the home shown comes first.
+ */
+export function editorSchema(t, homes = []) {
   const choices = (key, values) => values.map((value) => ({ value, label: t(`ed_${key}_${value}`) }));
   const section = (key, schema, expanded = false) => ({
     type: 'expandable',
@@ -33,7 +38,23 @@ export function editorSchema(t) {
     name,
     selector: { number: { min, max, step, mode: 'box', unit_of_measurement: unit } },
   });
+  const home =
+    homes.length > 1
+      ? [
+          {
+            name: 'home',
+            selector: {
+              select: {
+                mode: 'dropdown',
+                // the first home is shown when none is chosen
+                options: homes.map((h, i) => ({ value: i ? h.id : '', label: h.title || h.id })),
+              },
+            },
+          },
+        ]
+      : [];
   return [
+    ...home,
     section(
       'weather',
       [
@@ -62,6 +83,18 @@ export function editorSchema(t) {
       },
       number('min_height', 100, 2000, 10, 'px'),
       number('fps_cap', 5, 60, 1),
+      number('year_seconds', 5, 60, 1, 's'),
+      {
+        name: 'toolbar_buttons',
+        selector: {
+          select: {
+            multiple: true,
+            mode: 'list',
+            options: choices('toolbar_buttons', ['preview', 'year', 'camera', 'sim', 'edit', 'setup']),
+          },
+        },
+      },
+      { name: 'hide_menu', selector: { boolean: {} } },
     ]),
     section('lights', [{ name: 'light_entities', selector: { entity: { domain: 'light', multiple: true } } }]),
     section('vacuum', [

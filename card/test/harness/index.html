@@ -20,20 +20,87 @@
     <script>
       // minimal stand-in for the HA frontend
       customElements.define('ha-card', class extends HTMLElement {});
-      // icons: show the mdi name initials (the real frontend draws the icons)
+      // icons: show the mdi name initials (the real frontend draws the icons); with ?icons=1 the real MDI icons are
+      // drawn from @mdi/svg (pictures of the documentation)
+      const REAL_ICONS = new URLSearchParams(location.search).has('icons');
+      const DOMAIN_ICON = {
+        light: (s) => (s && s.state === 'on' ? 'lightbulb-on' : 'lightbulb-outline'),
+        switch: (s) => (s && s.state === 'on' ? 'toggle-switch' : 'toggle-switch-off-outline'),
+        vacuum: () => 'robot-vacuum',
+        alarm_control_panel: (s) => (s && s.state.startsWith('armed') ? 'shield-lock' : 'shield-off-outline'),
+        media_player: () => 'television',
+        cover: (s) => (s && s.state === 'closed' ? 'window-shutter' : 'window-shutter-open'),
+        weather: () => 'weather-partly-cloudy',
+      };
+      const CLASS_ICON = {
+        temperature: 'thermometer',
+        humidity: 'water-percent',
+        carbon_dioxide: 'molecule-co2',
+        window: (s) => (s && s.state === 'on' ? 'window-open-variant' : 'window-closed-variant'),
+        door: (s) => (s && s.state === 'on' ? 'door-open' : 'door-closed'),
+        garage_door: (s) => (s && s.state === 'on' ? 'garage-open' : 'garage'),
+        moisture: (s) => (s && s.state === 'on' ? 'water-alert' : 'water-off'),
+        smoke: (s) => (s && s.state === 'on' ? 'smoke-detector-alert' : 'smoke-detector'),
+      };
+      const iconOf = (el) => {
+        let name = el._i;
+        const st = el.stateObj;
+        if (!name && st) {
+          name = st.attributes && st.attributes.icon;
+          if (!name) {
+            const cls = st.attributes && CLASS_ICON[st.attributes.device_class];
+            const dom = DOMAIN_ICON[st.entity_id.split('.')[0]];
+            const v = cls || dom || 'eye';
+            name = typeof v === 'function' ? v(st) : v;
+          }
+        }
+        return (name || 'help-circle-outline').replace(/^mdi:/, '');
+      };
+      const svgCache = new Map();
+      const drawIcon = async (el) => {
+        const name = iconOf(el);
+        if (!svgCache.has(name))
+          svgCache.set(
+            name,
+            fetch(`/card/node_modules/@mdi/svg/svg/${name}.svg`).then((r) => (r.ok ? r.text() : '')),
+          );
+        const svg = await svgCache.get(name);
+        if (iconOf(el) !== name) return;
+        el.innerHTML = svg.replace(
+          '<svg ',
+          '<svg style="width:var(--mdc-icon-size,22px);height:var(--mdc-icon-size,22px);fill:currentColor;vertical-align:middle" ',
+        );
+        el.style.display = 'inline-flex';
+      };
       for (const tag of ['ha-icon', 'ha-state-icon'])
         customElements.define(
           tag,
           class extends HTMLElement {
             set icon(v) {
               this._i = v;
-              this.textContent = (v || (this.stateObj && this.stateObj.entity_id) || '?').split(/[:.]/).pop().slice(0, 2);
+              if (REAL_ICONS) drawIcon(this);
+              else this.textContent = (v || (this.stateObj && this.stateObj.entity_id) || '?').split(/[:.]/).pop().slice(0, 2);
+            }
+            set stateObj(v) {
+              this._st = v;
+              if (REAL_ICONS) drawIcon(this);
+            }
+            get stateObj() {
+              return this._st;
             }
             get icon() {
               return this._i;
             }
+            static get observedAttributes() {
+              return ['icon'];
+            }
+            attributeChangedCallback(name, old, v) {
+              if (REAL_ICONS && v !== old) this.icon = v;
+            }
             connectedCallback() {
-              if (!this.textContent) this.icon = this.getAttribute('icon') || this._i;
+              if (REAL_ICONS && !this._i && this.getAttribute('icon')) this._i = this.getAttribute('icon');
+              if (REAL_ICONS) drawIcon(this);
+              else if (!this.textContent) this.icon = this.getAttribute('icon') || this._i;
             }
           },
         );
@@ -46,6 +113,43 @@
         entities: {},
         states: {},
         calls: [],
+        // states written like the frontend does (pictures of the documentation)
+        formatEntityState: REAL_ICONS
+          ? (st) => {
+              const T = {
+                on: 'Allumé',
+                off: 'Éteint',
+                open: 'Ouvert',
+                closed: 'Fermé',
+                opening: 'Ouverture',
+                closing: 'Fermeture',
+                docked: 'À la base',
+                cleaning: 'Nettoyage',
+                returning: 'Retour à la base',
+                playing: 'Lecture',
+                disarmed: 'Désactivée',
+                armed_away: 'Activée (absent)',
+                armed_night: 'Activée (nuit)',
+                armed_home: 'Activée (maison)',
+              };
+              const dom = st.entity_id.split('.')[0];
+              const dc = st.attributes && st.attributes.device_class;
+              if (dom === 'binary_sensor') {
+                const B = {
+                  window: ['Ouverte', 'Fermée'],
+                  door: ['Ouverte', 'Fermée'],
+                  garage_door: ['Ouverte', 'Fermée'],
+                  moisture: ['Humide', 'Sec'],
+                  smoke: ['Détectée', 'RAS'],
+                };
+                const b = B[dc];
+                if (b) return st.state === 'on' ? b[0] : b[1];
+              }
+              const u = st.attributes && st.attributes.unit_of_measurement;
+              if (u) return `${String(st.state).replace('.', ',')} ${u}`;
+              return T[st.state] || st.state;
+            }
+          : undefined,
         callService(domain, service, data) {
           this.calls.push([domain, service, data]);
         },

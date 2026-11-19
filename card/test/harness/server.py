@@ -6,10 +6,14 @@ import json
 import pathlib
 import secrets
 import sys
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(__file__).parents[3]  # repository root
-DB = {}
+HOMES = {"": {}}  # home id -> documents ("" = the first home); "demo" once the demo is loaded
+DEMO = ROOT / "custom_components" / "house_view" / "demo"
+JOBS = {}  # documents of a home -> simulated terrain fetch of the demo: {"t0", "center"}
+STEPS = (("locate", 1.0), ("dtm", 2.5), ("dsm", 2.0), ("vectors", 1.5))
 PASSWORD = sys.argv[2] if len(sys.argv) > 2 else ""  # edit lock, as set in the options of the integration
 TOKENS = set()
 # built-in snapshots of the house catalog: what the integration answers to `house_view/catalog` before any download
@@ -39,6 +43,13 @@ class H(SimpleHTTPRequestHandler):
         p = self.path.split("?")[0]
         return p[len("/api/house_view/") :] if p.startswith("/api/house_view/") else None
 
+    @property
+    def _db(self):
+        """Documents of the home named by `?home=` (the first home without it)."""
+        q = self.path.split("?", 1)[1] if "?" in self.path else ""
+        home = dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv).get("home", "")
+        return HOMES.setdefault(home, {})
+
     def _send(self, code, body=b"{}"):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -58,7 +69,30 @@ class H(SimpleHTTPRequestHandler):
             return super().do_GET()
         if k == "unlock":
             return self._send(200, json.dumps({"locked": bool(PASSWORD), "unlocked": not self._locked()}).encode())
+        if k == "demo":
+            body = (DEMO / "demo-maison.sh3d").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
+        DB = self._db
+        if k == "fetch":
+            job = JOBS.get(id(DB))
+            if not job:
+                return self._send(200, b'{"state": "idle"}')
+            t = time.time() - job["t0"]
+            for step, sec in STEPS:
+                if t < sec:
+                    return self._send(200, json.dumps({"state": "running", "step": step}).encode())
+                t -= sec
+            terrain = json.loads((DEMO / "demo-terrain.json").read_text())
+            terrain["center"] = job["center"]
+            DB["terrain"] = json.dumps(terrain).encode()
+            JOBS.pop(id(DB))
+            return self._send(200, b'{"state": "done", "message": "demo"}')
         if k == "info":
+            demo = DB is HOMES.get("demo")
             return self._send(
                 200,
                 json.dumps(
@@ -69,6 +103,8 @@ class H(SimpleHTTPRequestHandler):
                         "has_ortho": "ortho" in DB,
                         "github": None,
                         "locked": bool(PASSWORD),
+                        "demo": demo,
+                        **({"latitude": 45.0, "longitude": 2.0} if demo else {}),
                     }
                 ).encode(),
             )
@@ -84,9 +120,17 @@ class H(SimpleHTTPRequestHandler):
             TOKENS.add(token)
             reply = {"ok": True, "locked": bool(PASSWORD), "token": token, "ttl": 600}
             return self._send(200, json.dumps(reply).encode())
+        if k == "demo":
+            HOMES["demo"] = {
+                "edits": (DEMO / "demo-edits.json").read_bytes(),
+            }
+            return self._send(200, b'{"home": "demo"}')
         if self._locked():
             return self._send(423, b'{"message": "Editing is locked"}')
-        DB[k] = body
+        if k == "fetch":
+            JOBS[id(self._db)] = {"t0": time.time(), "center": json.loads(body)["center"]}
+            return self._send(202, b'{"state": "running", "step": "start"}')
+        self._db[k] = body
         self._send(200)
 
     def do_DELETE(self):
@@ -96,7 +140,7 @@ class H(SimpleHTTPRequestHandler):
         elif self._locked():
             return self._send(423, b'{"message": "Editing is locked"}')
         else:
-            DB.pop(k, None)
+            self._db.pop(k, None)
         self._send(200)
 
     def log_message(self, *a):

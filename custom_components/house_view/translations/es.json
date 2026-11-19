@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Guarda su plano, el terreno y sus correcciones para la tarjeta House View. La ubicación procede de la configuración de Home Assistant."
+        "title": "Añadir una vivienda",
+        "description": "Cada vivienda tiene su plano, su terreno y sus correcciones; una tarjeta muestra una de ellas. La ubicación sitúa el sol y el terreno.",
+        "data": {
+          "name": "Nombre de la vivienda",
+          "location": "Ubicación"
+        }
       }
     },
+    "error": {
+      "name_required": "Ponga un nombre a la vivienda.",
+      "name_taken": "Otra vivienda ya tiene este nombre."
+    },
     "abort": {
-      "single_instance_allowed": "House View ya está configurado."
+      "demo_exists": "La vivienda de demostración ya existe."
     }
   },
   "options": {

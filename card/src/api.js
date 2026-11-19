@@ -11,52 +11,110 @@ export class LockedError extends Error {
 }
 
 export class HouseViewApi {
-  // Unlock token got with the edit password: shared by every card of the page, forgotten on reload. The server
-  // drops it after `ttl` seconds without any use; `seen` lets the cards show the lock again without asking it.
-  static token = null;
-  static seen = 0;
-  static ttl = 600;
-  static locked = false; // a password is set (as last told by the integration)
+  // Unlock state of each home (its config entry id, '' for the first home): the token got with the edit password,
+  // shared by every card of the page showing that home, forgotten on reload. The server drops it after `ttl`
+  // seconds without any use; `seen` lets the cards show the lock again without asking it; `locked`: a password is
+  // set (as last told by the integration).
+  static _auth = new Map();
 
-  constructor(hass) {
+  static auth(home = '') {
+    if (!this._auth.has(home)) this._auth.set(home, { token: null, seen: 0, ttl: 600, locked: false });
+    return this._auth.get(home);
+  }
+
+  // the first home, as before homes existed
+  static get token() {
+    return this.auth().token;
+  }
+  static set token(v) {
+    this.auth().token = v;
+  }
+  static get seen() {
+    return this.auth().seen;
+  }
+  static set seen(v) {
+    this.auth().seen = v;
+  }
+  static get ttl() {
+    return this.auth().ttl;
+  }
+  static set ttl(v) {
+    this.auth().ttl = v;
+  }
+  static get locked() {
+    return this.auth().locked;
+  }
+  static set locked(v) {
+    this.auth().locked = v;
+  }
+
+  /** `home`: config entry id of the home shown ('' or absent: the first home). */
+  constructor(hass, home = '') {
     this.hass = hass;
+    this.home = home || '';
     this.onLocked = null; // async () => boolean: ask the password (the card shows its dialog); true once unlocked
     this.lockedMessage = '';
   }
 
+  get _a() {
+    return HouseViewApi.auth(this.home);
+  }
+
   _fetch(path, init = {}) {
-    const headers = HouseViewApi.token ? { ...init.headers, [UNLOCK_HEADER]: HouseViewApi.token } : init.headers;
-    return this.hass.fetchWithAuth(`${BASE}/${path}`, { ...init, headers });
+    const a = this._a;
+    const headers = a.token ? { ...init.headers, [UNLOCK_HEADER]: a.token } : init.headers;
+    const query = this.home ? `?home=${encodeURIComponent(this.home)}` : '';
+    return this.hass.fetchWithAuth(`${BASE}/${path}${query}`, { ...init, headers });
+  }
+
+  /** Create the demo home, or put it back as shipped: { home } (admin). */
+  async startDemo() {
+    const res = await this.hass.fetchWithAuth(`${BASE}/demo`, { method: 'POST' });
+    if (!res.ok) throw new Error(`demo: HTTP ${res.status}`);
+    return res.json();
+  }
+
+  /** The plan of the demo house (.sh3d bytes). */
+  async demoHouse() {
+    const res = await this.hass.fetchWithAuth(`${BASE}/demo`);
+    if (!res.ok) throw new Error(`demo: HTTP ${res.status}`);
+    return res.arrayBuffer();
+  }
+
+  /** The homes set up: [{ id, title }] ([] with an integration that has no homes yet). */
+  async homes() {
+    const res = await this.hass.fetchWithAuth(`${BASE}/homes`);
+    return res.ok ? res.json() : [];
   }
 
   async _json(path, init, retry = true) {
     // A write known to be refused: ask the password first, rather than let the request fail
     const write = !!init && !!init.method && init.method !== 'GET';
-    if (write && retry && HouseViewApi.locked && !this.hasToken && this.onLocked && !(await this.onLocked())) {
+    if (write && retry && this._a.locked && !this.hasToken && this.onLocked && !(await this.onLocked())) {
       throw new LockedError(this.lockedMessage);
     }
     const res = await this._fetch(path, init);
     if (res.status === 404) return null;
     if (res.status === 423) {
       // locked: the token expired (no write for a while), the password changed, or it was never given
-      HouseViewApi.token = null;
+      this._a.token = null;
       if (retry && this.onLocked && (await this.onLocked())) return this._json(path, init, false);
       throw new LockedError(this.lockedMessage);
     }
     if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${await res.text().catch(() => '')}`.trim());
-    if (HouseViewApi.token) HouseViewApi.seen = Date.now();
+    if (this._a.token) this._a.seen = Date.now();
     return res.json();
   }
 
   /** True while this page holds an unlock token that the server should still accept. */
   get hasToken() {
-    return !!HouseViewApi.token && Date.now() - HouseViewApi.seen < HouseViewApi.ttl * 1000;
+    return !!this._a.token && Date.now() - this._a.seen < this._a.ttl * 1000;
   }
 
   /** { locked: a password is set, unlocked: this page may write }; null with an integration that has no lock. */
   async lockState() {
     const st = await this._json('unlock');
-    if (st) HouseViewApi.locked = !!st.locked;
+    if (st) this._a.locked = !!st.locked;
     return st;
   }
 
@@ -71,22 +129,22 @@ export class HouseViewApi {
     if (res.status === 429) return { ok: false, wait: (await res.json().catch(() => ({}))).retry_after || 60 };
     if (!res.ok) throw new Error(`unlock: HTTP ${res.status}`);
     const body = await res.json();
-    HouseViewApi.token = body.token || null;
-    HouseViewApi.seen = Date.now();
-    if (body.ttl) HouseViewApi.ttl = body.ttl;
+    this._a.token = body.token || null;
+    this._a.seen = Date.now();
+    if (body.ttl) this._a.ttl = body.ttl;
     return { ok: true };
   }
 
   /** Lock again right now (the token is forgotten on both sides). */
   async lock() {
-    const had = HouseViewApi.token;
+    const had = this._a.token;
     if (had) await this._fetch('unlock', { method: 'DELETE' }).catch(() => null);
-    HouseViewApi.token = null;
+    this._a.token = null;
   }
 
   async info() {
     const info = await this._json('info');
-    if (info) HouseViewApi.locked = !!info.locked;
+    if (info) this._a.locked = !!info.locked;
     return info;
   }
 

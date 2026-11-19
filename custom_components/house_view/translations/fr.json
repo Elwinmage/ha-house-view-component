@@ -2,12 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "House View",
-        "description": "Enregistre votre plan, votre terrain et vos corrections pour la carte House View. La position vient de la configuration de Home Assistant."
+        "title": "Ajouter un logement",
+        "description": "Chaque logement a son plan, son terrain et ses corrections ; une carte en affiche un. L'emplacement place le soleil et le terrain.",
+        "data": {
+          "name": "Nom du logement",
+          "location": "Emplacement"
+        }
       }
     },
+    "error": {
+      "name_required": "Donnez un nom au logement.",
+      "name_taken": "Un autre logement porte déjà ce nom."
+    },
     "abort": {
-      "single_instance_allowed": "House View est déjà configuré."
+      "demo_exists": "Le logement de démonstration existe déjà."
     }
   },
   "options": {

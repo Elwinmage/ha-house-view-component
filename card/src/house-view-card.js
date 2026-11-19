@@ -40,12 +40,22 @@ import { normalizeScene } from './engine/scene-model.js';
 import { autoCalibrate, parseTerrain } from './engine/terrain.js';
 import { normalizeEdits, emptyEdits } from './engine/edits.js';
 import { WEATHER_PRESETS } from './engine/environment.js';
-import { SPECIES, seasonName } from './engine/catalog.js';
+import { SPECIES } from './engine/catalog.js';
+import { climateFor, seasonsOf, seasonKey, seasonDay } from './climate.js';
 import { houseParcel } from './engine/terrain.js';
 import { compassIndex } from './wind.js';
 import { makeT } from './i18n.js';
 import './pickers.js';
 import pkg from '../package.json';
+import { autoOpeningLinks, openingStates } from './openings.js';
+import { renderOpenings } from './ui-openings.js';
+import { renderPools } from './ui-pools.js';
+import { DemoSim, DEMO_EVENTS } from './demo.js';
+
+/** Room whose layer an entity belongs to (set while zoomed on it), else the room it stands in. */
+const entityRoom = (s) => s.layer || s.room;
+/** A label of the general view shown over the roof (the temperature of a room seen from afar). */
+const overRoof = (s) => !!s.overRoof || s.scope === 'far';
 
 console.info(
   `%c 🏠 HOUSE VIEW %c v${pkg.version} `,
@@ -57,11 +67,27 @@ const TICK_MS = 30000; // live clock refresh
 const SAVE_DELAY = 600; // edits are saved this long after the last change
 const PREVIEW_MS = 180000; // a forced season / weather preview returns to live after 3 min
 const PREVIEW = {
-  season: { spring: 110, summer: 196, autumn: 295, winter: 20 },
   weather: ['clear', 'cloudy', 'rain', 'storm', 'snow', 'fog'],
   hour: { morning: 8.5, noon: 13, dusk: 19.2, night: 22.5 },
 };
 const VACUUM_ACTIVE = new Set(['cleaning', 'returning']);
+/** Icons of the sections in the menu of the editor. */
+const SECTION_ICONS = {
+  entities: 'mdi:map-marker-radius',
+  general: 'mdi:view-sequential',
+  alarms: 'mdi:bell-ring-outline',
+  zones: 'mdi:gesture-tap-box',
+  rooms: 'mdi:floor-plan',
+  openings: 'mdi:window-closed-variant',
+  pools: 'mdi:pool',
+  vacuum: 'mdi:robot-vacuum',
+  irrigation: 'mdi:sprinkler-variant',
+  fences: 'mdi:fence',
+  outdoor: 'mdi:home-group',
+  trees: 'mdi:pine-tree',
+  ground: 'mdi:terrain',
+  views: 'mdi:camera-outline',
+};
 const TOOLS = ['off', 'wall', 'terrace', 'brush-set', 'brush-add', 'brush-smooth', 'section'];
 const OP_FIELDS = {
   wall: [
@@ -159,6 +185,11 @@ class HouseViewCard extends LitElement {
       this._engine.opts.fpsCap = c.fps_cap;
       this._engine.setMovable(this._movable);
     }
+    // another home chosen in the editor of the card: its plan, terrain and corrections
+    if (this._api && this._api.home !== (c.home || '')) {
+      this._api.home = c.home || '';
+      this._reload();
+    }
     this._fit();
   }
 
@@ -171,18 +202,23 @@ class HouseViewCard extends LitElement {
   }
 
   set hass(h) {
+    this._realHass = h;
+    // demo home: only the simulated areas and entities are seen, their services handled by the simulator
+    if (this._demo) h = this._demo.hassFor(h, () => this._demoChanged());
     const first = !this._hass;
     this._hass = h;
     if (first) this._init();
     else {
       this._pushLive();
       this._pushIrrigation();
-      if (this._vac) this._vac.sync();
+      this._pushOpenings();
+      this._pushPools();
+      this._syncVacs();
     }
     // placed sensors and the vacuum show live states: re-render only when one of them changed
     const ed = this._data && this._data.edits;
     const watched = [
-      this._vacuum,
+      ...this._vacuumIds,
       ...((ed && ed.entities) || []).map((x) => x.entity),
       ...((ed && ed.panel) || []).map((x) => x.entity),
     ].filter(Boolean);
@@ -193,6 +229,12 @@ class HouseViewCard extends LitElement {
       this._watchSig = sig;
       this.requestUpdate();
     }
+  }
+
+  /** Climate of the home (its latitude): which seasons it has and when. */
+  get _climate() {
+    const lat = this._info && Number.isFinite(this._info.latitude) ? this._info.latitude : this._hass && this._hass.config.latitude;
+    return climateFor(lat);
   }
 
   get _t() {
@@ -225,9 +267,13 @@ class HouseViewCard extends LitElement {
     clearInterval(this._tick);
     clearInterval(this._playTimer);
     this._playTimer = null;
+    clearInterval(this._demoTimer);
+    this._demoTimer = null;
+    if (this._year) cancelAnimationFrame(this._year.raf);
+    this._year = null;
     clearTimeout(this._previewTimer);
     clearTimeout(this._fetchTimer);
-    if (this._vac) this._vac.pause();
+    for (const v of (this._vacs || new Map()).values()) v.pause();
     this._irrDemoStop();
     if (this._io) this._io.disconnect();
     this._unwatchCatalog();
@@ -283,7 +329,7 @@ class HouseViewCard extends LitElement {
   // ------------------------------------------------------------ data
 
   async _init() {
-    this._api = new HouseViewApi(this._hass);
+    this._api = new HouseViewApi(this._hass, this._config.home);
     this._api.onLocked = () => this._askUnlock(); // a write refused by the edit lock: ask the password, then retry
     this._api.lockedMessage = this._t('lock_refused');
     await this.updateComplete;
@@ -299,7 +345,7 @@ class HouseViewCard extends LitElement {
       this._placeAnchors();
       placeZones(this);
     };
-    this._vac = new VacuumController(this);
+    this._syncVacs();
     this._updateRunning();
     this._watchCatalog();
     await Promise.all([this._loadCatalog(), this._reload()]);
@@ -358,6 +404,7 @@ class HouseViewCard extends LitElement {
       const info = await this._api.info();
       if (!info) throw Object.assign(new Error('no_integration'), { code: 'no_integration' });
       this._info = info;
+      this._setDemo(!!info.demo);
       // Only request what exists: a 404 would be logged by the browser even though the API client handles it.
       const scene = info.has_scene ? await this._api.getScene() : null;
       if (!scene) {
@@ -396,11 +443,57 @@ class HouseViewCard extends LitElement {
     this._pushTime(true);
     this._pushLive();
     this._pushIrrigation();
-    if (this._vac) {
-      this._vac.refresh();
-      this._vac.sync();
-    }
+    this._pushOpenings();
+    this._pushPools();
+    this._syncVacs();
+    for (const v of this._vacs.values()) v.refresh();
     if (this._preview) this._applyPreview();
+  }
+
+  /** Links of the doors and windows found on their own (cached: the registry and the areas seldom change). */
+  _openingAuto() {
+    const eng = this._engine;
+    const hass = this._hass;
+    const src = [hass.entities, this._areas, eng.world.sd, Object.keys(hass.states).length];
+    if (!this._opAuto || this._opAuto.src.some((v, i) => v !== src[i])) {
+      const auto = autoOpeningLinks(
+        eng.world.sd.openings,
+        hass.states,
+        hass.entities,
+        (room) => this._areas && this._areas[room],
+        (id) => areaOfEntity(hass, id),
+      );
+      this._opAuto = { src, auto };
+    }
+    return this._opAuto.auto;
+  }
+
+  /** Cleaning robots of the drawn pools run while their entity is on. */
+  _pushPools() {
+    const eng = this._engine;
+    if (!eng || !eng.world || !this._data || !this._hass) return;
+    const map = {};
+    for (const p of this._data.edits.pools) {
+      const st = p.robot && this._hass.states[p.robot];
+      map[p.id] = !!st && ['on', 'cleaning', 'running'].includes(st.state);
+    }
+    const sig = JSON.stringify(map);
+    if (sig === this._poolSig && eng.world === this._poolWorld) return;
+    this._poolSig = sig;
+    this._poolWorld = eng.world;
+    eng.setPoolRobots(map);
+  }
+
+  /** Doors, windows and shutters follow their entities. */
+  _pushOpenings() {
+    const eng = this._engine;
+    if (!eng || !eng.world || !this._data || !this._hass) return;
+    const map = openingStates(eng.world.sd.openings, this._openingAuto(), this._data.edits.openings, this._hass.states);
+    const sig = JSON.stringify(map);
+    if (sig === this._opSig && eng.world === this._opWorld) return;
+    this._opSig = sig;
+    this._opWorld = eng.world;
+    eng.setOpenings(map);
   }
 
   /** Valve states of the drip lines and sprinkler circuits (plus the "test" previews of the editor). */
@@ -496,12 +589,50 @@ class HouseViewCard extends LitElement {
   }
 
   /** One section of the editor; only one is unfolded at a time and only that one is rendered. */
-  _sec(key, title, body) {
+  /**
+   * A section of the editor: a button of the menu; the section open shows in its own window, beside the menu.
+   * `icon`: its icon in the menu.
+   */
+  _sec(key, title, body, icon = SECTION_ICONS[key] || 'mdi:shape-outline') {
     const open = this._section === key;
-    return html`<details .open=${open} @toggle=${(e) => this._onSection(key, e.target.open)}>
-      <summary>${title}</summary>
-      ${open ? body() : nothing}
-    </details>`;
+    if (open) this._winSec = { key, title, body };
+    return html`<button class=${`menu ${open ? 'on' : ''}`} @click=${() => this._onSection(key, !open)}>
+      <ha-icon .icon=${icon}></ha-icon><span>${title}</span><span class="arrow">›</span>
+    </button>`;
+  }
+
+  /**
+   * Shows `content` in the item window (stacked over the window of the section) instead of in the section:
+   * the editing of one item of a list. `close` closes it (the section unselects its item). Returns nothing.
+   */
+  _asWindow(title, content, close) {
+    this._winItem = { title, content, close };
+    return nothing;
+  }
+
+  /** Windows of the editor, stacked over the menu: the open section, then the item being edited over it. */
+  _renderWindows() {
+    if (this._panel !== 'edit') return nothing;
+    const sec = this._winSec;
+    const body = sec ? sec.body() : nothing; // evaluated first: it may open the item window
+    const item = this._winItem;
+    // stacked over the menu: the back arrow returns to the window underneath
+    const win = (cls, title, content, close) =>
+      html`<div class=${`win ${cls}`} @pointerdown=${(e) => e.stopPropagation()}>
+        <div class="head">
+          <button class="wback" title=${this._t('back')} @click=${close}><ha-icon icon="mdi:arrow-left"></ha-icon></button><b>${title}</b>
+        </div>
+        <div class="body">${content}</div>
+      </div>`;
+    return html`${sec ? win('sec', sec.title, body, () => this._onSection(sec.key, false)) : nothing}
+    ${
+      item
+        ? win('item', item.title, item.content, () => {
+            item.close();
+            this.requestUpdate();
+          })
+        : nothing
+    }`;
   }
 
   _onSection(key, open) {
@@ -510,6 +641,7 @@ class HouseViewCard extends LitElement {
     if (this._editors && this._editors.active) this._editors.stop();
     if (next !== 'vacuum' && this._vac) this._vac.showMap(false); // the picture of the robot's map is a setting aid
     this._section = next;
+    if (next !== 'openings' && this._engine) this._engine.setOpeningTarget(null);
     this._pushIrrigation();
     // the aquariums read again: views or sizes changed in ha-reef-card meanwhile
     if (next === 'zones')
@@ -523,18 +655,18 @@ class HouseViewCard extends LitElement {
 
   _pushTime(force = false) {
     if (!this._engine || !this._engine.world || !this._hass) return;
-    if (this._preview) return; // forced season / weather / hour
-    if (this._config.mode === 'simulation') {
+    if (this._preview || this._year) return; // forced season / weather / hour, or a year being played
+    if (this._simMode) {
       if (force) this._pushSim();
       return;
     }
-    const lon = this._hass.config.longitude ?? 0;
-    this._engine.setLive({ ...solarClock(new Date(), lon), latitude: this._hass.config.latitude });
+    const lon = (this._info && Number.isFinite(this._info.longitude) ? this._info.longitude : this._hass.config.longitude) ?? 0;
+    this._engine.setLive({ ...solarClock(new Date(), lon), latitude: this._climate.lat });
   }
 
   _pushSim() {
     const s = this._sim;
-    const live = { hour: s.hour, doy: s.doy };
+    const live = { hour: s.hour, doy: this._year ? this._year.doy : s.doy, latitude: this._climate.lat };
     if (s.weather) live.weather = s.weather;
     for (const k of ['cloud', 'precip', 'wind', 'windBearing', 'temp', 'snowCover']) if (s[k] !== undefined) live[k] = s[k];
     this._engine.setLive(live);
@@ -557,13 +689,12 @@ class HouseViewCard extends LitElement {
     // the weather service decides (rain, snow, storm, fog, clouds); a local rain sensor, when given, corrects the rain,
     // and wind sensors the wind (speed: slant of what falls; bearing: the way it leans)
     const st = (id) => (id ? h.states[id] : null);
-    const weather =
-      cfg.mode === 'simulation'
-        ? {}
-        : {
-            ...applyRain(weatherLive(st(cfg.weather_entity), h.language), cfg.rain_entity ? rainSensor(st(cfg.rain_entity)) : null),
-            ...windSensors(st(cfg.wind_speed_entity), st(cfg.wind_bearing_entity), h.language),
-          };
+    const weather = this._simMode
+      ? {}
+      : {
+          ...applyRain(weatherLive(st(cfg.weather_entity), h.language), cfg.rain_entity ? rainSensor(st(cfg.rain_entity)) : null),
+          ...windSensors(st(cfg.wind_speed_entity), st(cfg.wind_bearing_entity), h.language),
+        };
     const sig = JSON.stringify([lights, entLights, weather, temps]);
     if (sig === this._lastLive) return; // nothing relevant changed: skip the rebuild of the light volumes
     this._lastLive = sig;
@@ -571,14 +702,16 @@ class HouseViewCard extends LitElement {
     eng.setRoomLights(lights);
     eng.setEntityLights(entLights);
     eng.setRoomTemps(temps);
-    if (cfg.mode !== 'simulation' && !this._preview && Object.keys(weather).length) eng.setLive(weather);
+    if (!this._simMode && !this._preview && Object.keys(weather).length) eng.setLive(weather);
     this._vacuumSync();
   }
 
   _roomClick(roomId) {
     if (!this._hass) return;
     if (this._vacMode) return this._vacToggleRoom(roomId);
-    const act = this._config.tap_action;
+    // in the editor a tap on a room opens the editing of its layer of entities (zoom), whatever the tap action
+    const act = this._editing ? 'zoom' : this._config.tap_action;
+    if (this._editing && this._engine.focus === roomId) return;
     if (act === 'zoom' && this._engine.focus !== roomId) {
       this._engine.focusRoom(roomId);
       this._focus = roomId;
@@ -619,10 +752,10 @@ class HouseViewCard extends LitElement {
     const cur = { ...(this._preview || {}) };
     if (cur[kind] === key) delete cur[kind];
     else cur[kind] = key;
-    if (this._config.mode === 'simulation') {
+    if (this._simMode) {
       // simulation mode: the preview simply moves the sliders
       const patch = {};
-      if (kind === 'season') patch.doy = PREVIEW.season[key];
+      if (kind === 'season') patch.doy = seasonDay(key, this._climate);
       if (kind === 'hour') patch.hour = PREVIEW.hour[key];
       if (kind === 'weather')
         Object.assign(patch, {
@@ -651,7 +784,8 @@ class HouseViewCard extends LitElement {
     const p = this._preview;
     const b = this._beforePreview || {};
     const live = { doy: b.doy, hour: b.hour, weather: b.weather };
-    if (p.season) live.doy = PREVIEW.season[p.season];
+    if (p.season) live.doy = seasonDay(p.season, this._climate);
+    if (this._year) live.doy = this._year.doy;
     if (p.hour) live.hour = PREVIEW.hour[p.hour];
     if (p.weather) live.weather = p.weather;
     live.snowCover = p.weather === 'snow' ? 0.9 : p.season === 'winter' && b.snowCover > 0.3 ? b.snowCover : 0;
@@ -675,10 +809,67 @@ class HouseViewCard extends LitElement {
 
   // ------------------------------------------------------------ vacuum (generic: vacuum.clean_area on HA areas)
 
+  /**
+   * Robots shown: the one of the options (vacuum_entity) and those set up in the editor; without options, every
+   * vacuum of Home Assistant. A robot set up as hidden is left out.
+   */
+  get _vacuumIds() {
+    const h = this._hass;
+    if (!h) return [];
+    const set = (this._data && this._data.edits.vacuums) || [];
+    const listed = set.map((v) => v.entity).filter(Boolean);
+    const conf = this._demo ? null : this._config.vacuum_entity;
+    const ids = conf ? [conf, ...listed] : [...listed, ...Object.keys(h.states).filter((e) => e.startsWith('vacuum.'))];
+    const hidden = new Set(set.filter((v) => v.hidden).map((v) => v.entity));
+    return [...new Set(ids)].filter((id) => h.states[id] && !hidden.has(id));
+  }
+
+  /** Robot chosen (toolbar, settings): the last one picked, else the first one. */
   get _vacuum() {
-    if (!this._hass) return null;
-    const id = this._config.vacuum_entity || Object.keys(this._hass.states).find((e) => e.startsWith('vacuum.'));
-    return id && this._hass.states[id] ? id : null;
+    const ids = this._vacuumIds;
+    return ids.includes(this._vacCur) ? this._vacCur : ids[0] || null;
+  }
+
+  /** Controller of the robot chosen. */
+  get _vac() {
+    return (this._vacs && this._vacs.get(this._vacuum)) || null;
+  }
+
+  /**
+   * Settings of a robot (edits.vacuums), null when none yet; `create`: made (and kept) when missing. The settings
+   * of the single robot of the first versions (no entity) go to the robot of the options, else the first robot.
+   */
+  _vacCfg(entity, create = false) {
+    if (!this._data || !entity) return null;
+    const list = this._data.edits.vacuums;
+    let v = list.find((x) => x.entity === entity);
+    if (!v) {
+      const heir = this._config.vacuum_entity || this._vacuumIds[0];
+      const old = entity === heir && list.find((x) => !x.entity);
+      if (old) {
+        old.entity = entity;
+        v = old;
+      }
+    }
+    if (!v && create) {
+      v = { entity };
+      list.push(v);
+    }
+    return v || null;
+  }
+
+  /** One controller per robot shown: new robots get one, robots gone lose theirs (and their robot on the plan). */
+  _syncVacs() {
+    this._vacs = this._vacs || new Map();
+    const ids = this._vacuumIds;
+    for (const [id, v] of this._vacs) {
+      if (ids.includes(id)) continue;
+      v.pause();
+      if (this._engine) this._engine.dropRobotSlot(id);
+      this._vacs.delete(id);
+    }
+    for (const id of ids) if (!this._vacs.has(id)) this._vacs.set(id, new VacuumController(this, id));
+    for (const v of this._vacs.values()) v.sync();
   }
 
   _vacuumSync() {
@@ -696,7 +887,7 @@ class HouseViewCard extends LitElement {
     this._floorWhy = this._floorWhy || new Set();
     if (on) this._floorWhy.add(reason);
     else this._floorWhy.delete(reason);
-    const dock = this._data && this._data.edits.vacuum.dock;
+    const dock = (this._vacCfg(this._vacuum) || {}).dock;
     const lv = dock && eng.world.levelsById[dock.level];
     if (this._floorWhy.size && lv && !this._vacVis) {
       this._vacVis = { roof: eng.visibility.roof, levels: { ...eng.visibility.levels } };
@@ -748,7 +939,8 @@ class HouseViewCard extends LitElement {
   async _vacClean() {
     const areas = [...new Set([...this._vacSel].map((r) => this._areas[r]).filter(Boolean))];
     if (!areas.length) return;
-    this._vacPlan = [...this._vacSel].filter((r) => this._areas[r]); // rooms asked for: shown as "to come" during the run
+    // rooms asked for: shown as "to come" during the run of this robot
+    this._vacPlan = { entity: this._vacuum, rooms: [...this._vacSel].filter((r) => this._areas[r]) };
     if (await this._vacCall('clean_area', { cleaning_area_id: areas })) this._toggleVacMode();
     else this._vacPlan = null;
   }
@@ -759,10 +951,15 @@ class HouseViewCard extends LitElement {
     return (this._data && this._data.edits.entities) || [];
   }
 
+  /**
+   * Layers of the placed entities: zoomed on a room, only the entities of that room show (those placed while zoomed
+   * on it); in the other views, every entity but those of the rooms.
+   */
   _entityVisible(s) {
     const eng = this._engine;
     if (!s.at) return false;
-    if (s.scope === 'room') return eng.focus === s.room;
+    if (eng.focus) return s.scope === 'room' && entityRoom(s) === eng.focus;
+    if (s.scope === 'room') return false;
     if (s.scope === 'level') return eng.visibility.levels[s.level] !== false && eng.topVisibleLevel === s.level && !eng.visibility.roof;
     return !s.level || eng.visibility.levels[s.level] !== false;
   }
@@ -782,8 +979,9 @@ class HouseViewCard extends LitElement {
     for (const el of root.querySelectorAll('.rtag')) {
       let p = null;
       if (el.dataset.k === 'robot') {
-        const rp = eng.robotPos;
-        if (rp && eng._robot.g.visible) p = eng.project(rp.x, rp.y + 0.5, rp.z);
+        const slot = eng.robotSlot(el.dataset.robot);
+        const rp = slot.robotPos;
+        if (rp && slot._robot.g.visible) p = eng.project(rp.x, rp.y + 0.5, rp.z);
       } else {
         const g = this._tags && this._tags[+el.dataset.k];
         // under a visible roof the label is hidden like the room itself; in a cut-away view it always shows
@@ -794,24 +992,37 @@ class HouseViewCard extends LitElement {
       if (p) el.style.transform = `translate(${Math.round(p[0])}px, ${Math.round(p[1])}px) translate(-50%, -50%)`;
     }
     const list = this._entities;
+    const editing = this._editing && this._section === 'entities';
     for (const el of root.querySelectorAll('.anchor')) {
       const s = list.find((x) => x.id === el.dataset.id);
       let p = null;
+      let hidden = false;
       if (s && this._entityVisible(s)) {
         const a = this._anchorOf(s);
-        // the label being dragged stays visible even behind a wall
-        p = this._drag === s.id ? eng.project(...a.pos) : eng.anchorScreen(s.id, a.pos, a.normal, s.level);
+        // the label being dragged stays visible even behind a wall; an entity seen "from afar" shows over the roof
+        p = this._drag === s.id || overRoof(s) ? eng.project(...a.pos) : eng.anchorScreen(s.id, a.pos, a.normal, s.level);
+        // in the editor every label shows (dimmed when the house hides it): any place can be chosen and dragged
+        if (!p && editing) {
+          p = eng.project(...a.pos);
+          hidden = !!p;
+        }
       }
       if (!p) {
         el.style.display = 'none';
         continue;
       }
       el.style.display = '';
+      el.classList.toggle('behind', hidden);
       el.style.transform = `translate(${Math.round(p[0])}px, ${Math.round(p[1])}px) translate(-50%, -50%)`;
     }
   }
 
   _moreInfo(entityId) {
+    if (this._demo && this._demo.has(entityId)) {
+      // no dialog for a simulated entity: what can be switched is switched
+      if (this._demo.call('homeassistant', 'toggle', { entity_id: entityId })) this._demoChanged();
+      return;
+    }
     this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true }));
   }
 
@@ -828,14 +1039,15 @@ class HouseViewCard extends LitElement {
 
   /** Labels of the vacuum run: completion of the room being cleaned, tick on the rooms just finished, alarm on the robot. */
   _renderTags() {
-    if (!this._vac || this._status !== 'ready' || !this._vac.tracker) return nothing;
-    const tags = this._vac.tags();
+    if (this._status !== 'ready' || !this._vacs) return nothing;
+    const ctls = [...this._vacs.values()].filter((v) => v.tracker);
+    const tags = ctls.flatMap((v) => v.tags());
     this._tags = tags;
-    const err = this._vac.error;
-    if (!tags.length && !err) return nothing;
+    const errs = ctls.filter((v) => v.error);
+    if (!tags.length && !errs.length) return nothing;
     return html`<div class="anchors">
       ${tags.map((g, i) => html`<div class=${`rtag ${g.kind}`} data-k=${i}>${g.text}</div>`)}
-      ${err ? html`<div class="rtag warn" data-k="robot"><ha-icon icon="mdi:alert"></ha-icon></div>` : nothing}
+      ${errs.map((v) => html`<div class="rtag warn" data-k="robot" data-robot=${v.entity}><ha-icon icon="mdi:alert"></ha-icon></div>`)}
     </div>`;
   }
 
@@ -1045,10 +1257,13 @@ class HouseViewCard extends LitElement {
       this._editors = new WorldEditors(this._engine, { onChange: (persist = true) => this._edited(persist) });
       this._fenceTools = new FenceTools(this._editors);
       this._irrTools = new IrrigationTools(this._editors);
-      this._vacTools = new VacuumTools(this._editors);
+      this._vacTools = new VacuumTools(this._editors, () => this._vacCfg(this._vacuum, true));
     }
-    if (next !== 'edit' && this._vac && this._vac.demo) this._vac.stopDemo();
-    if (next !== 'edit' && this._vac) this._vac.showMap(false);
+    if (next !== 'edit')
+      for (const v of (this._vacs || new Map()).values()) {
+        if (v.demo) v.stopDemo();
+        v.showMap(false);
+      }
     if (next !== 'edit') this._irrDemoStop();
     this._panel = next;
     this._pushIrrigation();
@@ -1063,7 +1278,8 @@ class HouseViewCard extends LitElement {
     this._rev++;
     this._views = this._engine.views.map((v) => v.name);
     this._pushIrrigation();
-    if (this._vac && !this._vac.demo) this._vac.refresh();
+    this._syncVacs(); // a robot hidden or shown again in the settings
+    for (const v of (this._vacs || new Map()).values()) if (!v.demo) v.refresh();
     if (!persist) return;
     this._dirty = true;
     clearTimeout(this._saveTimer);
@@ -1079,6 +1295,299 @@ class HouseViewCard extends LitElement {
     this._sim = { ...this._sim, play: on };
     clearInterval(this._playTimer);
     this._playTimer = on ? setInterval(() => this._setSim({ hour: (this._sim.hour + 0.1) % 24 }), 200) : null; // 1 h / 2 s
+  }
+
+  // ------------------------------------------------------------ toolbar and its menu
+
+  /**
+   * Tools of the view, in the ⋮ menu unless the card puts them in the toolbar (`toolbar_buttons`): occasional view
+   * tools (preview, a year, camera, simulation, demo), then the administration (editor, setup).
+   */
+  _toolItems(ready) {
+    const t = this._t;
+    return [
+      {
+        key: 'preview',
+        group: 'view',
+        icon: 'mdi:weather-snowy-rainy',
+        label: t('preview'),
+        on: this._panel === 'preview' || !!this._preview,
+        action: () => this._togglePanel('preview'),
+        show: ready,
+      },
+      {
+        key: 'year',
+        group: 'view',
+        icon: 'mdi:calendar-sync',
+        label: `${t('year_sim')} (${this._yearSeconds} s)`,
+        on: !!this._year,
+        action: () => this._toggleYear(),
+        show: ready,
+      },
+      {
+        key: 'camera',
+        group: 'view',
+        icon: this._movable ? 'mdi:axis-arrow' : 'mdi:lock',
+        label: t(this._movable ? 'camera_lock' : 'camera_unlock'),
+        on: !this._movable,
+        action: () => this._toggleMovable(),
+        show: ready,
+        check: true,
+      },
+      {
+        key: 'sim',
+        group: 'view',
+        icon: 'mdi:tune-variant',
+        label: t('simulation'),
+        on: this._panel === 'sim',
+        action: () => this._togglePanel('sim'),
+        show: ready && this._simMode,
+      },
+      {
+        key: 'demo',
+        group: 'view',
+        icon: 'mdi:movie-open-play',
+        label: t('demo'),
+        on: this._panel === 'demo',
+        action: () => this._togglePanel('demo'),
+        show: ready && !!this._demo,
+      },
+      {
+        key: 'edit',
+        group: 'admin',
+        icon: this._lockedNow ? 'mdi:pencil-lock' : 'mdi:pencil',
+        label: t('editor'),
+        on: this._panel === 'edit',
+        action: () => this._guardedPanel('edit'),
+        show: ready && this._isAdmin,
+      },
+      {
+        key: 'setup',
+        group: 'admin',
+        icon: 'mdi:cog',
+        label: t('setup'),
+        on: this._panel === 'setup',
+        action: () => this._guardedPanel('setup'),
+        show: this._isAdmin,
+      },
+    ];
+  }
+
+  /** Tools the card puts in the toolbar itself (`toolbar_buttons`), the others go to the menu. */
+  _inBar(key) {
+    const list = this._config.toolbar_buttons;
+    return Array.isArray(list) && list.includes(key);
+  }
+
+  /** The ⋮ menu: when it holds something, and not hidden from the users who are not administrators. */
+  _menuShown(ready) {
+    if (this._config.hide_menu && !this._isAdmin) return false;
+    return this._toolItems(ready).some((it) => it.show && !this._inBar(it.key));
+  }
+
+  _toggleMenu() {
+    this._menuOpen = !this._menuOpen;
+    this.requestUpdate();
+  }
+
+  _renderMenu(ready) {
+    const t = this._t;
+    const items = this._toolItems(ready).filter((it) => it.show && !this._inBar(it.key));
+    const group = (g) => items.filter((it) => it.group === g);
+    const entry = (it) =>
+      html`<button
+        class=${`mi ${it.on ? 'on' : ''}`}
+        @click=${() => {
+          this._menuOpen = false;
+          it.action();
+          this.requestUpdate();
+        }}
+      >
+        <ha-icon .icon=${it.icon}></ha-icon
+        ><span>${it.label}</span>${it.check ? html`<span class="ck">${it.on ? '✓' : ''}</span>` : nothing}
+      </button>`;
+    return html`<div
+        class="menu-back"
+        @pointerdown=${() => {
+          this._menuOpen = false;
+          this.requestUpdate();
+        }}
+      ></div>
+      <div class="menu-pop" @pointerdown=${(e) => e.stopPropagation()}>
+        ${
+          group('view').length
+            ? html`<div class="mh">${t('menu_view')}</div>
+                ${group('view').map(entry)}`
+            : nothing
+        }
+        ${
+          group('admin').length
+            ? html`<div class="mh">${t('menu_admin')}</div>
+                ${group('admin').map(entry)}`
+            : nothing
+        }
+      </div>`;
+  }
+
+  // ------------------------------------------------------------ a year in a few seconds
+
+  get _yearSeconds() {
+    const v = Number(this._config.year_seconds);
+    return Math.min(60, Math.max(5, Number.isFinite(v) && v > 0 ? v : 10));
+  }
+
+  /** Play the seasons of a whole year (from today, or the date shown) in `year_seconds`, then back to the date. */
+  _toggleYear() {
+    if (this._year) return this._endYear();
+    const eng = this._engine;
+    const from = eng.env.state.doy;
+    const y = (this._year = { t0: performance.now(), dur: this._yearSeconds * 1000, from, doy: from });
+    const step = () => {
+      if (this._year !== y) return;
+      const k = (performance.now() - y.t0) / y.dur;
+      if (k >= 1) return this._endYear();
+      const doy = ((from - 1 + Math.round(k * 365)) % 365) + 1;
+      if (doy !== y.doy) {
+        y.doy = doy;
+        eng.setLive({ doy });
+        this.requestUpdate();
+      }
+      y.raf = requestAnimationFrame(step);
+    };
+    step();
+    this.requestUpdate();
+  }
+
+  _endYear() {
+    const y = this._year;
+    if (!y) return;
+    cancelAnimationFrame(y.raf);
+    this._year = null;
+    // back to the date of before: the live one, the simulated one, or the forced preview
+    if (this._simMode) this._pushSim();
+    else if (this._preview) this._applyPreview();
+    else this._engine.setLive({ doy: y.from });
+    this._pushTime(true);
+    this.requestUpdate();
+  }
+
+  // ------------------------------------------------------------ demo
+
+  /** Simulation of the day used when the demo home is shown (and only then). */
+  get _simMode() {
+    return !!this._demo || this._config.mode === 'simulation';
+  }
+
+  _setDemo(on) {
+    if (on === !!this._demo) return;
+    clearInterval(this._demoTimer);
+    this._demoTimer = null;
+    if (on) {
+      this._demo = new DemoSim();
+      // a fine day of early summer, the clock running (1 h every 2 s)
+      this._sim = { ...this._sim, hour: 6, doy: 160, weather: 'clear', cloud: undefined, precip: undefined };
+      this._togglePlay(true);
+      let last = performance.now();
+      this._demoTimer = setInterval(() => {
+        const now = performance.now();
+        if (this._demo.tick(this._sim.hour, Math.min((now - last) / 1000, 1))) this._demoChanged();
+        last = now;
+      }, 200);
+      this._demo.tick(this._sim.hour, 10);
+    } else {
+      this._demo = null;
+      this._togglePlay(false);
+      if (this._panel === 'demo') this._panel = null;
+    }
+    if (this._realHass) this.hass = this._realHass;
+  }
+
+  /** A simulated entity changed: the card sees a new hass object, as on a state change in Home Assistant. */
+  _demoChanged() {
+    if (this._realHass) this.hass = this._realHass;
+  }
+
+  /** Create the demo home (or put it back as shipped) and show it in this card until leaving it. */
+  async _startDemo() {
+    try {
+      const { home } = await this._api.startDemo();
+      this._api.home = home;
+      this._panel = null;
+      await this._reload();
+    } catch (e) {
+      this._msg = `${this._t('error')}: ${e.message}`;
+    }
+  }
+
+  /** The plan of the demo house, to import with "Import a .sh3d" (or to rework in Sweet Home 3D). */
+  async _downloadDemoHouse() {
+    try {
+      const url = URL.createObjectURL(new Blob([await this._api.demoHouse()], { type: 'application/octet-stream' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'demo-maison.sh3d';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      this._msg = `${this._t('error')}: ${e.message}`;
+    }
+  }
+
+  async _leaveDemo() {
+    this._api.home = this._config.home || '';
+    this._panel = null;
+    this._setDemo(false);
+    await this._reload();
+  }
+
+  _renderDemo() {
+    const t = this._t;
+    const d = this._demo;
+    const s = this._sim;
+    return html`
+      <div class="hint">${t('demo_panel_hint')}</div>
+      <label class="chk"
+        ><input
+          type="checkbox"
+          .checked=${d.auto}
+          @change=${(e) => {
+            d.auto = e.target.checked;
+            d.manual.clear();
+            this.requestUpdate();
+          }}
+        />
+        ${t('demo_auto')}</label
+      >
+      <label class="chk"
+        ><input type="checkbox" .checked=${s.play} @change=${(e) => this._togglePlay(e.target.checked)} /> ${t('sim_play')}</label
+      >
+      ${this._range(
+        t('sim_hour'),
+        s.hour,
+        0,
+        23.9,
+        0.1,
+        (v) => this._setSim({ hour: v }),
+        (v) => `${Math.floor(v)} h ${String(Math.floor((v % 1) * 60)).padStart(2, '0')}`,
+        true,
+      )}
+      <label>${t('demo_events')}</label>
+      <div class="chips">
+        ${DEMO_EVENTS.map(
+          (k) =>
+            html`<button
+              @click=${() => {
+                d.hour = s.hour;
+                d.play(k);
+                this._demoChanged();
+              }}
+            >
+              ${t(`demo_ev_${k}`)}
+            </button>`,
+        )}
+      </div>
+      <button @click=${() => this._leaveDemo()}>${t('demo_leave')}</button>
+    `;
   }
 
   // ------------------------------------------------------------ setup (admin)
@@ -1103,7 +1612,16 @@ class HouseViewCard extends LitElement {
     if (!file) return;
     try {
       const { scene, report } = await importSh3d(file);
-      this._data = { ...(this._data || { terrain: null, edits: emptyEdits() }), scene };
+      // first plan of the home: the documents already stored (edits restored, demo edits, terrain) are kept
+      if (!this._data) {
+        const info = (await this._api.info()) || {};
+        const [terrain, edits] = await Promise.all([
+          info.has_terrain ? this._api.getTerrain() : null,
+          info.has_edits ? this._api.getEdits() : null,
+        ]);
+        this._data = { terrain, ortho: null, edits: edits || emptyEdits() };
+      }
+      this._data = { ...this._data, scene };
       this._report = report;
       await this._save('scene');
       this._apply();
@@ -1158,9 +1676,17 @@ class HouseViewCard extends LitElement {
 
   // ------------------------------------------------------------ terrain fetch (integration) / GitHub backup
 
+  /** Where the home is: its own location (the demo one included), the country of Home Assistant. */
+  get _homePlace() {
+    const i = this._info || {};
+    const cfg = this._hass.config;
+    if (!Number.isFinite(i.latitude)) return cfg;
+    return { latitude: i.latitude, longitude: i.longitude, country: this._demo ? null : cfg.country };
+  }
+
   /** Same rule as the integration (sources.py): the French services in France, the worldwide ones elsewhere. */
   get _inFrance() {
-    const c = this._hass.config;
+    const c = this._homePlace;
     if (c.country) return ['FR', 'GP', 'MQ', 'GF', 'RE', 'YT', 'PM', 'BL', 'MF'].includes(String(c.country).toUpperCase());
     return c.latitude > 41 && c.latitude < 51.5 && c.longitude > -5.5 && c.longitude < 10; // metropolitan France
   }
@@ -1209,9 +1735,10 @@ class HouseViewCard extends LitElement {
         const [terrain, ortho] = await Promise.all([this._api.getTerrain(), this._api.getOrtho()]);
         this._data.terrain = terrain;
         this._data.ortho = ortho;
-        this._data.edits.registration = {};
+        // a terrain that says how it sits on the plan (the demo) is not registered again
+        this._data.edits.registration = terrain && terrain.registration ? { ...terrain.registration } : {};
         this._apply(true);
-        if (terrain && (terrain.s || terrain.buildings)) await this._calibrate();
+        if (terrain && !terrain.registration && (terrain.s || terrain.buildings)) await this._calibrate();
         else await this._save('edits');
       }
     } catch (e) {
@@ -1305,6 +1832,15 @@ class HouseViewCard extends LitElement {
         ${label}</label
       >`;
     return html`
+      <details ?open=${!!this._demo}>
+        <summary>${t('demo')}</summary>
+        <div class="hint">${t(this._demo ? 'demo_on_hint' : 'demo_hint')}</div>
+        <div class="row">
+          <button @click=${() => this._startDemo()}>${t(this._demo ? 'demo_reset' : 'demo_start')}</button>
+          ${this._demo ? html`<button @click=${() => this._downloadDemoHouse()}>${t('demo_download')}</button>` : nothing}
+          ${this._demo ? html`<button @click=${() => this._leaveDemo()}>${t('demo_leave')}</button>` : nothing}
+        </div>
+      </details>
       <details open>
         <summary>${t('plan')}</summary>
         <label class="file">${t('import_plan')}<input type="file" accept=".sh3d,.xml" @change=${this._onPlan} /></label>
@@ -1416,7 +1952,7 @@ class HouseViewCard extends LitElement {
 
   _renderFetch() {
     const t = this._t;
-    const c = this._hass.config;
+    const c = this._homePlace;
     const f = this._fetch;
     const running = f && f.state === 'running';
     const src = this._fetchSource;
@@ -1474,7 +2010,10 @@ class HouseViewCard extends LitElement {
   _renderEntities() {
     const t = this._t;
     const ed = this._editors;
-    const list = this._entities;
+    // the layer being edited: the room zoomed on, or the general view
+    const layer = this._focus || null;
+    const list = this._entities.filter((s) => (layer ? s.scope === 'room' && entityRoom(s) === layer : s.scope !== 'room'));
+    const layerName = layer && (this._engine.rooms.find((r) => r.id === layer) || {}).name;
     const eng = this._engine;
     const hass = this._hass;
     const where = (s) => {
@@ -1486,6 +2025,9 @@ class HouseViewCard extends LitElement {
     const add = (id) => {
       if (!id || !hass.states[id]) return;
       this._entSel = ed.addEntity(id);
+      // added while zoomed on a room: it belongs to the layer of that room, placed at once
+      if (layer) ed.editEntity(this._entSel, { scope: 'room', layer, room: layer });
+      ed.placeEntity(this._entSel);
     };
     const entityPicker = html`<house-view-entity-picker
       .hass=${hass}
@@ -1506,69 +2048,103 @@ class HouseViewCard extends LitElement {
         .value=${String(s[key] ?? def)}
         @change=${(e) => ed.editEntity(s.id, { [key]: parseFloat(e.target.value) || 0 })}
       />`;
-    return html` ${entityPicker}
-    ${ed.placing ? html`<div class="hint">${t(this._ent(ed.placing)?.mount === 'wall' ? 'entity_place_wall' : 'entity_place_hint')}</div>` : nothing}
-    ${list.map((s) => {
-      const open = this._entSel === s.id;
-      const st = hass.states[s.entity];
-      const light = s.entity.startsWith('light.');
-      return html`<div class=${`ent ${open ? 'open' : ''}`}>
-        <div
-          class="ent-head"
-          @click=${() => {
-            this._entSel = open ? null : s.id;
-            this.requestUpdate();
-          }}
-        >
-          <ha-state-icon .hass=${hass} .stateObj=${st} .icon=${s.icon || undefined}></ha-state-icon>
-          <span class="grow">${s.label || (st && st.attributes.friendly_name) || s.entity}</span>
-          <span class="hint">${where(s)}</span>
-          <span>${open ? '▾' : '▸'}</span>
-        </div>
-        ${
-          open
-            ? html`<div class="grid">
-                  <span>${t('entity_label')}</span
-                  ><input type="text" .value=${s.label || ''} @change=${(e) => ed.editEntity(s.id, { label: e.target.value })} />
-                  <span>${t('entity_mount')}</span>${select(s, 'mount', ['floor', 'wall', 'free'], 'floor')}
-                  ${s.mount === 'free' ? html`<span>${t('entity_y')}</span>${num(s, 'y', 1)}` : nothing}
-                  <span>${t('entity_display')}</span>${select(s, 'display', ['badge', 'icon'], 'badge')}
-                  <span>${t('entity_scope')}</span>
-                  <select @change=${(e) => ed.editEntity(s.id, { scope: e.target.value })}>
-                    ${['general', 'level', 'room'].map(
-                      (v) =>
-                        html`<option
-                          value=${v}
-                          ?selected=${(s.scope || 'general') === v}
-                          ?disabled=${(v === 'level' && !s.level) || (v === 'room' && !s.room)}
-                        >
-                          ${t(`scope_${v}`)}
-                        </option>`,
-                    )}
-                  </select>
-                  <span>${t('entity_tap')}</span>${select(s, 'tap', ['more-info', 'toggle', 'none'], 'more-info')} <span>${t('color')}</span
-                  ><input type="color" .value=${s.color || '#03a9f4'} @change=${(e) => ed.editEntity(s.id, { color: e.target.value })} />
-                  ${
-                    light
-                      ? html`<span>${t('entity_kind')}</span
-                          >${select(s, 'kind', ['spot', 'pendant', 'lamp', 'strip', 'none', 'off'], 'spot')}
-                          ${s.mount === 'wall' ? nothing : html`<span>${t('entity_lighty')}</span>${num(s, 'lightY', 2.3)}`}
-                          <span>${t('entity_radius')}</span>${num(s, 'radius', 4.5, 0.5)}`
-                      : nothing
-                  }
-                </div>
-                <label>${t('entity_icon')}</label>${iconPicker(s)}
-                <div class="hint">${t(light ? 'entity_light_hint' : 'entity_drag_hint')}</div>
-                <div class="row">
-                  <button class=${ed.placing === s.id ? 'on' : ''} @click=${() => ed.placeEntity(ed.placing === s.id ? null : s.id)}>
-                    ${t('entity_place')}
-                  </button>
-                  <button @click=${() => ed.deleteEntity(s.id)}>${t('delete')}</button>
-                </div>`
-            : nothing
-        }
-      </div>`;
-    })}`;
+    return html`<div class=${`layer-hint ${layer ? 'room' : ''}`}>
+        ${layer ? html`<b>${t('layer_room')} : ${layerName || layer}</b><br />${t('layer_room_hint')}` : t('layer_general_hint')}
+      </div>
+      ${entityPicker}
+      ${ed.placing ? html`<div class="hint">${t(this._ent(ed.placing)?.mount === 'wall' ? 'entity_place_wall' : 'entity_place_hint')}</div>` : nothing}
+      ${list.map((s) => {
+        const open = this._entSel === s.id;
+        const st = hass.states[s.entity];
+        const light = s.entity.startsWith('light.');
+        return html`<div class=${`ent ${open ? 'open' : ''}`}>
+          <div
+            class="ent-head"
+            @click=${() => {
+              this._entSel = open ? null : s.id;
+              this.requestUpdate();
+            }}
+          >
+            <ha-state-icon .hass=${hass} .stateObj=${st} .icon=${s.icon || undefined}></ha-state-icon>
+            <span class="grow">${s.label || (st && st.attributes.friendly_name) || s.entity}</span>
+            <span class="hint">${where(s)}</span>
+            <span>${open ? '▾' : '▸'}</span>
+          </div>
+          ${
+            open
+              ? this._asWindow(
+                  s.label || (st && st.attributes.friendly_name) || s.entity,
+                  html`<div class="grid">
+                      <span>${t('entity_label')}</span
+                      ><input type="text" .value=${s.label || ''} @change=${(e) => ed.editEntity(s.id, { label: e.target.value })} />
+                      <span>${t('entity_mount')}</span>${select(s, 'mount', ['floor', 'wall', 'free'], 'floor')}
+                      ${s.mount === 'free' ? html`<span>${t('entity_y')}</span>${num(s, 'y', 1)}` : nothing}
+                      <span>${t('entity_display')}</span>${select(s, 'display', ['badge', 'icon'], 'badge')}
+                      ${
+                        layer
+                          ? nothing
+                          : html`<span>${t('entity_scope')}</span>
+                              <select
+                                @change=${(e) =>
+                                  // into the layer of its room: shown only when zoomed on it
+                                  ed.editEntity(
+                                    s.id,
+                                    e.target.value === 'room' ? { scope: 'room', layer: s.room } : { scope: e.target.value },
+                                  )}
+                              >
+                                ${['general', 'level', 'room'].map(
+                                  (v) =>
+                                    html`<option
+                                      value=${v}
+                                      ?selected=${(s.scope === 'far' ? 'general' : s.scope || 'general') === v}
+                                      ?disabled=${(v === 'level' && !s.level) || (v === 'room' && !s.room)}
+                                    >
+                                      ${t(`scope_${v}`)}
+                                    </option>`,
+                                )}
+                              </select>`
+                      }
+                      ${
+                        layer
+                          ? nothing
+                          : html`<span>${t('entity_over_roof')}</span
+                              ><input
+                                type="checkbox"
+                                .checked=${overRoof(s)}
+                                @change=${(e) => ed.editEntity(s.id, { overRoof: e.target.checked, ...(s.scope === 'far' ? { scope: 'general' } : {}) })}
+                              />`
+                      } <span>${t('entity_tap')}</span>${select(s, 'tap', ['more-info', 'toggle', 'none'], 'more-info')}
+                      <span>${t('color')}</span
+                      ><input
+                        type="color"
+                        .value=${s.color || '#03a9f4'}
+                        @change=${(e) => ed.editEntity(s.id, { color: e.target.value })}
+                      />
+                      ${
+                        light
+                          ? html`<span>${t('entity_kind')}</span
+                              >${select(s, 'kind', ['spot', 'pendant', 'lamp', 'strip', 'none', 'off'], 'spot')}
+                              ${s.mount === 'wall' ? nothing : html`<span>${t('entity_lighty')}</span>${num(s, 'lightY', 2.3)}`}
+                              <span>${t('entity_radius')}</span>${num(s, 'radius', 4.5, 0.5)}`
+                          : nothing
+                      }
+                    </div>
+                    <label>${t('entity_icon')}</label>${iconPicker(s)}
+                    <div class="hint">${t(light ? 'entity_light_hint' : 'entity_drag_hint')}</div>
+                    <div class="row">
+                      <button class=${ed.placing === s.id ? 'on' : ''} @click=${() => ed.placeEntity(ed.placing === s.id ? null : s.id)}>
+                        ${t('entity_place')}
+                      </button>
+                      <button @click=${() => ed.deleteEntity(s.id)}>${t('delete')}</button>
+                    </div>`,
+                  () => {
+                    this._entSel = null;
+                  },
+                )
+              : nothing
+          }
+        </div>`;
+      })}`;
   }
 
   _ent(id) {
@@ -1800,11 +2376,14 @@ class HouseViewCard extends LitElement {
   _renderEdit() {
     if (!this._editors || !this._engine.world) return nothing;
     const t = this._t;
-    return html`${this._sec('entities', `${t('entities')} (${this._entities.length})`, () => this._renderEntities())}
+    // entities of the layer being edited: the room zoomed on, or the general view
+    const inLayer = this._entities.filter((s) => (this._focus ? s.scope === 'room' && entityRoom(s) === this._focus : s.scope !== 'room'));
+    return html`${this._sec('entities', `${t('entities')} (${inLayer.length})`, () => this._renderEntities())}
     ${this._sec('general', `${t('general')} (${this._data.edits.panel.length})`, () => renderGeneralEditor(this))}
     ${this._sec('alarms', t('alarms'), () => renderAlarmsEditor(this))}
     ${this._sec('zones', `${t('zones')} (${this._data.edits.zones.length})`, () => renderZonesEditor(this))}
-    ${this._sec('rooms', t('rooms'), () => renderRooms(this))}
+    ${this._sec('rooms', t('rooms'), () => renderRooms(this))} ${this._sec('openings', t('openings'), () => renderOpenings(this))}
+    ${this._sec('pools', `${t('pools')} (${this._data.edits.pools.length})`, () => renderPools(this))}
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
     ${this._sec('outdoor', t('outdoor'), () => this._renderOutdoor())} ${this._sec('trees', t('trees'), () => this._renderTrees())}
@@ -1829,7 +2408,7 @@ class HouseViewCard extends LitElement {
         365,
         1,
         (v) => this._setSim({ doy: v }),
-        (v) => `${fmtDoy(v, this._hass.language)} · ${seasonName(v)}`,
+        (v) => `${fmtDoy(v, this._hass.language)} · ${t(`season_${seasonKey(v, this._climate)}`)}`,
         true,
       )}
       <label
@@ -1877,13 +2456,13 @@ class HouseViewCard extends LitElement {
   _renderPreview() {
     const t = this._t;
     const p = this._preview || {};
-    const sim = this._config.mode === 'simulation';
+    const sim = this._simMode;
     const chip = (kind, key, label) =>
       html`<button class=${!sim && p[kind] === key ? 'on' : ''} @click=${() => this._setPreview(kind, key)}>${label}</button>`;
     return html`
       <div class="hint">${t(sim ? 'preview_hint_sim' : 'preview_hint')}</div>
       <label>${t('preview_season')}</label>
-      <div class="chips">${Object.keys(PREVIEW.season).map((k) => chip('season', k, t(`season_${k}`)))}</div>
+      <div class="chips">${seasonsOf(this._climate).map((k) => chip('season', k, t(`season_${k}`)))}</div>
       <label>${t('preview_weather')}</label>
       <div class="chips">${PREVIEW.weather.map((k) => chip('weather', k, WEATHER_PRESETS[k].label))}</div>
       <label>${t('preview_hour')}</label>
@@ -1961,12 +2540,13 @@ class HouseViewCard extends LitElement {
   _renderPanel() {
     const t = this._t;
     if (!this._panel) return nothing;
-    const title = { setup: t('setup'), edit: t('editor'), sim: t('simulation'), preview: t('preview') }[this._panel];
+    const title = { setup: t('setup'), edit: t('editor'), sim: t('simulation'), preview: t('preview'), demo: t('demo') }[this._panel];
     const body = {
       setup: () => this._renderSetup(),
       edit: () => this._renderEdit(),
       sim: () => this._renderSim(),
       preview: () => this._renderPreview(),
+      demo: () => this._renderDemo(),
     }[this._panel]();
     return html`<div class="panel" @pointerdown=${(e) => e.stopPropagation()}>
       <div class="head">
@@ -1992,14 +2572,46 @@ class HouseViewCard extends LitElement {
   render() {
     const t = this._t;
     const ready = this._status === 'ready';
+    this._winSec = null;
+    this._winItem = null;
     const tb = (icon, title, active, cb, show = true) =>
       show
         ? html`<button class=${`tb ${active ? 'on' : ''}`} title=${title} @click=${cb}><ha-icon .icon=${icon}></ha-icon></button>`
         : nothing;
-    const vac = ready && this._vacuum;
-    const vacSt = vac && this._hass.states[vac];
-    const vacTotal = vac && this._vac ? this._vac.total() : null;
-    const vacErr = !!(vac && this._vac && this._vac.error);
+    // one button per robot: a tap chooses it and shows its panel (again: hides it)
+    const vacBtn = (vac) => {
+      const ctl = this._vacs && this._vacs.get(vac);
+      const vacSt = this._hass.states[vac];
+      const vacTotal = ctl ? ctl.total() : null;
+      const vacErr = !!(ctl && ctl.error);
+      const on = this._vacMode && this._vacuum === vac;
+      return html`<button
+        class=${`tb vac ${on ? 'on' : ''} ${vacErr ? 'err' : ''} ${vacTotal === null && VACUUM_ACTIVE.has(vacSt.state) ? 'busy' : ''}`}
+        title=${`${vacSt.attributes.friendly_name || vac} · ${this._stateText(vacSt)}${vacTotal !== null ? ` · ${Math.round(vacTotal * 100)} %` : ''}${vacErr ? ` · ${ctl.errorText}` : ''}`}
+        @click=${() => {
+          if (this._vacMode && this._vacuum !== vac) this._toggleVacMode(); // leave the rooms of the other robot
+          this._vacCur = vac;
+          this._toggleVacMode();
+        }}
+      >
+        ${
+          vacTotal !== null
+            ? html`<svg class="ring" viewBox="0 0 40 40">
+                <circle class="bg" cx="20" cy="20" r="18"></circle>
+                <circle
+                  class="fg"
+                  cx="20"
+                  cy="20"
+                  r="18"
+                  stroke-dasharray=${`${(vacTotal * 113.1).toFixed(1)} 113.1`}
+                  transform="rotate(-90 20 20)"
+                ></circle>
+              </svg>`
+            : nothing
+        }
+        <ha-icon icon=${vacErr ? 'mdi:alert' : 'mdi:robot-vacuum'}></ha-icon>
+      </button>`;
+    };
     return html` <ha-card>
       <div class="wrap">
         <div id="view"></div>
@@ -2012,39 +2624,13 @@ class HouseViewCard extends LitElement {
             : nothing
         }
         <div class="toolbar">
-          ${ready ? renderAlarmBadge(this) : nothing}
-          ${
-            vac
-              ? html`<button
-                  class=${`tb vac ${this._vacMode ? 'on' : ''} ${vacErr ? 'err' : ''} ${vacTotal === null && VACUUM_ACTIVE.has(vacSt.state) ? 'busy' : ''}`}
-                  title=${`${vacSt.attributes.friendly_name || vac} · ${this._stateText(vacSt)}${vacTotal !== null ? ` · ${Math.round(vacTotal * 100)} %` : ''}${vacErr ? ` · ${this._vac.errorText}` : ''}`}
-                  @click=${() => this._toggleVacMode()}
-                >
-                  ${
-                    vacTotal !== null
-                      ? html`<svg class="ring" viewBox="0 0 40 40">
-                          <circle class="bg" cx="20" cy="20" r="18"></circle>
-                          <circle
-                            class="fg"
-                            cx="20"
-                            cy="20"
-                            r="18"
-                            stroke-dasharray=${`${(vacTotal * 113.1).toFixed(1)} 113.1`}
-                            transform="rotate(-90 20 20)"
-                          ></circle>
-                        </svg>`
-                      : nothing
-                  }
-                  <ha-icon icon=${vacErr ? 'mdi:alert' : 'mdi:robot-vacuum'}></ha-icon>
-                </button>`
-              : nothing
-          }
-          ${tb('mdi:weather-snowy-rainy', t('preview'), this._panel === 'preview' || !!this._preview, () => this._togglePanel('preview'), ready)}
-          ${tb(this._movable ? 'mdi:axis-arrow' : 'mdi:lock', t(this._movable ? 'camera_lock' : 'camera_unlock'), this._movable, () => this._toggleMovable(), ready)}
-          ${tb('mdi:tune-variant', t('simulation'), this._panel === 'sim', () => this._togglePanel('sim'), ready && this._config.mode === 'simulation')}
-          ${tb(this._lockedNow ? 'mdi:pencil-lock' : 'mdi:pencil', t('editor'), this._panel === 'edit', () => this._guardedPanel('edit'), ready && this._isAdmin)}
-          ${tb('mdi:cog', t('setup'), this._panel === 'setup', () => this._guardedPanel('setup'), this._isAdmin)}
+          ${ready ? renderAlarmBadge(this) : nothing} ${ready ? this._vacuumIds.map(vacBtn) : nothing}
+          ${this._toolItems(ready)
+            .filter((it) => it.show && this._inBar(it.key))
+            .map((it) => tb(it.icon, it.label, it.on, it.action))}
+          ${this._menuShown(ready) ? tb('mdi:dots-vertical', t('menu'), this._menuOpen, () => this._toggleMenu()) : nothing}
         </div>
+        ${this._menuOpen ? this._renderMenu(ready) : nothing}
         ${
           this._tip && !this._panel
             ? html`<div class="tip" style=${`left:${this._tip.x}px;top:${this._tip.y}px`}>
@@ -2055,6 +2641,7 @@ class HouseViewCard extends LitElement {
               </div>`
             : nothing
         }
+        ${this._year ? html`<div class="year-chip">📅 ${fmtDoy(this._year.doy, this._hass.language)}</div>` : nothing}
         ${this._status === 'loading' ? html`<div class="overlay">${t('loading')}</div>` : nothing}
         ${this._status === 'error' ? html`<div class="overlay err">${this._error}</div>` : nothing}
         ${
@@ -2067,8 +2654,16 @@ class HouseViewCard extends LitElement {
               </div>`
             : nothing
         }
-        ${this._renderPanel()} ${this._renderVacuum()} ${this._renderLock()} ${ready ? renderAlarmList(this) : nothing}
-        ${renderAquariumDialog(this)}
+        ${
+          this._editing && this._focus && ready
+            ? html`<div class="layer-banner">
+                ✎ ${t('layer_room')} : ${(this._engine.rooms.find((r) => r.id === this._focus) || {}).name || this._focus}
+                <small>${t('layer_room_banner')}</small>
+              </div>`
+            : nothing
+        }
+        ${this._renderPanel()} ${this._renderWindows()} ${this._renderVacuum()} ${this._renderLock()}
+        ${ready ? renderAlarmList(this) : nothing} ${renderAquariumDialog(this)}
         ${
           this._focus && ready && !this._vacMode
             ? html`<div class="back-row">
@@ -2184,6 +2779,16 @@ class HouseViewCard extends LitElement {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+    }
+    .general.room {
+      border-top: 1px solid rgba(255, 255, 255, 0.25);
+      padding-top: 6px;
+    }
+    .general .rname {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
     }
     .general {
       display: flex;
@@ -2344,11 +2949,13 @@ class HouseViewCard extends LitElement {
       pointer-events: none;
       overflow: hidden;
       border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .zthumb > * {
       display: block;
-      width: 100%;
-      height: 100%;
+      flex: none;
     }
     .dialog {
       position: absolute;
@@ -2381,7 +2988,133 @@ class HouseViewCard extends LitElement {
       font-size: 16px;
       cursor: pointer;
     }
-    .panel .zone {
+    .menu-back {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+    }
+    .menu-pop {
+      position: absolute;
+      top: 46px;
+      right: 8px;
+      z-index: 6;
+      min-width: 220px;
+      background: #1a212d;
+      color: #e6edf5;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+      padding: 4px 0;
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+    }
+    .menu-pop .mh {
+      padding: 6px 12px 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      opacity: 0.6;
+    }
+    .menu-pop .mi {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 12px;
+      background: none;
+      border: none;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+      --mdc-icon-size: 20px;
+    }
+    .menu-pop .mi span {
+      flex: 1;
+    }
+    .menu-pop .mi:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .menu-pop .mi.on {
+      color: var(--primary-color, #03a9f4);
+    }
+    .menu-pop .ck {
+      flex: none !important;
+    }
+    .year-chip {
+      position: absolute;
+      top: 52px;
+      right: 8px;
+      z-index: 2;
+      background: rgba(20, 26, 36, 0.82);
+      color: #fff;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      pointer-events: none;
+    }
+    .layer-banner {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      background: rgba(198, 40, 40, 0.92);
+      color: #fff;
+      padding: 5px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 600;
+      pointer-events: none;
+      text-align: center;
+    }
+    .layer-banner small {
+      display: block;
+      font-weight: 400;
+      font-size: 11px;
+    }
+    :is(.panel, .win) .layer-hint {
+      border-left: 3px solid rgba(255, 255, 255, 0.3);
+      padding: 4px 8px;
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    :is(.panel, .win) .layer-hint.room {
+      border-left-color: #e53935;
+      background: rgba(229, 57, 53, 0.15);
+    }
+    :is(.panel, .win) .row-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      text-align: left;
+      margin-bottom: 3px;
+    }
+    :is(.panel, .win) .row-btn span:first-of-type {
+      flex: 1;
+    }
+    :is(.panel, .win) .row-btn ha-icon {
+      --mdc-icon-size: 18px;
+    }
+    :is(.panel, .win) .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+    :is(.panel, .win) button.danger {
+      color: #ff8a80;
+      margin-top: 8px;
+    }
+    :is(.panel, .win) .badge {
+      background: var(--primary-color, #03a9f4);
+      color: #fff;
+      border-radius: 9px;
+      padding: 0 6px;
+      font-size: 11px;
+    }
+    :is(.panel, .win) .zone {
       border-left: 2px solid rgba(255, 255, 255, 0.12);
       padding-left: 8px;
       display: flex;
@@ -2389,7 +3122,7 @@ class HouseViewCard extends LitElement {
       gap: 6px;
       margin-bottom: 6px;
     }
-    .panel .zone.open {
+    :is(.panel, .win) .zone.open {
       border-left-color: var(--primary-color, #03a9f4);
     }
     .views button,
@@ -2498,7 +3231,7 @@ class HouseViewCard extends LitElement {
       width: 18px;
       height: 18px;
     }
-    .panel .sw {
+    :is(.panel, .win) .sw {
       display: inline-block;
       width: 10px;
       height: 10px;
@@ -2506,20 +3239,20 @@ class HouseViewCard extends LitElement {
       margin-right: 5px;
       vertical-align: middle;
     }
-    .panel .grid.rooms {
+    :is(.panel, .win) .grid.rooms {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
     }
-    .panel .grid.rooms span {
+    :is(.panel, .win) .grid.rooms span {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       cursor: default;
     }
-    .panel .ent-head ha-icon {
+    :is(.panel, .win) .ent-head ha-icon {
       --mdc-icon-size: 18px;
       display: flex;
     }
-    .panel .err {
+    :is(.panel, .win) .err {
       color: #ff9b9b;
     }
     .tb.busy {
@@ -2535,6 +3268,9 @@ class HouseViewCard extends LitElement {
       inset: 0;
       pointer-events: none;
       overflow: hidden;
+    }
+    .anchor.behind {
+      opacity: 0.55;
     }
     .anchor {
       --c: var(--primary-color, #03a9f4);
@@ -2581,34 +3317,34 @@ class HouseViewCard extends LitElement {
       outline-offset: 2px;
       z-index: 1;
     }
-    .panel .ent {
+    :is(.panel, .win) .ent {
       border-left: 2px solid rgba(255, 255, 255, 0.12);
       padding-left: 8px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .panel .ent.open {
+    :is(.panel, .win) .ent.open {
       border-left-color: var(--primary-color, #03a9f4);
     }
-    .panel .ent-head {
+    :is(.panel, .win) .ent-head {
       display: flex;
       align-items: center;
       gap: 6px;
       cursor: pointer;
     }
-    .panel .ent-head ha-state-icon {
+    :is(.panel, .win) .ent-head ha-state-icon {
       --mdc-icon-size: 18px;
       display: flex;
     }
-    .panel .ent-head .hint {
+    :is(.panel, .win) .ent-head .hint {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       max-width: 40%;
     }
-    .panel house-view-icon-picker,
-    .panel house-view-entity-picker {
+    :is(.panel, .win) house-view-icon-picker,
+    :is(.panel, .win) house-view-entity-picker {
       display: block;
       width: 100%;
     }
@@ -2669,7 +3405,7 @@ class HouseViewCard extends LitElement {
       gap: 6px;
     }
     .vacbar button,
-    .panel .chips button {
+    :is(.panel, .win) .chips button {
       padding: 5px 10px;
       border: 1px solid rgba(255, 255, 255, 0.22);
       border-radius: 6px;
@@ -2679,7 +3415,7 @@ class HouseViewCard extends LitElement {
       font: inherit;
     }
     .vacbar button.primary,
-    .panel button.on {
+    :is(.panel, .win) button.on {
       background: var(--primary-color, #03a9f4);
       border-color: transparent;
     }
@@ -2687,29 +3423,29 @@ class HouseViewCard extends LitElement {
       opacity: 0.4;
     }
     .vacbar .row,
-    .panel .chips {
+    :is(.panel, .win) .chips {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
     }
-    .panel .sub {
+    :is(.panel, .win) .sub {
       border-left: 2px solid rgba(255, 255, 255, 0.12);
       padding-left: 8px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .panel .grid input[type='text'] {
+    :is(.panel, .win) .grid input[type='text'] {
       width: 100%;
     }
-    .panel input[type='color'] {
+    :is(.panel, .win) input[type='color'] {
       width: 48px;
       height: 26px;
       border: none;
       background: none;
       padding: 0;
     }
-    .panel form {
+    :is(.panel, .win) form {
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -2727,6 +3463,83 @@ class HouseViewCard extends LitElement {
       border-radius: 6px;
       max-width: 220px;
       z-index: 1;
+    }
+    :is(.panel, .win) .menu {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid transparent;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+    :is(.panel, .win) .menu:hover {
+      background: rgba(255, 255, 255, 0.09);
+    }
+    :is(.panel, .win) .menu.on {
+      border-color: var(--primary-color, #03a9f4);
+      background: rgba(3, 169, 244, 0.15);
+    }
+    :is(.panel, .win) .menu span:nth-of-type(1) {
+      flex: 1;
+    }
+    :is(.panel, .win) .menu .arrow {
+      opacity: 0.6;
+    }
+    /* windows of the editor: stacked over the menu, each one over the previous one */
+    .win {
+      position: absolute;
+      top: 48px;
+      right: 8px;
+      bottom: 8px;
+      z-index: 4;
+      width: min(340px, calc(100% - 16px));
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      background: #1a212d;
+      color: #e6edf5;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+      font-size: 13px;
+    }
+    .win.item {
+      z-index: 5;
+    }
+    .win .head {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      padding: 8px 12px 8px 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .win .head .wback {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 2px;
+      display: flex;
+      --mdc-icon-size: 20px;
+    }
+    .win .head b {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .win .body {
+      overflow-y: auto;
+      padding: 8px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
     .panel {
       position: absolute;
@@ -2753,53 +3566,53 @@ class HouseViewCard extends LitElement {
       align-items: center;
       justify-content: space-between;
     }
-    .panel .x {
+    :is(.panel, .win) .x {
       border: none;
       background: none;
       color: inherit;
       cursor: pointer;
       font-size: 14px;
     }
-    .panel details {
+    :is(.panel, .win) details {
       border-top: 1px solid rgba(255, 255, 255, 0.1);
       padding-top: 6px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .panel details[open] {
+    :is(.panel, .win) details[open] {
       padding-bottom: 6px;
     }
-    .panel details > * + * {
+    :is(.panel, .win) details > * + * {
       margin-top: 6px;
     }
-    .panel summary {
+    :is(.panel, .win) summary {
       cursor: pointer;
       font-weight: 600;
     }
-    .panel label {
+    :is(.panel, .win) label {
       display: block;
       color: #aab4c3;
     }
-    .panel .rng span {
+    :is(.panel, .win) .rng span {
       display: flex;
       justify-content: space-between;
     }
-    .panel .rng b {
+    :is(.panel, .win) .rng b {
       color: #e6edf5;
       font-weight: 500;
     }
-    .panel input[type='range'] {
+    :is(.panel, .win) input[type='range'] {
       width: 100%;
     }
-    .panel .chk {
+    :is(.panel, .win) .chk {
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .panel select,
-    .panel input[type='number'],
-    .panel input[type='text'] {
+    :is(.panel, .win) select,
+    :is(.panel, .win) input[type='number'],
+    :is(.panel, .win) input[type='text'] {
       background: #10151c;
       color: #e6edf5;
       border: 1px solid rgba(255, 255, 255, 0.18);
@@ -2808,31 +3621,31 @@ class HouseViewCard extends LitElement {
       font: inherit;
       box-sizing: border-box;
     }
-    .panel select {
+    :is(.panel, .win) select {
       width: 100%;
     }
-    .panel input[type='number'] {
+    :is(.panel, .win) input[type='number'] {
       width: 72px;
     }
-    .panel .row {
+    :is(.panel, .win) .row {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       align-items: center;
     }
-    .panel .row input[type='text'],
-    .panel .grow {
+    :is(.panel, .win) .row input[type='text'],
+    :is(.panel, .win) .grow {
       flex: 1;
       min-width: 0;
     }
-    .panel .grid {
+    :is(.panel, .win) .grid {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 4px 8px;
       align-items: center;
     }
-    .panel .file,
-    .panel button:not(.x) {
+    :is(.panel, .win) .file,
+    :is(.panel, .win) button:not(.x) {
       align-self: flex-start;
       padding: 5px 10px;
       border: 1px solid rgba(255, 255, 255, 0.22);
@@ -2843,14 +3656,14 @@ class HouseViewCard extends LitElement {
       font: inherit;
       display: inline-block;
     }
-    .panel button:disabled {
+    :is(.panel, .win) button:disabled {
       opacity: 0.4;
       cursor: default;
     }
-    .panel .file input {
+    :is(.panel, .win) .file input {
       display: none;
     }
-    .panel canvas {
+    :is(.panel, .win) canvas {
       width: 100%;
       background: #10151c;
       border-radius: 6px;

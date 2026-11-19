@@ -27,6 +27,9 @@ describe('card option editor', () => {
         'height',
         'min_height',
         'fps_cap',
+        'year_seconds',
+        'toolbar_buttons',
+        'hide_menu',
         'light_entities',
         'vacuum_entity',
         'vacuum_progress_entity',
@@ -40,7 +43,7 @@ describe('card option editor', () => {
         expect(s.title).not.toMatch(/^ed_/);
       }
       const options = flat(schema).flatMap((s) => (s.selector.select ? s.selector.select.options : []));
-      expect(options.length).toBe(7);
+      expect(options.length).toBe(13);
       for (const o of options) expect(o.label).not.toMatch(/^ed_/);
     }
     for (const key of Object.keys(DEFAULTS)) expect(flat(editorSchema(makeT('en'))).map((s) => s.name)).toContain(key);
@@ -78,5 +81,24 @@ describe('card option editor', () => {
     });
     expect(cleanConfig({ type: 'x', ...DEFAULTS })).toEqual({ type: 'x' });
     expect(cleanConfig({ type: 'x', interactive: false })).toEqual({ type: 'x', interactive: false }); // untouched
+  });
+});
+
+describe('homes in the editor', () => {
+  it('offers the home only when there are several, the first one by default', () => {
+    expect(editorSchema((k) => k, [{ id: 'a', title: 'Maison' }])[0].name).not.toBe('home');
+    const [home] = editorSchema(
+      (k) => k,
+      [
+        { id: 'a', title: 'Maison' },
+        { id: 'b', title: 'Chalet' },
+      ],
+    );
+    expect(home.name).toBe('home');
+    expect(home.selector.select.options).toEqual([
+      { value: '', label: 'Maison' },
+      { value: 'b', label: 'Chalet' },
+    ]);
+    expect(cleanConfig({ type: 'custom:house-view-card', home: '' })).toEqual({ type: 'custom:house-view-card' });
   });
 });

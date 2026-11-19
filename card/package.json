@@ -1,6 +1,6 @@
 {
   "name": "house-view-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Home Assistant Lovelace card: dynamic pseudo-3D view of the house (three.js)",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,8 @@
     "test": "vitest run",
     "format": "prettier --write \"src/**/*.js\" \"test/**/*.{js,html}\"",
     "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.{js,html}\"",
-    "icons": "node scripts/mdi-names.mjs"
+    "icons": "node scripts/mdi-names.mjs",
+    "demo": "node scripts/make-demo.mjs"
   },
   "devDependencies": {
     "@mdi/svg": "^7.4.47",
