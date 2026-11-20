@@ -2,10 +2,10 @@ import { LitElement, html, css, nothing } from 'lit';
 import { HouseEngine } from './engine.js';
 import { HouseViewApi } from './api.js';
 import { WorldEditors, drawSection } from './editors.js';
-import { FenceTools, IrrigationTools, VacuumTools } from './garden-tools.js';
+import { FenceTools, GateTools, BedTools, IrrigationTools, VacuumTools } from './garden-tools.js';
 import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
-import { renderFences, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
+import { renderFences, renderGates, renderBeds, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
 import {
   renderGeneral,
   renderGeneralEditor,
@@ -48,6 +48,8 @@ import { makeT } from './i18n.js';
 import './pickers.js';
 import pkg from '../package.json';
 import { autoOpeningLinks, openingStates } from './openings.js';
+import { gatesOf, gateOpenness } from './gates.js';
+import { normalizeFence } from './fences.js';
 import { renderOpenings } from './ui-openings.js';
 import { renderPools } from './ui-pools.js';
 import { renderBuilder } from './ui-builder.js';
@@ -96,6 +98,8 @@ const SECTION_ICONS = {
   vacuum: 'mdi:robot-vacuum',
   irrigation: 'mdi:sprinkler-variant',
   fences: 'mdi:fence',
+  gates: 'mdi:gate',
+  beds: 'mdi:flower',
   outdoor: 'mdi:home-group',
   trees: 'mdi:pine-tree',
   ground: 'mdi:terrain',
@@ -225,6 +229,7 @@ class HouseViewCard extends LitElement {
       this._pushLive();
       this._pushIrrigation();
       this._pushOpenings();
+      this._pushGates();
       this._pushPools();
       this._syncVacs();
     }
@@ -457,6 +462,7 @@ class HouseViewCard extends LitElement {
     this._pushLive();
     this._pushIrrigation();
     this._pushOpenings();
+    this._pushGates();
     this._pushPools();
     this._syncVacs();
     for (const v of this._vacs.values()) v.refresh();
@@ -509,11 +515,27 @@ class HouseViewCard extends LitElement {
     eng.setOpenings(map);
   }
 
+  /** Gates of the fences follow their entity (cover or contact); the editor can show one open to try it. */
+  _pushGates() {
+    const eng = this._engine;
+    if (!eng || !eng.world || !this._data || !this._hass) return;
+    const demo = (this._gateTools && this._panel === 'edit' && this._gateTools.demo) || new Set();
+    const map = {};
+    for (const { key, g } of gatesOf(this._data.edits.gates, this._data.edits.fences, normalizeFence))
+      map[key] = demo.has(key) ? 1 : gateOpenness(g.entity, this._hass.states);
+    const sig = JSON.stringify(map);
+    if (sig === this._gateSig && eng.world === this._gateWorld) return;
+    this._gateSig = sig;
+    this._gateWorld = eng.world;
+    eng.setGates(map);
+  }
+
   /** Valve states of the drip lines and sprinkler circuits (plus the "test" previews of the editor). */
   _pushIrrigation() {
     const eng = this._engine;
     if (!eng || !eng.world || !this._data) return;
     pushZones(this);
+    this._pushGates();
     const irr = this._data.edits.irrigation;
     const it = this._irrTools;
     const now = Date.now();
@@ -1269,6 +1291,8 @@ class HouseViewCard extends LitElement {
     if (next === 'edit' && !this._editors && this._engine) {
       this._editors = new WorldEditors(this._engine, { onChange: (persist = true) => this._edited(persist) });
       this._fenceTools = new FenceTools(this._editors);
+      this._gateTools = new GateTools(this._editors);
+      this._bedTools = new BedTools(this._editors);
       this._irrTools = new IrrigationTools(this._editors);
       this._vacTools = new VacuumTools(this._editors, () => this._vacCfg(this._vacuum, true));
     }
@@ -2377,7 +2401,9 @@ class HouseViewCard extends LitElement {
                   this._rev++;
                 }}
               >
-                ${Object.entries(SPECIES).map(([k, v]) => html`<option value=${k} ?selected=${ed.treeAdd.species === k}>${v.name}</option>`)}
+                ${Object.entries(SPECIES)
+                  .filter(([, v]) => !v.hidden)
+                  .map(([k, v]) => html`<option value=${k} ?selected=${ed.treeAdd.species === k}>${v.name}</option>`)}
               </select>
               <input
                 type="number"
@@ -2548,6 +2574,8 @@ class HouseViewCard extends LitElement {
     ${this._sec('pools', `${t('pools')} (${this._data.edits.pools.length})`, () => renderPools(this))}
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
+    ${this._sec('gates', `${t('gates')} (${this._data.edits.gates.length})`, () => renderGates(this))}
+    ${this._sec('beds', `${t('beds')} (${this._data.edits.beds.length})`, () => renderBeds(this))}
     ${this._sec('outdoor', t('outdoor'), () => this._renderOutdoor())} ${this._sec('trees', t('trees'), () => this._renderTrees())}
     ${this._sec('ground', t('ground'), () => this._renderGround())} ${this._sec('views', t('views'), () => this._renderViewsEditor())}`;
   }

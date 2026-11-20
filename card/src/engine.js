@@ -12,6 +12,7 @@ import {
   createVegetation,
   setCatalog,
   setClimate,
+  seasonBlend,
   catalogFish,
   SPECIES,
 } from './engine/catalog.js';
@@ -19,8 +20,10 @@ import { normalizeEdits, outdoorEdit, isDsmRemoved } from './engine/edits.js';
 import { LightSystem } from './engine/lighting.js';
 import { Environment, WEATHER_PRESETS } from './engine/environment.js';
 import { buildTerrain, treesFromDsm, gridToPlan } from './engine/terrain.js';
-import { buildFence } from './fences.js';
+import { buildFence, normalizeFence } from './fences.js';
 import { buildIrrigation } from './irrigation.js';
+import { buildBeds } from './flowerbeds.js';
+import { buildGates, gatesOf, cutFence } from './gates.js';
 import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
@@ -363,8 +366,19 @@ export class HouseEngine {
     w.groundAt = w.terrain ? w.terrain.heightAt : () => 0;
     const fg = new THREE.Group();
     fg.name = 'fences';
-    for (const f of edits.fences || []) if (!f.hidden && (f.frame === 'plan' || g2p)) fg.add(buildFence(f, w.anchor(f), w.groundAt));
+    const fences = edits.fences || [];
+    const placed = gatesOf(edits.gates, fences, normalizeFence); // the fences are opened under their gates
+    fences.forEach((f, k) => {
+      if (f.hidden || !(f.frame === 'plan' || g2p)) return;
+      const cuts = placed.filter((x) => x.f === k).map((x) => ({ i: x.i, t: x.t, w: x.g.w }));
+      fg.add(buildFence(cutFence(normalizeFence(f), cuts), w.anchor(f), w.groundAt));
+    });
     root.add(fg);
+    // gates set in the openings of the fences, and flower beds (the bloom follows the season, see setLive)
+    w.gates = buildGates(edits.gates || [], fences, w.anchor, w.groundAt, normalizeFence);
+    root.add(w.gates.group);
+    w.beds = buildBeds(edits.beds || [], w.anchor, w.groundAt);
+    root.add(w.beds.group);
 
     // watering: drip lines and sprinklers (animated in _frame from the valve states)
     w.irrigation = buildIrrigation(edits.irrigation || {}, w.anchor, w.groundAt);
@@ -542,6 +556,8 @@ export class HouseEngine {
     for (const e of this.world.surfaces) this.env.registerSurface(e);
     this.env.applyState();
     this.world.veg.apply(this.env.state.doy);
+    this._applyBeds();
+    if (this._gateStates) this.world.gates.set(this._gateStates);
     this.visibility.roof = true;
     this.visibility.levels = Object.fromEntries(sd.levels.map((l) => [l.id, true]));
     if (keptVis) Object.assign(this.visibility, keptVis);
@@ -608,13 +624,17 @@ export class HouseEngine {
       // the seasons of the vegetation and of the grass follow the climate of the latitude
       setClimate(s.latitude);
       this.world.veg.apply(env.state.doy);
+      this._applyBeds();
     }
     const prevDoy = env.state.doy;
     const { weather, snowCover, latitude, ...rest } = s;
     if (weather && WEATHER_PRESETS[weather]) env.setWeather(weather);
     env.setState(rest);
     if (snowCover !== undefined) env.snowCover = snowCover;
-    if (env.state.doy !== prevDoy) this.world.veg.apply(env.state.doy);
+    if (env.state.doy !== prevDoy) {
+      this.world.veg.apply(env.state.doy);
+      this._applyBeds();
+    }
     this._refreshLights();
   }
 
@@ -1336,6 +1356,18 @@ export class HouseEngine {
     if (this.world) this.world.openings.set(this._openingStates);
   }
 
+  /** Gates of the fences: { gateId: 0..1 } target opening of each one; they move to it. */
+  setGates(map) {
+    this._gateStates = map || null;
+    if (this.world) this.world.gates.set(this._gateStates);
+  }
+
+  /** Flower beds: the share of flowers in bloom follows the season of the day. */
+  _applyBeds() {
+    const w = this.world;
+    if (w && w.beds && w.beds.count) w.beds.apply(seasonBlend(this.env.state.doy));
+  }
+
   /** Cleaning robots of the drawn pools: { poolId: running }. */
   setPoolRobots(map) {
     this._poolRobots = map || null;
@@ -1524,6 +1556,7 @@ export class HouseEngine {
     if (this.world.irrigation.count) this.world.irrigation.update(this.irrigState, Date.now(), this.irrigOpts);
     if (this.roomFx || this._fxDirty) this._animateFx(now / 1000);
     if (this.world.openings.busy) this.world.openings.tick(realDt);
+    if (this.world.gates.count) this.world.gates.tick(realDt);
     if (this.world.pools.items.length) this.world.pools.tick(realDt, now / 1000, (this.env.state.temp ?? 15) < 8);
     this._animateRobot(realDt, now / 1000);
     if (this._slots) for (const s of this._slots.values()) this._animateRobot.call(s, realDt, now / 1000);

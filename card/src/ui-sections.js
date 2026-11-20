@@ -3,6 +3,8 @@
 import { html, nothing } from 'lit';
 import { FENCE_TYPES, normalizeFence, sideCount } from './fences.js';
 import { SPRINKLERS, SOILS, LINE_COLORS, sprinklerModel, smoothPath, isOn } from './irrigation.js';
+import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
+import { GATE_OPEN, GATE_FILL, GATE_TOP, GATE_DOMAINS, normalizeGate } from './gates.js';
 import { mapRoomsToAreas } from './ha-bridge.js';
 
 const num = (value, onChange, step = 0.1, min = undefined, max = undefined) =>
@@ -19,6 +21,156 @@ const num = (value, onChange, step = 0.1, min = undefined, max = undefined) =>
   />`;
 
 const tool = (ed, key) => !!ed.clickTool && ed.clickTool.key === key;
+
+// ---------------------------------------------------------------------------- gates
+
+export function renderGates(card) {
+  const t = card._t;
+  const ed = card._editors;
+  const gt = card._gateTools;
+  const arming = !!gt.mode && tool(ed, 'gate-pick');
+  const chips = (g, i, list, field, prefix) =>
+    html`<div class="chips">
+      ${list.map((k) => html`<button class=${g[field] === k ? 'on' : ''} @click=${() => gt.edit(i, { [field]: k })}>${t(`${prefix}${k}`)}</button>`)}
+    </div>`;
+  return html`
+    ${gt.fences.length ? nothing : html`<div class="hint">${t('gate_none')}</div>`}
+    <div class="row">
+      <button
+        class=${arming && gt.mode === 'add' ? 'on' : ''}
+        ?disabled=${!gt.fences.length}
+        @click=${() => (arming && gt.mode === 'add' ? gt.cancel() : gt.startAdd())}
+      >
+        ${t('gate_add')}
+      </button>
+    </div>
+    ${arming ? html`<div class="hint">${t(gt.mode === 'add' ? 'gate_add_hint' : 'gate_move_hint')}</div>` : nothing}
+    ${gt.gates.map((raw, i) => {
+      const g = normalizeGate(raw);
+      const on = gt.sel === i;
+      const moving = arming && gt.mode === 'move' && on;
+      return html`<div class=${`ent ${on ? 'open' : ''}`}>
+        <div @click=${() => gt.select(i)}>
+          <b>${t('gate')} ${i + 1}</b>
+          <span class="hint">${t(`gate_open_${g.open}`)} · ${g.w} m${gt.placed(i) ? '' : ` · ${t('gate_lost')}`}</span>
+        </div>
+        ${
+          on
+            ? html`<div class="hint">${t('gate_open')}</div>
+                ${chips(g, i, GATE_OPEN, 'open', 'gate_open_')}
+                <div class="hint">${t('gate_fill')}</div>
+                ${chips(g, i, GATE_FILL, 'fill', 'gate_fill_')}
+                <div class="hint">${t('gate_top')}</div>
+                ${chips(g, i, GATE_TOP, 'top', 'gate_top_')}
+                <div class="row">
+                  <span>${t('gate_width')}</span>${num(g.w, (v) => gt.edit(i, { w: v }), 0.1, 0.6, 12)}
+                  <span>${t('fence_h')}</span>${num(g.h, (v) => gt.edit(i, { h: v }), 0.1, 0.6, 3)}
+                </div>
+                <div class="row">
+                  <span>${t('color')}</span><input type="color" .value=${g.c} @change=${(e) => gt.edit(i, { c: e.target.value })} />
+                  <label
+                    ><input
+                      type="checkbox"
+                      .checked=${g.pillars}
+                      @change=${(e) => gt.edit(i, { pillars: e.target.checked })}
+                    />${t('gate_pillars')}</label
+                  >
+                </div>
+                <div class="row">
+                  <label
+                    ><input
+                      type="checkbox"
+                      .checked=${g.flip}
+                      @change=${(e) => gt.edit(i, { flip: e.target.checked })}
+                    />${t('gate_flip')}</label
+                  >
+                  ${
+                    g.open === 'swing1' || g.open === 'slide1'
+                      ? html`<label
+                          ><input
+                            type="checkbox"
+                            .checked=${g.mirror}
+                            @change=${(e) => gt.edit(i, { mirror: e.target.checked })}
+                          />${t('gate_mirror')}</label
+                        >`
+                      : nothing
+                  }
+                </div>
+                <div class="row">
+                  <span>${t('gate_entity')}</span>${card._entityInput(g.entity, (id) => gt.edit(i, { entity: id }), GATE_DOMAINS)}
+                </div>`
+            : nothing
+        }
+        <div class="row">
+          <button class=${moving ? 'on' : ''} @click=${() => (moving ? gt.cancel() : gt.startMove(i))}>${t('gate_move')}</button>
+          <button class=${gt.demo.has(g.id) ? 'on' : ''} @click=${() => gt.toggleDemo(g.id)}>${t('gate_try')}</button>
+          <button @click=${() => gt.toggleHidden(i)}>${g.hidden ? t('show') : t('hide')}</button>
+          <button @click=${() => gt.remove(i)}>${t('delete')}</button>
+        </div>
+      </div>`;
+    })}
+  `;
+}
+
+// ---------------------------------------------------------------------------- flower beds
+
+export function renderBeds(card) {
+  const t = card._t;
+  const ed = card._editors;
+  const bt = card._bedTools;
+  const drawing = !!bt.draw && tool(ed, 'bed-draw');
+  return html`
+    <div class="row">
+      <button class=${drawing ? 'on' : ''} @click=${() => (drawing ? bt.cancel() : bt.startDraw())}>${t('bed_draw')}</button>
+    </div>
+    ${
+      drawing
+        ? html`<div class="hint">${t('bed_draw_hint')}</div>
+            <div class="row">
+              <button class="on" ?disabled=${bt.draw.pts.length < 3} @click=${() => bt.finishDraw()}>
+                ${t('finish')} (${bt.draw.pts.length})
+              </button>
+              <button ?disabled=${!bt.draw.pts.length} @click=${() => bt.undoPoint()}>${t('undo_point')}</button>
+            </div>`
+        : nothing
+    }
+    ${bt.beds.map((raw, i) => {
+      const b = normalizeBed(raw);
+      const on = bt.sel === i;
+      return html`<div class=${`ent ${on ? 'open' : ''}`}>
+        <div @click=${() => bt.select(i)}>
+          <b>${b.name || `${t('bed')} ${i + 1}`}</b>
+          <span class="hint">${b.count} ${t('bed_flowers')} · ${Math.round(polygonArea(b.pts))} m²</span>
+        </div>
+        ${
+          on
+            ? html`<div class="row">
+                  <span>${t('bed_count')}</span>${num(b.count, (v) => bt.edit(i, { count: v }), 5, 0, BED_MAX)}
+                  <span>${t('bed_height')}</span>${num(b.h, (v) => bt.edit(i, { h: v }), 0.05, 0.1, 1.5)}
+                </div>
+                <div class="hint">${t('bed_colors')}</div>
+                ${b.colors.map(
+                  (c, k) =>
+                    html`<div class="row">
+                      <input type="color" .value=${c.c} @change=${(e) => bt.setColor(i, k, { c: e.target.value })} />
+                      <span>${t('bed_weight')}</span>${num(c.w, (v) => bt.setColor(i, k, { w: v }), 1, 1, 100)}
+                      <button ?disabled=${b.colors.length <= 1} @click=${() => bt.removeColor(i, k)}>−</button>
+                    </div>`,
+                )}
+                <div class="row">
+                  <button @click=${() => bt.setColor(i, b.colors.length, {})}>${t('bed_add_color')}</button>
+                  <button @click=${() => bt.edit(i, { seed: Math.floor(Math.random() * 1e6) })}>${t('bed_reseed')}</button>
+                </div>`
+            : nothing
+        }
+        <div class="row">
+          <button @click=${() => bt.toggleHidden(i)}>${b.hidden ? t('show') : t('hide')}</button>
+          <button @click=${() => bt.remove(i)}>${t('delete')}</button>
+        </div>
+      </div>`;
+    })}
+  `;
+}
 
 // ---------------------------------------------------------------------------- fences
 
@@ -114,7 +266,7 @@ export function renderFences(card) {
                       html`<button class=${editing.tool === k ? 'on' : ''} @click=${() => ft.setTool(k)}>${t(`fence_tool_${k}`)}</button>`,
                   )}
                 </div>
-                ${editing.tool === 'paint' ? palette() : nothing}
+                ${editing.tool === 'paint' ? palette() : nothing} ${editing.tool === 'gate' ? gateForm(card) : nothing}
                 <div class="hint">${t(`fence_hint_${editing.tool}`)}</div>`
             : nothing
         }

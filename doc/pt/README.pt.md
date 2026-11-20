@@ -30,7 +30,23 @@ Vista pseudo-3D em direto da sua casa para o Home Assistant: a sua planta do **S
 - `custom_components/house_view/`: a **integração** (guarda a planta, o terreno e as suas correções; obtém o terreno; API HTTP);
 - `card/`: o **cartão Lovelace** `house-view-card` (three.js), compilado em `custom_components/house_view/frontend/`. A própria integração serve-o (`/house_view/house-view-card.js`) e carrega-o em todos os painéis: **não é preciso declarar nenhum recurso Lovelace**.
 
-A interface do cartão existe em inglês e em francês: em português é apresentada em inglês, por isso os nomes dos botões e das secções são aqui citados em inglês. As opções da integração existem em inglês, francês, italiano, alemão, espanhol, polaco e português. As traduções são bem-vindas: os textos estão em `custom_components/house_view/translations/` e `card/src/i18n.js`.
+A interface do cartão e as opções da integração existem em inglês, francês, italiano, alemão, espanhol, polaco e português (o cartão segue o idioma do seu perfil do Home Assistant). Os nomes dos botões e das secções são aqui citados em inglês. As traduções são bem-vindas: os textos estão em `custom_components/house_view/translations/` e `card/src/i18n.js`.
+
+## Visão geral
+
+<p align="center"><img src="../images/four-seasons.webp" alt="A casa de demonstração no seu terreno ao longo das quatro estações: sensores, rega, piscina, árvores" width="880"></p>
+
+House View transforma a planta da sua casa numa imagem viva dela. O que a distingue:
+
+- **A sua casa no seu terreno real** : a planta Sweet Home 3D (ou IFC, SVG) é colocada sobre um modelo digital do terreno do lote (cartes.gouv.fr em França, dados abertos noutros locais), com o relevo, as estradas, as árvores vizinhas e as suas vedações.
+- **Sol, estações e tempo reais** : a luz segue o sol da sua latitude, as árvores e a relva mudam com as estações, e chuva, neve, nevoeiro, trovoadas e vento (a chuva inclina-se para onde sopra o vento) seguem a sua entidade meteorológica ou os seus sensores. Um modo de simulação reproduz qualquer dia, ou um ano inteiro, em poucos segundos.
+- **Cada divisão viva** : o estado, a cor e o brilho reais das luzes, as temperaturas, um toque para aproximar uma divisão e outro para acender ou apagar as suas luzes; as luzes colocadas em qualquer lugar tornam-se fontes de luz reais.
+- **As suas entidades, onde estão** : sensores, interruptores e seletores colocados na planta, um painel geral, um emblema central de alarmes (fumo, fuga de água, intrusão…), zonas clicáveis (um leitor num móvel, um aquário reeftank mostrado em direto no seu tanque).
+- **Portas, janelas, estores e portões que se movem** : ligados aos seus contactos e estores, abrem e fecham na vista; um portão (de batente ou de correr, 1 ou 2 folhas, de barras ou maciço, reto ou arqueado) segue o seu cover ou contacto.
+- **Robô aspirador** : limpeza por divisões com um toque, um robô 3D que circula na planta, divisões coloridas conforme o progresso, vários robôs, posição Roborock suportada.
+- **Um jardim que trabalha** : rega gota a gota e aspersores animados pelas suas válvulas (manchas de humidade, jatos), vedações de todo o tipo (rede, madeira, muro, ferro forjado, canição, gabiões e nove sebes: loureiro-cerejo, tuia, Leyland…), canteiros de flores cujo número e cores escolhe, piscinas e lagos com os seus peixes.
+- **Um catálogo que cresce** : as árvores, com até quatro aspetos por ano e variedades de cor (macieiras de frutos vermelhos, amarelos ou verdes, cerejeira, salgueiro, eucalipto…), e os objetos vêm do [catálogo house-catalog](https://github.com/Elwinmage/house-catalog), aberto, atualizado em segundo plano, utilizável offline e extensível com o [editor de catálogo](https://github.com/Elwinmage/catalog-editor).
+- **Nada a instalar além da integração** : o cartão é servido pela integração (nenhum recurso Lovelace), tudo se edita no próprio cartão (✎), várias casas podem coexistir, as suas correções ficam guardadas à parte da planta (reimportá-la não perde nada) e a interface fala sete idiomas (inglês, francês, espanhol, alemão, italiano, polaco e português).
 
 ## Instalação
 

@@ -51,10 +51,11 @@ describe('sprinklers', () => {
   });
 
   it('pre-fills a head from its model', () => {
-    expect(headDefaults('hunter-psu-04-15a')).toEqual({ model: 'hunter-psu-04-15a', rMin: 0.3, rMax: 4.6, dir: 0, arc: 90 });
+    expect(headDefaults('hunter-psu-04-15a')).toEqual({ model: 'hunter-psu-04-15a', rMin: 0.9, rMax: 4.6, dir: 0, arc: 90 });
     const srm = headDefaults('hunter-srm-04');
     expect(srm.rMax).toBe(8.5);
-    expect(srm.rMin).toBeCloseTo(1.3);
+    expect(srm.rMin).toBeGreaterThanOrEqual(2.5); // a rotor leaves the foot of the nozzle dry
+    expect(srm.rMin).toBeLessThan(srm.rMax);
     expect(headDefaults('hunter-mp1000').arc).toBe(90);
   });
 
@@ -251,5 +252,38 @@ describe('buildIrrigation', () => {
     const before = Array.from(p.slice(0, 6));
     w.update({ c1: { on: true, since: 0 } }, 5400);
     expect(Array.from(p.slice(0, 6))).not.toEqual(before);
+  });
+
+  it('lands the water inside the band [rMin, rMax], never from the nozzle', () => {
+    const w = build();
+    const drops = w.group.children.filter((c) => c.isPoints);
+    w.update({ c1: { on: true, since: 0 } }, 5000);
+    for (const [idx, [cx, cz, rMin, rMax]] of [
+      [10, 10, 1, 8],
+      [0, 10, 0.3, 4.6],
+      [5, 10, 1, 5],
+    ].entries()) {
+      const p = drops[idx].geometry.attributes.position.array;
+      const half = p.length / 6; // flying drops, then their impacts
+      let landed = 0;
+      for (let i = half; i < half * 2; i++) {
+        const d = Math.hypot(p[i * 3] - cx, p[i * 3 + 2] - cz);
+        if (d < 1e-6) continue; // parked under the nozzle (no impact at that moment)
+        landed++;
+        expect(d).toBeGreaterThanOrEqual(rMin - 1e-6);
+        expect(d).toBeLessThanOrEqual(rMax + 1e-6);
+      }
+      expect(landed).toBeGreaterThan(0);
+    }
+  });
+
+  it('draws the edges of the watered band, shown with the sector', () => {
+    const w = build();
+    const outlines = w.group.children.filter((c) => c.isLineSegments);
+    expect(outlines).toHaveLength(3);
+    w.update({ c1: { on: false, since: 0 } }, 5000, { editing: true });
+    expect(outlines.every((o) => o.visible)).toBe(true);
+    w.update({ c1: { on: false, since: 0 } }, 5000, {});
+    expect(outlines.some((o) => o.visible)).toBe(false);
   });
 });

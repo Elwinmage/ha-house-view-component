@@ -109,6 +109,37 @@ export function treeLook(tree, blend) {
 /** How much each clump of leaves shrinks, where it is, for a density (the crown keeps its spread). */
 export const thinning = (density) => Math.pow(clamp01(density), 0.6);
 
+/** Curtains of branches hanging from the rim of a weeping crown. */
+export const CURTAINS = 10;
+
+/**
+ * A weeping crown: a low dome in the upper part of the box (one blob and four around it) and `CURTAINS` vertical
+ * blobs hanging from its rim (0.85 of the radius) down to the trunk, some longer than others. Same as the catalog's
+ * own previews (`_weeping` in scripts/render_previews.py).
+ */
+function weepingSolids(top, radius, bottom) {
+  const span = top - bottom;
+  const solids = [{ kind: 'blob', at: [0, bottom + 0.78 * span, 0], size: [0.7 * radius, 0.22 * span, 0.7 * radius] }];
+  for (let i = 0; i < 4; i++) {
+    const a = ((i * 90 + 45) * Math.PI) / 180;
+    solids.push({
+      kind: 'blob',
+      at: [0.55 * radius * Math.cos(a), bottom + 0.68 * span, 0.55 * radius * Math.sin(a)],
+      size: [0.45 * radius, 0.18 * span, 0.45 * radius],
+    });
+  }
+  for (let i = 0; i < CURTAINS; i++) {
+    const a = ((i * 360) / CURTAINS) * (Math.PI / 180);
+    const half = 0.33 * span * (0.9 + 0.1 * ((i % 3) - 1));
+    solids.push({
+      kind: 'blob',
+      at: [0.85 * radius * Math.cos(a), bottom + 0.7 * span - half, 0.85 * radius * Math.sin(a)],
+      size: [0.2 * radius, half, 0.2 * radius],
+    });
+  }
+  return solids;
+}
+
 /**
  * The solids of a full crown, for a tree of the default height: blobs `{ kind: 'blob', at: [x, y, z], size: [rx, ry,
  * rz] }` filling the box between the top of the trunk and the top of the tree for a round shape, stacked cones
@@ -128,6 +159,7 @@ export function crownSolids(tree) {
       size: [(r * radius) / reach, (r * half) / reach, (r * radius) / reach],
     }));
   }
+  if (tree.shape === 'weeping') return weepingSolids(top, radius, bottom);
   const step = (2 * half) / TIERS;
   return Array.from({ length: TIERS }, (_, tier) => ({
     kind: 'cone',
@@ -155,11 +187,44 @@ export function treeSpecies(id, tree, lang) {
   };
 }
 
+/** Species id of a variety of a tree of the catalog (`apple-tree:gala`). */
+export const varietyId = (id, variety) => `${id}:${variety.id}`;
+
+/** Varieties of a tree that can be told apart: an id and at least one colour, ids not repeated. */
+export function treeVarieties(tree) {
+  const seen = new Set();
+  return (Array.isArray(tree.varieties) ? tree.varieties : []).filter((v) => {
+    const ok = v && typeof v.id === 'string' && !seen.has(v.id) && (isHex(v.flowers) || isHex(v.fruits));
+    if (ok) seen.add(v.id);
+    return ok;
+  });
+}
+
+const isHex = (c) => /^#[0-9a-f]{6}$/.test(c || '');
+
+/**
+ * The tree of a variety: its blossom and fruits take the colours of the variety in every season that shows some
+ * (the amounts stay the seasons' own).
+ */
+export function varietyTree(tree, variety) {
+  const seasons = {};
+  for (const [name, look] of Object.entries(tree.seasons)) {
+    seasons[name] = { ...look };
+    for (const key of ['flowers', 'fruits']) {
+      if (look[key] && isHex(variety[key])) seasons[name][key] = { ...look[key], color: variety[key] };
+    }
+  }
+  return { ...tree, seasons };
+}
+
+/** Shapes of crown the engine draws. */
+export const SHAPES_OF_TREES = ['round', 'conical', 'weeping'];
+
 /** A descriptor the engine can draw: the fields the geometry reads are there (an entry of a newer format is skipped). */
 export function drawableTree(tree) {
   return Boolean(
     tree &&
-    ['round', 'conical'].includes(tree.shape) &&
+    SHAPES_OF_TREES.includes(tree.shape) &&
     tree.height &&
     tree.height.default > 0 &&
     tree.crown_radius > 0 &&

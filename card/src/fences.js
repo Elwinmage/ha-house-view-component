@@ -9,6 +9,22 @@ export const FENCE_TYPES = {
   wood: { h: 1.8, color: '#8a6a48', draft: '#ff9f1a', thick: 0.04, posts: '#5a4330' },
   wall: { h: 1.2, color: '#d8cfc0', draft: '#2f8fff', thick: 0.2 },
   hedge: { h: 1.8, color: '#3f6b35', draft: '#b8ff3b', thick: 0.6, bumpy: true },
+  // hedges by species: height, colour of the foliage and thickness (the generic `hedge` stays for the fences of before)
+  hedge_laurel: { h: 1.8, color: '#2f6b2f', draft: '#7bd62a', thick: 0.7, bumpy: true }, // cherry laurel (laurier-palme)
+  hedge_thuja: { h: 2.0, color: '#2d5a2e', draft: '#3fbf6e', thick: 0.8, bumpy: true }, // thuja (thuya)
+  hedge_leyland: { h: 2.5, color: '#35603a', draft: '#2fa68f', thick: 1.0, bumpy: true }, // Leyland cypress
+  hedge_hornbeam: { h: 1.8, color: '#6f8f3a', draft: '#d6e83b', thick: 0.5, bumpy: true }, // hornbeam (charmille)
+  hedge_photinia: { h: 1.8, color: '#8a4a3c', draft: '#ff6f61', thick: 0.7, bumpy: true }, // red-tipped photinia
+  hedge_privet: { h: 1.5, color: '#4a7a3a', draft: '#a5d86e', thick: 0.5, bumpy: true }, // privet (troène)
+  hedge_bamboo: { h: 2.5, color: '#8aa83a', draft: '#c5e63a', thick: 0.5, bumpy: true }, // bamboo
+  hedge_box: { h: 0.6, color: '#355f3a', draft: '#47d1a3', thick: 0.4, bumpy: true }, // box (buis), low
+  hedge_wild: { h: 1.6, color: '#5f7f3a', draft: '#8fd13b', thick: 1.0, bumpy: true }, // mixed country hedge (haie champêtre)
+  // other fences
+  iron: { h: 1.5, color: '#26272a', draft: '#9b8cff', thick: 0, opacity: 0.5, posts: '#1c1c1e' }, // wrought iron bars
+  panel: { h: 1.2, color: '#3a3f44', draft: '#ff4fa3', thick: 0, opacity: 0.45, posts: '#2b2f33' }, // rigid welded panels
+  reed: { h: 1.5, color: '#c9a45c', draft: '#ffd34f', thick: 0.02, posts: '#6f5a35' }, // reed screen (canisse)
+  composite: { h: 1.8, color: '#6f6a63', draft: '#7fd1ff', thick: 0.04, posts: '#4a4640' }, // composite slats
+  gabion: { h: 1.0, color: '#8a8780', draft: '#4fe0e0', thick: 0.3 }, // stone-filled wire cages
   none: { h: 0, color: null, draft: '#ffffff' }, // opening: gate, passage, side closed by the house
 };
 
@@ -39,7 +55,11 @@ export function normalizeFence(f) {
   const segs = Array.from({ length: n }, (_, i) => {
     const sg = src[i] || src[src.length - 1] || {};
     const s = FENCE_TYPES[sg.s] ? sg.s : 'mesh';
-    return { s, h: Number.isFinite(sg.h) && sg.h > 0 ? sg.h : FENCE_TYPES[s].h, ...(sg.c ? { c: sg.c } : {}) };
+    return {
+      s,
+      h: Number.isFinite(sg.h) && sg.h > 0 ? sg.h : FENCE_TYPES[s].h,
+      ...(sg.c ? { c: sg.c } : {}),
+    };
   });
   const out = { pts, closed, segs, hidden: !!f.hidden, frame: f.frame || 'grid' };
   if (f.parcels || f.parcel) out.parcels = f.parcels || [f.parcel];

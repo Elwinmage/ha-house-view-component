@@ -41,11 +41,15 @@ def check_card() -> list[str]:
     """Keys of each language block of card/src/i18n.js (`  fr: {` ... `  },`)."""
     text = CARD_I18N.read_text(encoding="utf-8")
     blocks = {
-        m.group(1): set(re.findall(r"^\s{4}(\w+):", m.group(2), re.M))
+        m.group(1): set(re.findall(r"^\s{4}'?([\w-]+)'?:", m.group(2), re.M))
         for m in re.finditer(r"^\s{2}(\w+): \{\n(.*?)^\s{2}\},", text, re.M | re.S)
     }
     if "en" not in blocks:
         return ["card/src/i18n.js: no `en` block found"]
+    # one file per other language: `export default {` then `  key: ...` (quoted when not a word)
+    for path in sorted(CARD_I18N.with_suffix("").glob("*.js")):
+        body = path.read_text(encoding="utf-8")
+        blocks[path.stem] = set(re.findall(r"^  '?([\w-]+)'?:", body, re.M))
     errors: list[str] = []
     for lang, keys in blocks.items():
         for missing in sorted(blocks["en"] - keys):

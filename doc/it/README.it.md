@@ -30,7 +30,23 @@ Vista pseudo-3D in tempo reale della vostra casa per Home Assistant: la vostra p
 - `custom_components/house_view/`: l'**integrazione** (conserva la pianta, il terreno e le vostre correzioni; scarica il terreno; API HTTP);
 - `card/`: la **scheda Lovelace** `house-view-card` (three.js), compilata in `custom_components/house_view/frontend/`. L'integrazione la serve direttamente (`/house_view/house-view-card.js`) e la carica su tutte le plance: **nessuna risorsa Lovelace da dichiarare**.
 
-L'interfaccia della scheda esiste in inglese e in francese: in italiano viene mostrata in inglese, per questo i nomi dei pulsanti e delle sezioni sono qui citati in inglese. Le opzioni dell'integrazione sono in inglese, francese, italiano, tedesco, spagnolo, polacco e portoghese. Le traduzioni sono benvenute: i testi si trovano in `custom_components/house_view/translations/` e `card/src/i18n.js`.
+L'interfaccia della scheda e le opzioni dell'integrazione esistono in inglese, francese, italiano, tedesco, spagnolo, polacco e portoghese (la scheda segue la lingua del vostro profilo Home Assistant). I nomi dei pulsanti e delle sezioni sono qui citati in inglese. Le traduzioni sono benvenute: i testi si trovano in `custom_components/house_view/translations/` e `card/src/i18n.js`.
+
+## Panoramica
+
+<p align="center"><img src="../images/four-seasons.webp" alt="La casa dimostrativa sul suo terreno nelle quattro stagioni: sensori, irrigazione, piscina, alberi" width="880"></p>
+
+House View trasforma la pianta della vostra casa in un'immagine viva di essa. Ciò che la distingue:
+
+- **La vostra casa sul suo vero terreno** : la pianta Sweet Home 3D (o IFC, SVG) è posata su un modello digitale del terreno del lotto (cartes.gouv.fr in Francia, dati aperti altrove), con rilievo, strade, alberi vicini e le vostre recinzioni.
+- **Sole, stagioni e meteo reali** : la luce segue il sole della vostra latitudine, alberi ed erba cambiano con le stagioni, e pioggia, neve, nebbia, temporali e vento (la pioggia si inclina dove soffia il vento) seguono la vostra entità meteo o i vostri sensori. Una modalità simulazione riproduce un giorno qualsiasi, o un anno intero, in pochi secondi.
+- **Ogni stanza è viva** : stato, colore e luminosità reali delle luci, temperature delle stanze, un tocco per zoomare su una stanza e un secondo per accenderne le luci; le luci posizionate ovunque diventano vere sorgenti di luce.
+- **Le vostre entità, dove sono** : sensori, interruttori e selettori posti sulla pianta, un pannello generale, un badge centrale degli allarmi (fumo, perdita d'acqua, intrusione…), zone cliccabili (un lettore multimediale su un mobile, un acquario reeftank mostrato dal vivo sulla sua vasca).
+- **Porte, finestre, tapparelle e cancelli che si muovono** : collegati ai vostri contatti e alle tapparelle, si aprono e si chiudono nella vista; un cancello (a battente o scorrevole, 1 o 2 ante, a sbarre o pieno, dritto o ad arco) segue il suo cover o il suo contatto.
+- **Robot aspirapolvere** : pulizia per stanze con un tocco, un robot 3D che si muove sulla pianta, stanze colorate secondo l'avanzamento, più robot, posizione Roborock supportata.
+- **Un giardino che lavora** : irrigazione a goccia e irrigatori animati dalle loro valvole (macchie d'umidità, getti), recinzioni di ogni tipo (rete, legno, muro, ferro battuto, arella, gabbioni e nove siepi: lauroceraso, tuia, Leyland…), aiuole di cui scegliete il numero e i colori dei fiori, piscine e laghetti con i loro pesci.
+- **Un catalogo che cresce** : gli alberi, con fino a quattro aspetti l'anno e varietà di colore (meli con frutti rossi, gialli o verdi, ciliegio, salice, eucalipto…), e gli oggetti vengono dal [catalogo house-catalog](https://github.com/Elwinmage/house-catalog), aperto, aggiornato in background, utilizzabile offline ed estendibile con l'[editor del catalogo](https://github.com/Elwinmage/catalog-editor).
+- **Nulla da installare oltre all'integrazione** : la scheda è servita dall'integrazione (nessuna risorsa Lovelace), tutto si modifica dalla scheda stessa (✎), più case possono coesistere, le vostre correzioni sono tenute a parte dalla pianta (reimportarla non fa perdere nulla) e l'interfaccia parla sette lingue (inglese, francese, spagnolo, tedesco, italiano, polacco, portoghese).
 
 ## Installazione
 

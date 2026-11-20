@@ -1,6 +1,8 @@
 // Feature editors built on the click tool of WorldEditors: fences (free drawing, type per side, cutting), watering
 // (drip lines, sprinklers) and the robot vacuum dock. They only change `ed.edits` and ask for a rebuild.
 import { FENCE_TYPES, normalizeFence, nearestSide, nearestPoint, splitSide, removePoint } from './fences.js';
+import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
+import { normalizeGate, placeGate } from './gates.js';
 import { smoothPath, headDefaults, sprinklerModel, bearing } from './irrigation.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
@@ -112,6 +114,9 @@ export class FenceTools {
 
   remove(i) {
     this.fences.splice(i, 1);
+    // the gates of that fence go with it, the following fences move up one place
+    const gates = this.ed.edits.gates || [];
+    this.ed.edits.gates = gates.filter((g) => g.f !== i).map((g) => (g.f > i ? { ...g, f: g.f - 1 } : g));
     if (this.edit) this.cancel();
     this.ed.commit();
   }
@@ -130,6 +135,229 @@ export class FenceTools {
     };
     if (this.draw) show({ pts: this.draw.pts, segs: this.draw.segs, closed: false, frame: this.ed.frame });
     else if (this.edit && this.fences[this.edit.i]) show(this.fences[this.edit.i]);
+  }
+}
+
+/**
+ * Gates: added with a tap on a fence (the fence opens under it by itself), moved with another tap on a fence, edited
+ * and deleted from the list. Several gates can sit on the same fence, even on the same side.
+ */
+export class GateTools {
+  constructor(ed) {
+    this.ed = ed;
+    this.sel = null; // index of the gate unfolded in the panel
+    this.demo = new Set(); // gates shown open to try the animation: ids
+    this.mode = null; // 'add' | 'move'
+  }
+
+  get gates() {
+    return this.ed.edits.gates;
+  }
+
+  get fences() {
+    return this.ed.edits.fences;
+  }
+
+  /** The fence side nearest to a click: { f, at: [x, z] (frame of that fence) } or null. */
+  _target(hit) {
+    let best = null;
+    this.fences.forEach((raw, f) => {
+      if (raw.hidden) return;
+      const fe = normalizeFence(raw);
+      const toPlan = this.ed.toPlan(raw);
+      const P = fe.pts.map(([x, z]) => toPlan(x, z));
+      const n = nearestSide(P, fe.closed, hit.point.x, hit.point.z);
+      if (n.i < 0 || n.d > 4 || (best && n.d >= best.d)) return;
+      const [a, b] = [fe.pts[n.i], fe.pts[(n.i + 1) % fe.pts.length]];
+      best = { d: n.d, f, at: [r2(a[0] + (b[0] - a[0]) * n.t), r2(a[1] + (b[1] - a[1]) * n.t)] };
+    });
+    return best;
+  }
+
+  _arm(mode) {
+    this.mode = mode;
+    this.ed.setClickTool({ key: 'gate-pick', click: (hit) => this._click(hit), draft: (d) => this._draft(d) });
+  }
+
+  startAdd() {
+    this._arm('add');
+  }
+
+  startMove(i) {
+    this.sel = i;
+    this._arm('move');
+  }
+
+  _click(hit) {
+    const tg = this._target(hit);
+    if (!tg) return;
+    if (this.mode === 'move' && this.gates[this.sel]) Object.assign(this.gates[this.sel], { f: tg.f, at: tg.at });
+    else {
+      this.gates.push(normalizeGate({ id: uid('g'), f: tg.f, at: tg.at }));
+      this.sel = this.gates.length - 1;
+    }
+    this.cancel(false);
+    this.ed.commit();
+  }
+
+  cancel(redraw = true) {
+    this.mode = null;
+    this.ed.setClickTool(null);
+    if (redraw) this.ed.onChange(false);
+  }
+
+  select(i) {
+    this.sel = this.sel === i ? null : i;
+    this.ed.onChange(false);
+  }
+
+  edit(i, patch) {
+    this.gates[i] = normalizeGate({ ...this.gates[i], ...patch });
+    this.ed.commit();
+  }
+
+  toggleDemo(id) {
+    if (!this.demo.delete(id)) this.demo.add(id);
+    this.ed.onChange(false);
+  }
+
+  toggleHidden(i) {
+    this.gates[i].hidden = !this.gates[i].hidden;
+    this.ed.commit();
+  }
+
+  remove(i) {
+    this.demo.delete(this.gates[i].id);
+    this.gates.splice(i, 1);
+    this.sel = null;
+    if (this.mode) this.cancel(false);
+    this.ed.commit();
+  }
+
+  /** True when gate i lies on a fence (otherwise it is not drawn: its fence was removed or moved away). */
+  placed(i) {
+    const g = normalizeGate(this.gates[i]);
+    const raw = this.fences[g.f];
+    return !!raw && !!placeGate(g, normalizeFence(raw));
+  }
+
+  /** Overlay: every gate as a strip along its side, the selected one in yellow. */
+  _draft(d) {
+    this.gates.forEach((raw, i) => {
+      const g = normalizeGate(raw);
+      const fr = this.fences[g.f];
+      if (!fr) return;
+      const fe = normalizeFence(fr);
+      const p = placeGate(g, fe);
+      if (!p) return;
+      const toPlan = this.ed.toPlan(fr);
+      const [a, b] = [fe.pts[p.i], fe.pts[(p.i + 1) % fe.pts.length]];
+      const at = (t) => toPlan(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+      d.ribbon([at(p.t - p.w / 2 / p.L), at(p.t + p.w / 2 / p.L)], i === this.sel ? '#ffee00' : '#ffffff', 0.5);
+    });
+  }
+}
+
+/** Flower beds: draw an area, then set the number of flowers and the list of colours (with weights). */
+export class BedTools {
+  constructor(ed) {
+    this.ed = ed;
+    this.sel = null; // index of the bed unfolded in the panel
+    this.draw = null; // { pts } of the bed being drawn
+  }
+
+  get beds() {
+    return this.ed.edits.beds;
+  }
+
+  startDraw() {
+    this.draw = { pts: [] };
+    this.ed.setClickTool({ key: 'bed-draw', click: (hit) => this._click(hit), draft: (d) => this._draft(d) });
+  }
+
+  _click(hit) {
+    this.draw.pts.push(this.ed.toStore(hit.point.x, hit.point.z));
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  undoPoint() {
+    if (!this.draw || !this.draw.pts.length) return;
+    this.draw.pts.pop();
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  /** Close the polygon: the bed gets about 20 flowers per m² (to adjust afterwards). */
+  finishDraw() {
+    const D = this.draw;
+    if (!D || D.pts.length < 3) return false;
+    const count = Math.max(10, Math.min(BED_MAX, Math.round(polygonArea(D.pts) * 20)));
+    this.beds.push(normalizeBed({ pts: D.pts, frame: this.ed.frame, count, seed: Math.floor(Math.random() * 1e6) }));
+    this.sel = this.beds.length - 1;
+    this.draw = null;
+    this.ed.clickTool = null;
+    this.ed._syncPicker();
+    this.ed.commit();
+    return true;
+  }
+
+  cancel() {
+    this.draw = null;
+    this.ed.setClickTool(null);
+  }
+
+  select(i) {
+    this.sel = this.sel === i ? null : i;
+    this.ed.onChange(false);
+  }
+
+  /** Change count / height / name / seed of bed i. */
+  edit(i, patch) {
+    this.beds[i] = normalizeBed({ ...this.beds[i], ...patch });
+    this.ed.commit();
+  }
+
+  /** Change colour k of bed i (hex, weight); k = colors.length adds one. */
+  setColor(i, k, patch) {
+    const b = normalizeBed(this.beds[i]);
+    const list = b.colors.map((x) => ({ ...x }));
+    list[k] = { c: '#ff69b4', w: 1, ...list[k], ...patch };
+    this.edit(i, { colors: list });
+  }
+
+  removeColor(i, k) {
+    const b = normalizeBed(this.beds[i]);
+    if (b.colors.length <= 1) return;
+    this.edit(i, { colors: b.colors.filter((_, n) => n !== k) });
+  }
+
+  toggleHidden(i) {
+    this.beds[i].hidden = !this.beds[i].hidden;
+    this.ed.commit();
+  }
+
+  remove(i) {
+    this.beds.splice(i, 1);
+    this.sel = null;
+    this.ed.commit();
+  }
+
+  _draft(d) {
+    const show = (pts, closed) => {
+      const toPlan = this.ed.toPlan({ frame: this.ed.frame });
+      const P = pts.map(([x, z]) => toPlan(x, z));
+      for (let i = 0; i < P.length - (closed ? 0 : 1); i++) d.ribbon([P[i], P[(i + 1) % P.length]], '#ff4fd8', 0.3);
+      for (const [x, z] of P) d.dot(x, z, '#ffffff');
+    };
+    if (this.draw) show(this.draw.pts, false);
+    else
+      this.beds.forEach((b, i) => {
+        if (i !== this.sel) return;
+        const toPlan = this.ed.toPlan(b);
+        const P = b.pts.map(([x, z]) => toPlan(x, z));
+        for (let k = 0; k < P.length; k++) d.ribbon([P[k], P[(k + 1) % P.length]], '#ff4fd8', 0.3);
+      });
   }
 }
 

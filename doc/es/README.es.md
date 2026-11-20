@@ -30,7 +30,23 @@ Vista pseudo-3D en directo de su casa para Home Assistant: su plano de **Sweet H
 - `custom_components/house_view/`: la **integración** (guarda el plano, el terreno y sus correcciones; descarga el terreno; API HTTP);
 - `card/`: la **tarjeta Lovelace** `house-view-card` (three.js), compilada en `custom_components/house_view/frontend/`. La propia integración la sirve (`/house_view/house-view-card.js`) y la carga en todos los paneles: **no hay que declarar ningún recurso de Lovelace**.
 
-La interfaz de la tarjeta existe en inglés y en francés: en español se muestra en inglés, por eso los nombres de botones y secciones se citan aquí en inglés. Las opciones de la integración están en inglés, francés, italiano, alemán, español, polaco y portugués. Las traducciones son bienvenidas: los textos están en `custom_components/house_view/translations/` y `card/src/i18n.js`.
+La interfaz de la tarjeta y las opciones de la integración existen en inglés, francés, italiano, alemán, español, polaco y portugués (la tarjeta sigue el idioma de su perfil de Home Assistant). Los nombres de botones y secciones se citan aquí en inglés. Las traducciones son bienvenidas: los textos están en `custom_components/house_view/translations/` y `card/src/i18n.js`.
+
+## Resumen
+
+<p align="center"><img src="../images/four-seasons.webp" alt="La casa de demostración sobre su terreno durante las cuatro estaciones: sensores, riego, piscina, árboles" width="880"></p>
+
+House View convierte el plano de su casa en una imagen viva de ella. Lo que la distingue:
+
+- **Su casa, sobre su terreno real** : el plano de Sweet Home 3D (o IFC, SVG) se coloca sobre un modelo digital del terreno de la parcela (cartes.gouv.fr en Francia, datos abiertos en el resto), con el relieve, las carreteras, los árboles vecinos y sus vallas.
+- **Sol, estaciones y tiempo reales** : la luz sigue al sol de su latitud, los árboles y el césped cambian con las estaciones, y lluvia, nieve, niebla, tormentas y viento (la lluvia se inclina hacia donde sopla el viento) siguen su entidad meteorológica o sus sensores. Un modo de simulación reproduce cualquier día, o un año entero, en pocos segundos.
+- **Cada habitación, viva** : el estado, el color y el brillo reales de sus luces, las temperaturas, un toque para acercarse a una habitación y otro para encender o apagar sus luces; las luces colocadas en cualquier punto son fuentes de luz reales.
+- **Sus entidades, donde están** : sensores, interruptores y selectores colocados en el plano, un panel general, una insignia central de alarmas (humo, fuga de agua, intrusión…), zonas pulsables (un reproductor sobre un mueble, un acuario de reeftank mostrado en vivo sobre su pecera).
+- **Puertas, ventanas, persianas y portones que se mueven** : enlazados a sus contactos y persianas, se abren y cierran en la vista; un portón (batiente o corredero, 1 o 2 hojas, de barrotes o macizo, recto o arqueado) sigue a su cover o a su contacto.
+- **Robot aspirador** : limpieza por habitaciones con un toque, un robot 3D que se mueve por el plano, habitaciones teñidas según su avance, varios robots, posición Roborock admitida.
+- **Un jardín que trabaja** : goteo y aspersores animados por sus válvulas (manchas de humedad, chorros), vallas de todo tipo (malla, madera, muro, hierro forjado, caña, gaviones y nueve setos: laurel cerezo, tuya, Leyland…), zonas de flores cuyo número y colores elige, piscinas y estanques con sus peces.
+- **Un catálogo que crece** : los árboles, con hasta cuatro aspectos al año y variedades de color (manzanos de fruto rojo, amarillo o verde, cerezo, sauce, eucalipto…), y los objetos vienen del [catálogo house-catalog](https://github.com/Elwinmage/house-catalog), abierto, actualizado en segundo plano, utilizable sin conexión y ampliable con el [editor de catálogo](https://github.com/Elwinmage/catalog-editor).
+- **Nada que instalar salvo la integración** : la tarjeta la sirve la integración (ningún recurso de Lovelace), todo se edita desde la propia tarjeta (✎), pueden coexistir varias casas, sus correcciones se guardan aparte del plano (reimportarlo no pierde nada) y la interfaz habla siete idiomas (inglés, francés, español, alemán, italiano, polaco y portugués).
 
 ## Instalación
 

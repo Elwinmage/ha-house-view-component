@@ -1,6 +1,8 @@
 """Integration tests through the real HA HTTP server (pytest-homeassistant-custom-component)."""
 
 import hashlib
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 from homeassistant.core import callback
@@ -185,7 +187,9 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     assert res.status == 200
     assert "console.log('card')" in await res.text()
     digest = hashlib.sha256(b"console.log('card');").hexdigest()[:8]
-    assert added == [f"/house_view/house-view-card.js?v=0.2.0-{digest}"]
+    manifest = Path(house_view.__file__).parent / "manifest.json"
+    version = json.loads(manifest.read_text(encoding="utf-8"))["version"]  # not hard-coded: it changes at each release
+    assert added == [f"/house_view/house-view-card.js?v={version}-{digest}"]
 
 
 async def test_missing_bundle_is_not_fatal(hass, hass_client, hass_admin_user, caplog, tmp_path, monkeypatch):

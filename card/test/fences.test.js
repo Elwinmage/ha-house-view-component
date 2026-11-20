@@ -91,3 +91,30 @@ describe('buildFence', () => {
     ).toHaveLength(0);
   });
 });
+
+describe('fence types', () => {
+  it('are told apart in the editor and named in both languages', async () => {
+    const { makeT } = await import('../src/i18n.js');
+    const drafts = Object.values(FENCE_TYPES).map((T) => T.draft);
+    expect(new Set(drafts).size).toBe(drafts.length);
+    for (const lang of ['fr', 'en']) {
+      const t = makeT(lang);
+      for (const key of Object.keys(FENCE_TYPES)) expect(t(`fence_${key}`)).not.toBe(`fence_${key}`);
+    }
+    expect(makeT('fr')('fence_hedge_laurel')).toBe('Haie de laurier-palme');
+  });
+
+  it('give hedges their own height, colour and thickness', () => {
+    const hedges = Object.entries(FENCE_TYPES).filter(([k]) => k.startsWith('hedge'));
+    expect(hedges.length).toBeGreaterThan(8);
+    for (const [, T] of hedges) expect(T).toMatchObject({ bumpy: true });
+    expect(FENCE_TYPES.hedge_leyland.h).toBeGreaterThan(FENCE_TYPES.hedge_laurel.h);
+    expect(FENCE_TYPES.hedge_box.h).toBeLessThan(1);
+    const f = normalizeFence({ pts: square, closed: false, segs: [{ s: 'hedge_laurel' }, { s: 'iron' }, { s: 'gabion', h: 1.4 }] });
+    expect(f.segs).toEqual([
+      { s: 'hedge_laurel', h: 1.8 },
+      { s: 'iron', h: 1.5 },
+      { s: 'gabion', h: 1.4 },
+    ]);
+  });
+});

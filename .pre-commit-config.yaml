@@ -25,7 +25,7 @@ repos:
       # Every tool below is installed by pre-commit itself (no manual npm/pip install needed).
       - id: prettier
         name: prettier (card)
-        entry: prettier --check
+        entry: prettier --write --log-level error
         language: node
         additional_dependencies: ["prettier@3.10.1"]
         files: ^card/(src|test)/.*\.(js|html)$

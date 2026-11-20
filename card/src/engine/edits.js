@@ -9,6 +9,8 @@ export function emptyEdits() {
     outdoor: {}, // id -> { dx, dz, dy, rot, hidden }   (detached objects: shed, gate, ...)
     terrain: [], // ground corrections: walls / terraces / brushes, see terrain-edit.js
     fences: [], // { pts (grid frame, closed), h, color, style: mesh|wood|wall, open: [segment index], parcel }
+    gates: [], // gates set on the fences: { id, f (fence index), at: [x, z], w, open, fill, top, entity, ... } (see gates.js)
+    beds: [], // flower beds: { pts (closed polygon), frame, count, colors: [{ c, w }], h, seed, hidden } (see flowerbeds.js)
     // entities placed on the plan (sensors, lights, switches...):
     // { id, entity, at: [x, z], base, y, level, room, scope: general|level|room, display: badge|icon, color, label, icon,
     //   tap: toggle|more-info, kind / radius (lights: fixture and reach of the light source) }
@@ -46,6 +48,8 @@ export function normalizeEdits(raw) {
   if (Array.isArray(raw.views)) e.views = raw.views;
   if (Array.isArray(raw.terrain)) e.terrain = raw.terrain;
   if (Array.isArray(raw.fences)) e.fences = raw.fences;
+  if (Array.isArray(raw.gates)) e.gates = raw.gates.filter((g) => g && typeof g === 'object' && Array.isArray(g.at));
+  if (Array.isArray(raw.beds)) e.beds = raw.beds.filter((b) => b && typeof b === 'object' && Array.isArray(b.pts));
   if (Array.isArray(raw.entities)) e.entities = raw.entities;
   else if (Array.isArray(raw.sensors)) e.entities = raw.sensors; // first name of the list (0.2 previews)
   if (raw.room_areas && typeof raw.room_areas === 'object') e.room_areas = raw.room_areas;

@@ -30,7 +30,23 @@ Eine Pseudo-3D-Liveansicht Ihres Hauses für Home Assistant: Ihr **Sweet Home 3D
 - `custom_components/house_view/`: die **Integration** (speichert den Plan, das Gelände und Ihre Korrekturen; lädt das Gelände; HTTP-API);
 - `card/`: die **Lovelace-Karte** `house-view-card` (three.js), gebaut nach `custom_components/house_view/frontend/`. Die Integration liefert sie selbst aus (`/house_view/house-view-card.js`) und lädt sie auf allen Dashboards: **keine Lovelace-Ressource einzutragen**.
 
-Die Oberfläche der Karte gibt es auf Englisch und Französisch: auf Deutsch wird sie englisch angezeigt, deshalb stehen die Namen der Schaltflächen und Abschnitte hier auf Englisch. Die Optionen der Integration gibt es auf Englisch, Französisch, Italienisch, Deutsch, Spanisch, Polnisch und Portugiesisch. Übersetzungen sind willkommen: Die Texte liegen in `custom_components/house_view/translations/` und `card/src/i18n.js`.
+Die Oberfläche der Karte und die Optionen der Integration gibt es auf Englisch, Französisch, Italienisch, Deutsch, Spanisch, Polnisch und Portugiesisch (die Karte folgt der Sprache Ihres Home-Assistant-Profils). Die Namen der Schaltflächen und Abschnitte stehen hier auf Englisch. Übersetzungen sind willkommen: Die Texte liegen in `custom_components/house_view/translations/` und `card/src/i18n.js`.
+
+## Überblick
+
+<p align="center"><img src="../images/four-seasons.webp" alt="Das Demohaus auf seinem Gelände durch die vier Jahreszeiten: Sensoren, Bewässerung, Pool, Bäume" width="880"></p>
+
+House View macht aus dem Plan Ihres Hauses ein lebendiges Abbild davon. Was es auszeichnet:
+
+- **Ihr Haus auf seinem echten Gelände** : der Sweet-Home-3D-Plan (oder IFC, SVG) liegt auf einem digitalen Geländemodell des Grundstücks (cartes.gouv.fr in Frankreich, anderswo offene Daten), mit Relief, Straßen, Nachbarbäumen und Ihren Zäunen.
+- **Echte Sonne, Jahreszeiten und Wetter** : das Licht folgt der Sonne Ihres Breitengrads, Bäume und Rasen wechseln mit den Jahreszeiten, und Regen, Schnee, Nebel, Gewitter und Wind (Regen fällt schräg in Windrichtung) folgen Ihrer Wetter-Entität oder Ihren Sensoren. Ein Simulationsmodus spielt jeden Tag oder ein ganzes Jahr in Sekunden ab.
+- **Jeder Raum lebt** : echter Zustand, Farbe und Helligkeit Ihrer Lampen, Raumtemperaturen, ein Tippen zoomt auf einen Raum, ein zweites schaltet sein Licht; frei platzierte Lampen werden zu echten Lichtquellen.
+- **Ihre Entitäten, wo sie sind** : auf dem Plan platzierte Sensoren, Schalter und Auswahlen, ein allgemeines Panel, ein zentrales Alarm-Abzeichen (Rauch, Wasserleck, Einbruch…), antippbare Zonen (ein Mediaplayer auf einem Möbel, ein reeftank-Aquarium live auf seinem Becken).
+- **Türen, Fenster, Rollläden und Tore in Bewegung** : mit Ihren Kontakten und Rollläden verknüpft, öffnen und schließen sie sich in der Ansicht; ein Tor (Dreh- oder Schiebetor, 1 oder 2 Flügel, Stäbe oder vollflächig, gerade oder gewölbt) folgt seinem Cover oder Kontakt.
+- **Saugroboter** : Reinigung nach Räumen mit einem Tipp, ein 3D-Roboter fährt über den Plan, Räume je nach Fortschritt eingefärbt, mehrere Roboter, Roborock-Position unterstützt.
+- **Ein Garten, der arbeitet** : Tropfleitungen und Regner, von ihren Ventilen animiert (Feuchtflecken, Strahlen), Zäune aller Art (Maschendraht, Holz, Mauer, Schmiedeeisen, Schilf, Gabionen und neun Hecken: Kirschlorbeer, Thuja, Leylandzypresse…), Blumenbeete, deren Anzahl und Farben Sie wählen, Pools und Teiche mit ihren Fischen.
+- **Ein Katalog, der wächst** : Bäume mit bis zu vier Darstellungen pro Jahr und Farbvarianten (Apfelbäume mit roten, gelben oder grünen Früchten, Kirsche, Weide, Eukalyptus…) und Objekte stammen aus dem offenen [house-catalog](https://github.com/Elwinmage/house-catalog), im Hintergrund aktualisiert, offline nutzbar und mit dem [Katalog-Editor](https://github.com/Elwinmage/catalog-editor) erweiterbar.
+- **Nur die Integration muss installiert werden** : die Karte wird von der Integration ausgeliefert (keine Lovelace-Ressource), alles wird in der Karte selbst bearbeitet (✎), mehrere Häuser können nebeneinander bestehen, Ihre Korrekturen liegen getrennt vom Plan (ein erneuter Import verliert nichts), und die Oberfläche spricht sieben Sprachen (Englisch, Französisch, Spanisch, Deutsch, Italienisch, Polnisch, Portugiesisch).
 
 ## Installation
 

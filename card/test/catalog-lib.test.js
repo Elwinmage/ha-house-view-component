@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
   CLUMPS,
+  CURTAINS,
   crownSolids,
   drawableObject,
   drawableTree,
@@ -15,6 +16,9 @@ import {
   thinning,
   treeLook,
   treeSpecies,
+  treeVarieties,
+  varietyId,
+  varietyTree,
   words,
 } from '../src/catalog-lib.js';
 
@@ -186,7 +190,7 @@ describe('trees', () => {
     const broken = [
       null,
       {},
-      { ...OAK, shape: 'weeping' },
+      { ...OAK, shape: 'banyan' },
       { ...OAK, height: { default: 0 } },
       { ...OAK, crown_radius: 0 },
       { ...OAK, trunk: { ...OAK.trunk, height: 9 } },
@@ -239,5 +243,89 @@ describe('objects', () => {
       { parts: [{ ...box, color: 'red' }] },
     ];
     for (const object of broken) expect(drawableObject(object)).toBe(false);
+  });
+});
+
+describe('weeping trees', () => {
+  const WILLOW = TREES['weeping-willow'];
+
+  it('draws a dome and curtains of branches down to the trunk', () => {
+    expect(drawableTree(WILLOW)).toBe(true);
+    const solids = crownSolids(WILLOW);
+    expect(solids).toHaveLength(5 + CURTAINS);
+    expect(solids.every((s) => s.kind === 'blob')).toBe(true);
+    const top = WILLOW.height.default;
+    const bottoms = solids.map((s) => s.at[1] - s.size[1]);
+    const tops = solids.map((s) => s.at[1] + s.size[1]);
+    expect(Math.max(...tops)).toBeLessThanOrEqual(top + 1e-9);
+    expect(Math.max(...tops)).toBeGreaterThan(top * 0.95);
+    // the longest curtain hangs close to the bare trunk
+    expect(Math.min(...bottoms)).toBeLessThan(WILLOW.trunk.height + 0.4);
+    // curtains hang on a ring around the dome, some longer than others
+    const curtains = solids.slice(5);
+    for (const c of curtains) expect(Math.hypot(c.at[0], c.at[2])).toBeCloseTo(0.85 * WILLOW.crown_radius, 6);
+    expect(new Set(curtains.map((c) => c.size[1])).size).toBeGreaterThan(1);
+  });
+});
+
+describe('varieties', () => {
+  const APPLE = TREES['apple-tree'];
+
+  it('lists the varieties that can be told apart', () => {
+    expect(treeVarieties(APPLE).map((v) => v.id)).toEqual(['gala', 'golden-delicious', 'granny-smith', 'reinette-grise']);
+    expect(treeVarieties(TREES.oak)).toEqual([]);
+    const odd = {
+      varieties: [
+        { id: 'a', fruits: '#aa0000' },
+        { id: 'a', fruits: '#bb0000' }, // repeated
+        { id: 'b' }, // no colour
+        { id: 'c', fruits: 'red' }, // not a colour
+        { id: 'd', flowers: '#ffffff' },
+        null,
+        {},
+      ],
+    };
+    expect(treeVarieties(odd).map((v) => v.id)).toEqual(['a', 'd']);
+    expect(treeVarieties({ varieties: 'no' })).toEqual([]);
+  });
+
+  it('colours the fruits of every season that has some, and nothing else', () => {
+    const yellow = APPLE.varieties.find((v) => v.id === 'golden-delicious');
+    const tree = varietyTree(APPLE, yellow);
+    expect(varietyId('apple-tree', yellow)).toBe('apple-tree:golden-delicious');
+    expect(tree.seasons.summer.fruits).toEqual({ ...APPLE.seasons.summer.fruits, color: '#e3c534' });
+    expect(tree.seasons.autumn.fruits.color).toBe('#e3c534');
+    expect(tree.seasons.autumn.fruits.amount).toBe(APPLE.seasons.autumn.fruits.amount);
+    // blossom keeps its colour (the variety gives none), seasons without fruits stay without
+    expect(tree.seasons.spring.flowers).toEqual(APPLE.seasons.spring.flowers);
+    expect(tree.seasons.spring.fruits).toBeUndefined();
+    expect(tree.seasons.winter).toEqual(APPLE.seasons.winter);
+    // the original is left alone
+    expect(APPLE.seasons.summer.fruits.color).toBe('#c8281e');
+  });
+
+  it('colours the blossom of a variety', () => {
+    const kanzan = TREES['japanese-cherry'].varieties.find((v) => v.id === 'kanzan');
+    const tree = varietyTree(TREES['japanese-cherry'], kanzan);
+    expect(tree.seasons.spring.flowers.color).toBe('#e87aa6');
+    expect(tree.seasons.summer.flowers).toBeUndefined();
+  });
+});
+
+describe('species of the catalog', async () => {
+  const { setCatalog, SPECIES } = await import('../src/engine/catalog.js');
+
+  it('offers each variety as a species and keeps the plain entry for the plans', () => {
+    setCatalog({ trees: TREES }, 'fr');
+    expect(SPECIES['apple-tree']).toMatchObject({ name: 'Pommier', hidden: true });
+    expect(SPECIES['apple-tree:golden-delicious']).toMatchObject({ name: 'Pommier - Golden Delicious (jaune)' });
+    expect(SPECIES['apple-tree:golden-delicious'].tree.seasons.summer.fruits.color).toBe('#e3c534');
+    expect(SPECIES['apple-tree:gala'].tree.seasons.summer.fruits.color).toBe('#c8281e');
+    // a tree without varieties is offered as it is
+    expect(SPECIES.oak.hidden).toBeUndefined();
+    expect(SPECIES['weeping-willow'].tree.shape).toBe('weeping');
+    // a new catalog forgets the previous varieties
+    setCatalog({ trees: { oak: TREES.oak } }, 'fr');
+    expect(SPECIES['apple-tree:gala']).toBeUndefined();
   });
 });

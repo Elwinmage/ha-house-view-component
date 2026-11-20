@@ -72,12 +72,15 @@ export const SPRINKLERS = [
 
 export const sprinklerModel = (id) => SPRINKLERS.find((m) => m.id === id) || SPRINKLERS[SPRINKLERS.length - 1];
 
+// Share of the usual radius that stays dry around the nozzle (the water lands in a band, not from the nozzle).
+const NEAR_FIELD = { spray: 0.2, rotor: 0.3, rotator: 0.35 };
+
 /** Head settings pre-filled from a catalog model (everything stays editable). */
 export function headDefaults(modelId) {
   const m = sprinklerModel(modelId);
   return {
     model: m.id,
-    rMin: m.kind === 'spray' ? 0.3 : Math.round(m.r * 1.5) / 10,
+    rMin: Math.round(m.r * (NEAR_FIELD[m.kind] || 0.2) * 10) / 10,
     rMax: m.r,
     dir: 0,
     arc: Math.min(Math.max(90, m.arc[0]), m.arc[1]),
@@ -172,6 +175,29 @@ function ringSector(head, toPlan, heightAt, lift) {
       pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     }
   }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  return g;
+}
+
+function ringOutline(head, toPlan, heightAt, lift) {
+  // edges of the watered band (inner arc, outer arc and, for a partial circle, the two sides) draped on the ground
+  const [cx, cz] = toPlan(head.at[0], head.at[1]);
+  const arc = Math.min(Math.max(head.arc || 90, 1), 360);
+  const r0 = Math.max(0, Math.min(head.rMin || 0, head.rMax - 0.1));
+  const lo = head.dir - arc / 2;
+  const pt = (a, r) => {
+    const [dx, dz] = dirVec(a);
+    const x = cx + dx * r;
+    const z = cz + dz * r;
+    return [x, heightAt(x, z) + lift, z];
+  };
+  const n = Math.max(2, Math.ceil(arc / 6));
+  const pos = [];
+  for (const r of r0 > 0.05 ? [head.rMax, r0] : [head.rMax]) {
+    for (let i = 0; i < n; i++) pos.push(...pt(lo + (arc * i) / n, r), ...pt(lo + (arc * (i + 1)) / n, r));
+  }
+  if (arc < 359) for (const a of [lo, lo + arc]) pos.push(...pt(a, r0), ...pt(a, head.rMax));
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   return g;
@@ -287,13 +313,19 @@ export function buildIrrigation(irr, anchor, heightAt) {
       );
       sector.renderOrder = 3;
       sector.visible = false;
+      const outline = new THREE.LineSegments(
+        ringOutline(h, toPlan, heightAt, 0.06),
+        new THREE.LineBasicMaterial({ color: '#bfe4ff', transparent: true, opacity: 0.6, depthWrite: false }),
+      );
+      outline.renderOrder = 4;
+      outline.visible = false;
       const model = sprinklerModel(h.model);
       const arc = Math.min(Math.max(h.arc || 90, 1), 360);
       const jets =
         model.kind === 'spray' ? Math.max(3, Math.round(arc / 10)) : model.kind === 'rotator' ? Math.max(3, Math.round(arc / 45)) : 1;
       const per = model.kind === 'rotor' ? 34 : 9;
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(jets * per * 3), 3));
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(jets * per * 2 * 3), 3));
       const drops = new THREE.Points(
         geo,
         new THREE.PointsMaterial({
@@ -307,7 +339,7 @@ export function buildIrrigation(irr, anchor, heightAt) {
       );
       drops.visible = false;
       drops.frustumCulled = false;
-      group.add(body, sector, drops);
+      group.add(body, sector, outline, drops);
       heads.push({
         h,
         cid: c.id,
@@ -315,6 +347,7 @@ export function buildIrrigation(irr, anchor, heightAt) {
         y,
         z,
         sector,
+        outline,
         drops,
         jets,
         per,
@@ -381,12 +414,16 @@ export function buildIrrigation(irr, anchor, heightAt) {
       const st = states[H.cid] || { on: false };
       H.sector.visible = st.on || !!opts.editing;
       H.sector.material.opacity = st.on ? 0.16 + 0.14 * Math.min((now - st.since) / 600000, 1) : 0.1;
+      H.outline.visible = H.sector.visible;
+      H.outline.material.opacity = st.on ? 0.85 : 0.6;
       H.drops.visible = st.on;
       if (!st.on) continue;
       animated = true;
       const pos = H.drops.geometry.attributes.position;
       const h = H.h;
       const lo = h.dir - H.arc / 2;
+      const near = Math.max(0, Math.min(h.rMin || 0, h.rMax - 0.1));
+      const span = h.rMax - near;
       for (let j = 0; j < H.jets; j++) {
         let ang;
         if (H.kind === 'rotor') {
@@ -397,12 +434,18 @@ export function buildIrrigation(irr, anchor, heightAt) {
         else ang = lo + (H.arc * (j + 0.5)) / H.jets;
         const [dx, dz] = dirVec(ang);
         for (let k = 0; k < H.per; k++) {
-          // droplets fly along a parabola; every other one of a rotor falls short (secondary nozzle)
-          const reach = H.kind === 'rotor' && k % 2 ? Math.max(h.rMin || 0, h.rMax * 0.55) : h.rMax;
+          // every droplet has its own landing distance inside the band [rMin, rMax] (a rotor lands mostly far)
+          const f = (k * 0.618034 + j * 0.31) % 1;
+          const reach = near + span * (H.kind === 'rotor' ? Math.sqrt(f) : f);
           const u = (k / H.per + t * 0.9 + j * 0.37) % 1;
           const r = reach * u;
-          const yg = H.y + (H.landY(dx, dz, reach) - H.y) * u;
+          const gy = H.landY(dx, dz, reach);
+          const yg = H.y + (gy - H.y) * u;
           pos.setXYZ(j * H.per + k, H.x + dx * r, yg + 0.12 + reach * 0.36 * u * (1 - u), H.z + dz * r);
+          // the impact: seen on the ground where the droplet lands, parked under the nozzle the rest of the time
+          const i = H.jets * H.per + j * H.per + k;
+          if (u > 0.8) pos.setXYZ(i, H.x + dx * reach, gy + 0.04, H.z + dz * reach);
+          else pos.setXYZ(i, H.x, H.y - 1, H.z);
         }
       }
       pos.needsUpdate = true;

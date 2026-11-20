@@ -11,10 +11,14 @@ import {
   drawableObject,
   drawableTree,
   fitScale,
+  localName,
   matchEntry,
   thinning,
   treeLook,
   treeSpecies,
+  treeVarieties,
+  varietyId,
+  varietyTree,
 } from '../catalog-lib.js';
 
 // ---------------------------------------------------------------- helpers
@@ -116,6 +120,15 @@ export function setCatalog({ trees = {}, objects = {}, fish = {} } = {}, lang = 
     if (!drawableTree(trees[id])) continue;
     CATALOG.trees[id] = trees[id];
     SPECIES[id] = treeSpecies(id, trees[id], lang);
+    // each variety is a species of its own, so that a red and a yellow apple tree can stand side by side; the plain
+    // entry stays for the plants of a plan named after it, but is not offered when a variety can be chosen
+    const varieties = treeVarieties(trees[id]);
+    if (varieties.length) SPECIES[id].hidden = true;
+    for (const variety of varieties) {
+      const key = varietyId(id, variety);
+      SPECIES[key] = treeSpecies(key, varietyTree(trees[id], variety), lang);
+      SPECIES[key].name = `${SPECIES[id].name} - ${localName(variety.name, lang, variety.id)}`;
+    }
   }
   CATALOG.objects = Object.fromEntries(Object.entries(objects).filter(([, object]) => drawableObject(object)));
   CATALOG.fish = Object.fromEntries(Object.entries(fish).filter(([, f]) => drawableFish(f)));
@@ -188,7 +201,7 @@ function catalogGeometry(tree, id) {
   const trunk = new THREE.CylinderGeometry(r * 0.6, r, fork, 7);
   trunk.translate(0, fork / 2, 0);
   const wood = [trunk];
-  if (tree.shape === 'round') {
+  if (tree.shape === 'round' || tree.shape === 'weeping') {
     for (let i = 0; i < 5; i++) {
       const angle = i * 2.4 + 0.5;
       const reach = R * (0.5 + 0.12 * (i % 3));
