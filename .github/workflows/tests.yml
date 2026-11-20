@@ -34,6 +34,14 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements-test.txt
       - run: pytest
+      # Integration coverage only: the card is not measured.
+      - uses: codecov/codecov-action@v5
+        if: always()
+        with:
+          files: ./reports/coverage.xml
+          flags: integration
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   card:
     name: vitest + build (card)
