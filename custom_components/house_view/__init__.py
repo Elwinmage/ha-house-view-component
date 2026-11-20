@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 
 from .catalog import CATALOGS, PLATFORMS
 from .catalog_runtime import async_setup_catalog, async_unload_catalog
-from .const import CARD_URL, CONF_DEMO, CONF_LOCATION, CONF_LOCK, CONF_STORAGE, DOMAIN
+from .const import CARD_URL, CONF_DEMO, CONF_LOCATION, CONF_LOCK, CONF_STORAGE, DOMAIN, PREVIEW_URL
 from .http import all_views
 from .store import HouseViewStore
 
@@ -26,6 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _VIEWS_REGISTERED = f"{DOMAIN}_views_registered"
 FRONTEND_FILE = Path(__file__).parent / "frontend" / "house-view-card.js"
+PREVIEW_FILE = Path(__file__).parent / "frontend" / "preview.jpg"
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
@@ -33,7 +34,10 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     if not await hass.async_add_executor_job(FRONTEND_FILE.is_file):
         _LOGGER.warning("House View card bundle not found (%s): build it with `npm run build` in card/", FRONTEND_FILE)
         return
-    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(FRONTEND_FILE), cache_headers=False)])
+    paths = [StaticPathConfig(CARD_URL, str(FRONTEND_FILE), cache_headers=False)]
+    if await hass.async_add_executor_job(PREVIEW_FILE.is_file):
+        paths.append(StaticPathConfig(PREVIEW_URL, str(PREVIEW_FILE), cache_headers=True))
+    await hass.http.async_register_static_paths(paths)
     manifest = json.loads(await hass.async_add_executor_job((Path(__file__).parent / "manifest.json").read_text))
     if "frontend" in hass.config.components:  # not loaded in headless setups
         # the version and the content of the bundle in the URL: a new release, or a bundle built again under the

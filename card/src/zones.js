@@ -41,6 +41,27 @@ export function rectCorners(rect) {
 }
 
 /**
+ * True when the face of a wall rectangle looks towards the eye (`eye` [x, y, z], position of a perspective camera).
+ * The direction is taken from the eye to the rectangle, not along the optical axis of the camera: with a perspective
+ * camera the two differ, and a rectangle on the far side of a wall would be seen as facing us.
+ * A floor rectangle (facing up) is always true.
+ */
+export function facesEye(rect, eye) {
+  if (onFloor(rect)) return true;
+  const d = [rect.c[0] - eye[0], rect.c[1] - eye[1], rect.c[2] - eye[2]];
+  const len = Math.hypot(...d) || 1;
+  return (rect.n[0] * d[0] + rect.n[2] * d[2]) / len < -0.05;
+}
+
+/**
+ * Points to test for occlusion: the centre of the rectangle, then its four corners pulled towards the centre
+ * (`k` = 0.8 keeps them inside, so that they do not touch the neighbouring walls).
+ */
+export function rectSamples(rect, k = 0.8) {
+  return [rect.c, ...rectCorners(rect).map((p) => add(rect.c, [p[0] - rect.c[0], p[1] - rect.c[1], p[2] - rect.c[2]], k))];
+}
+
+/**
  * Rectangle of `w` x `h` meters centred on a tapped point (engine.pickPoint): on the wall when the tap found one
  * (`hit.normal`, horizontal), else on the floor. Slightly off the surface, so that it is drawn over it.
  */

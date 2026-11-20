@@ -438,7 +438,9 @@ function aquariumElement(card, aquarium, place, view) {
     el.setConfig(view ? { aquarium, view } : { aquarium });
     card._aqEls.set(key, el);
   }
-  el.hass = card._hass;
+  // the real hass, not the demo one (card._hass hides the devices and the states of the real home): the aquarium
+  // is not part of the simulated home, its elements (sensors, pictures of the lamps) need the devices and entities
+  el.hass = card._realHass || card._hass;
   return el;
 }
 
@@ -519,9 +521,8 @@ export function placeZones(card) {
     const z = card._data.edits.zones.find((x) => x.id === el.dataset.zone);
     let m = null;
     if (z && z.rect && (!z.level || eng.visibility.levels[z.level] !== false)) {
-      const facing = onFloor(z.rect) ? null : [z.rect.n[0], z.rect.n[2]];
-      // hidden when its centre is behind a wall, like the labels
-      if (eng.anchorScreen(`zone:${z.id}`, z.rect.c, facing, z.level)) {
+      // hidden when behind a wall (a rectangle on a wall also when the wall is seen from behind)
+      if (eng.rectScreen(`zone:${z.id}`, z.rect, z.level)) {
         const q = rectCorners(z.rect).map((p) => eng.projectAny(...p));
         if (q.every(Boolean)) m = quadMatrix(el.offsetWidth || THUMB_W, el.offsetHeight || THUMB_W / 2, q);
       }

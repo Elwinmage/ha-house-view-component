@@ -12,6 +12,8 @@ import {
   onFloor,
   keepRatio,
   fitRatio,
+  facesEye,
+  rectSamples,
 } from '../src/zones.js';
 import { alarmList, isAlarmKind, isRaised, tapAction, polyCentre, roomAlarms } from '../src/alarms.js';
 
@@ -251,5 +253,38 @@ describe('aquarium proportions', () => {
     expect(fitRatio(360, 180, 3)).toEqual([360, 120]);
     expect(fitRatio(360, 180, 1)).toEqual([180, 180]);
     expect(fitRatio(360, 180, 0)).toEqual([360, 180]);
+  });
+});
+
+describe('visibility of a rectangle on a wall', () => {
+  // wall along x at z = 0, its face towards +z (n = [0, 0, 1]); picture centred at (0, 1.5, 0.02)
+  const wall = { c: [0, 1.5, 0.02], n: [0, 0, 1], rot: 0, w: 1, h: 0.5 };
+
+  it('faces an eye in front of the wall, not one behind it', () => {
+    expect(facesEye(wall, [0, 2, 5])).toBe(true);
+    expect(facesEye(wall, [0, 2, -5])).toBe(false);
+  });
+
+  it('uses the direction eye -> rectangle, not the optical axis (off-axis rectangle)', () => {
+    // eye in front of the wall but far to the side: still on the front side
+    expect(facesEye(wall, [10, 2, 1])).toBe(true);
+    // eye behind the plane of the wall, looking from the side: back of the wall whatever the axis
+    expect(facesEye(wall, [10, 2, -1])).toBe(false);
+  });
+
+  it('is always true for a rectangle on a floor', () => {
+    expect(facesEye({ c: [0, 0, 0], n: [0, 1, 0], rot: 0, w: 1, h: 1 }, [0, -5, 0])).toBe(true);
+  });
+
+  it('samples the centre and four inset corners', () => {
+    const pts = rectSamples(wall);
+    expect(pts).toHaveLength(5);
+    near(pts[0], wall.c);
+    // corners stay inside the rectangle (80 %), on its plane
+    for (const p of pts.slice(1)) {
+      expect(p[2]).toBeCloseTo(0.02, 6);
+      expect(Math.abs(p[0])).toBeCloseTo(0.4, 6);
+      expect(Math.abs(p[1] - 1.5)).toBeCloseTo(0.2, 6);
+    }
   });
 });

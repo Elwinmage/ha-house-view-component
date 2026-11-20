@@ -175,6 +175,9 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     bundle = tmp_path / "house-view-card.js"
     bundle.write_text("console.log('card');")
     monkeypatch.setattr(house_view, "FRONTEND_FILE", bundle)
+    picture = tmp_path / "preview.jpg"
+    picture.write_bytes(b"jpeg")
+    monkeypatch.setattr(house_view, "PREVIEW_FILE", picture)
     hass.config.components.add("frontend")  # pretend the frontend is loaded
     added = []
     monkeypatch.setattr(house_view, "add_extra_js_url", lambda _hass, url: added.append(url))
@@ -186,6 +189,10 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     res = await client.get("/house_view/house-view-card.js")
     assert res.status == 200
     assert "console.log('card')" in await res.text()
+    # the picture of the card (card picker) is served next to the bundle
+    res = await client.get("/house_view/preview.jpg")
+    assert res.status == 200
+    assert await res.read() == b"jpeg"
     digest = hashlib.sha256(b"console.log('card');").hexdigest()[:8]
     manifest = Path(house_view.__file__).parent / "manifest.json"
     version = json.loads(manifest.read_text(encoding="utf-8"))["version"]  # not hard-coded: it changes at each release
@@ -204,6 +211,7 @@ async def test_bundle_served_without_frontend(hass, hass_client, tmp_path, monke
     bundle = tmp_path / "house-view-card.js"
     bundle.write_text("x")
     monkeypatch.setattr(house_view, "FRONTEND_FILE", bundle)
+    monkeypatch.setattr(house_view, "PREVIEW_FILE", tmp_path / "absent.jpg")  # no picture: only the bundle is served
     added = []
     monkeypatch.setattr(house_view, "add_extra_js_url", lambda _hass, url: added.append(url))
     assert await async_setup_component(hass, "http", {})

@@ -25,7 +25,7 @@ import { buildIrrigation } from './irrigation.js';
 import { buildBeds } from './flowerbeds.js';
 import { buildGates, gatesOf, cutFence } from './gates.js';
 import { buildRobot, buildDock } from './vacuum.js';
-import { rectCorners, pickFurniture } from './zones.js';
+import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
 import { buildPools } from './engine/pools-3d.js';
 import { poolValid, islandsOf } from './pools.js';
@@ -913,6 +913,42 @@ export class HouseEngine {
     return this._occ.get(k) ? null : scr;
   }
 
+  /**
+   * Screen position of the centre of a rectangle of a zone (zones.js), or null when it is hidden. A floor rectangle is
+   * hidden like a label (anchorScreen). A rectangle on a wall is stricter: hidden when its wall is seen from behind
+   * (direction taken from the camera to the rectangle), or when the walls (those of its own level too, which hide
+   * a wall seen from another room or from outside), upper floors or the roof hide most of it: it is tested at its centre
+   * and near its four corners (at least 3 points of 5 must be seen).
+   */
+  rectScreen(id, rect, levelId = null) {
+    if (onFloor(rect)) return this.anchorScreen(id, rect.c, null, levelId);
+    const c = this.camera;
+    const eye = c.isPerspectiveCamera ? c.getWorldPosition(this._eye || (this._eye = new THREE.Vector3())).toArray() : null;
+    if (eye) {
+      if (!facesEye(rect, eye)) return null; // back of the wall
+    } else {
+      // orthographic camera: every ray is parallel to its axis
+      const dir = this._dir || (this._dir = new THREE.Vector3());
+      c.getWorldDirection(dir);
+      if (rect.n[0] * dir.x + rect.n[2] * dir.z > -0.05) return null;
+    }
+    const scr = this.project(rect.c[0], rect.c[1], rect.c[2]);
+    if (!scr) return null;
+    const sig = `${c.matrixWorld.elements.map((v) => v.toFixed(3)).join(',')}|${c.zoom.toFixed(3)}|${this._visSig()}`;
+    const now = performance.now();
+    if (!this._occ || (sig !== this._occSig && now - (this._occT || 0) > 150)) {
+      this._occSig = sig;
+      this._occT = now;
+      this._occ = new Map();
+    }
+    const k = `${id}|rect|${rect.c.map((v) => v.toFixed(2)).join(',')}|${rect.w.toFixed(2)}x${rect.h.toFixed(2)}`;
+    if (!this._occ.has(k)) {
+      const seen = rectSamples(rect).filter((p) => !this._occluded(p, levelId, true)).length;
+      this._occ.set(k, seen < 3);
+    }
+    return this._occ.get(k) ? null : scr;
+  }
+
   _visSig() {
     const v = this.visibility;
     return `${v.roof}${Object.values(v.levels).join('')}${this.world ? this.world.root.uuid : ''}`;
@@ -922,7 +958,7 @@ export class HouseEngine {
    * Hidden by the house? Inside the house only what is ABOVE the label's level hides it (upper floors, their walls,
    * the roof): the walls of its own level would hide most floor labels in a cut-away view. Outside, every wall counts.
    */
-  _occluded(pos, levelId = null) {
+  _occluded(pos, levelId = null, strict = false) {
     const w = this.world;
     const p = new THREE.Vector3(...pos);
     const v = p.clone().project(this.camera);
@@ -932,8 +968,10 @@ export class HouseEngine {
     const dist = ray.ray.origin.distanceTo(p);
     const own = levelId ? w.levelsById[levelId] : null;
     const vis = (lv) => this.visibility.levels[lv.id] !== false && (!own || lv.elevation > own.elevation + 0.01);
+    // strict: the walls of its own level hide it too (the wall that carries it is not hit before it: it is 2 cm off)
+    const visWall = (lv) => (strict ? this.visibility.levels[lv.id] !== false : vis(lv));
     const occ = [
-      ...w.walls.filter((x) => vis(x.level)).map((x) => x.mesh),
+      ...w.walls.filter((x) => visWall(x.level)).map((x) => x.mesh),
       ...w.floors.filter((f) => vis(f.level)).map((f) => f.mesh),
       ...(w.roof && this.visibility.roof ? [w.roof] : []),
     ];

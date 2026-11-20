@@ -78,6 +78,9 @@ console.info(
   'color:#3b6ea5;background:#e8eef6;font-weight:700;padding:2px 4px;border-radius:0 3px 3px 0',
 );
 
+// picture of the card (served by the integration next to the bundle): shown in the card picker, and behind the message
+// of a home without a plan
+const PREVIEW_IMG = new URL('./preview.jpg', import.meta.url).href;
 const TICK_MS = 30000; // live clock refresh
 const SAVE_DELAY = 600; // edits are saved this long after the last change
 const PREVIEW_MS = 180000; // a forced season / weather preview returns to live after 3 min
@@ -218,7 +221,28 @@ class HouseViewCard extends LitElement {
     return { columns: 'full', min_rows: 4 };
   }
 
+  /**
+   * Is the card a tile of the card picker ("Add to dashboard")? It then shows its picture only: no plan to load, no 3D
+   * scene to build for a thumbnail. (The preview beside the editor of a card is not in the picker: it stays live.)
+   */
+  get _inPicker() {
+    if (this._picker === undefined && this.isConnected) {
+      let n = this;
+      let found = false;
+      while (n && !found) {
+        found = n.localName === 'hui-card-picker';
+        n = n.parentNode || n.host || null; // up through the shadow roots
+      }
+      this._picker = found;
+    }
+    return !!this._picker;
+  }
+
   set hass(h) {
+    if (this._inPicker) {
+      this._hass = h;
+      return;
+    }
     this._realHass = h;
     // demo home: only the simulated areas and entities are seen, their services handled by the simulator
     if (this._demo) h = this._demo.hassFor(h, () => this._demoChanged());
@@ -2810,9 +2834,11 @@ class HouseViewCard extends LitElement {
         <ha-icon icon=${vacErr ? 'mdi:alert' : 'mdi:robot-vacuum'}></ha-icon>
       </button>`;
     };
+    if (this._inPicker) return html`<ha-card><img class="picture" src=${PREVIEW_IMG} alt="House View" /></ha-card>`;
     return html` <ha-card>
       <div class="wrap">
         <div id="view"></div>
+        ${this._status === 'empty' || this._status === 'error' ? html`<img class="picture back" src=${PREVIEW_IMG} alt="" />` : nothing}
         ${this._renderAnchors()} ${renderZoneThumbs(this)} ${this._renderTags()} ${renderRoomAlarms(this)} ${this._renderLeft()}
         ${
           ready && this._config.show_views && this._views.length > 1
@@ -2921,6 +2947,17 @@ class HouseViewCard extends LitElement {
       width: 100%;
       height: 100%;
       touch-action: none;
+    }
+    .picture {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .picture.back {
+      position: absolute;
+      inset: 0;
+      height: 100%;
+      object-fit: cover;
     }
     .overlay {
       pointer-events: none; /* never hide the toolbar / views buttons below */
@@ -3992,4 +4029,6 @@ window.customCards.push({
   type: 'house-view-card',
   name: 'House View',
   description: 'Dynamic pseudo-3D view of your house: lights, weather and seasons.',
+  // rendered with its stub configuration in the picker: shows its picture
+  preview: true,
 });

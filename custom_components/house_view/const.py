@@ -30,6 +30,8 @@ MAX_BODY_BYTES = 15 * 1024 * 1024
 
 # The Lovelace card is bundled with the integration (built from /card): served at CARD_URL and loaded on every dashboard
 CARD_URL = f"/{DOMAIN}/house-view-card.js"
+# Picture of the card (card picker, home without a plan), next to the bundle
+PREVIEW_URL = f"/{DOMAIN}/preview.jpg"
 
 # Options (GitHub backup)
 CONF_REPO = "repo"
