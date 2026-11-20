@@ -2,6 +2,7 @@
 // bottom for a pond), coping or pebble ring, moving water, and the cleaning robot wandering on the bottom.
 import * as THREE from 'three';
 import { polygonArea, centroidOf, robotStep, inPolygon } from '../pools.js';
+import { buildPondFish } from './fish-3d.js';
 
 let waterNormals = null;
 /** Small tiling normal map of ripples (shared; none outside a browser). */
@@ -169,6 +170,19 @@ export function buildPools(list) {
     );
     band.receiveShadow = true;
     g.add(band);
+    // islands (outlines in the plan frame): banks down to the bottom, a pebble ring in the water, and their ground
+    // when there is no terrain (with a terrain, the ground of the island is part of it)
+    const islands = (p.islands || []).filter((i) => i.length >= 3);
+    for (const isl of islands) {
+      g.add(new THREE.Mesh(poolWalls(isl, p.rim + 0.02, bottom), liner));
+      const ring = new THREE.Mesh(
+        flatShape(offsetOutline(isl, 0.3), p.rim - 0.03, [isl]),
+        new THREE.MeshStandardMaterial({ color: '#7a7264', roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 }),
+      );
+      ring.renderOrder = 5;
+      g.add(ring);
+      if (p.flat) g.add(new THREE.Mesh(flatShape(isl, p.rim + 0.02), new THREE.MeshStandardMaterial({ color: '#6aa84f', roughness: 1 })));
+    }
     // water
     const wm = new THREE.MeshStandardMaterial({
       color,
@@ -184,7 +198,7 @@ export function buildPools(list) {
       wm.normalMap.repeat.set(0.45, 0.45);
       wm.normalScale.set(0.6, 0.6);
     }
-    const water = new THREE.Mesh(flatShape(p.poly, p.rim - (pond ? 0.08 : 0.12)), wm);
+    const water = new THREE.Mesh(flatShape(p.poly, p.rim - (pond ? 0.08 : 0.12), islands), wm);
     water.renderOrder = 4;
     water.name = 'water';
     g.add(water);
@@ -200,7 +214,7 @@ export function buildPools(list) {
       robot = { g: r, s: { ...park }, on: false, poly: p.poly, floor: bottom };
     }
     group.add(g);
-    items.push({ id: p.id, g, water, wm, robot, pond, rim: p.rim, depth, poly: p.poly });
+    items.push({ id: p.id, g, water, wm, robot, pond, rim: p.rim, depth, poly: p.poly, islands, color, fishList: p.fishList || [] });
   }
 
   const pondFloor = (it, x, z) => {
@@ -214,14 +228,24 @@ export function buildPools(list) {
     return it.rim - 0.05 - it.depth * Math.min(1, Math.sin((Math.min(1, u * 1.6) * Math.PI) / 2));
   };
 
+  // fish of the ponds, swimming over the sloping bottom (a pool: over its flat bottom)
+  for (const it of items) {
+    if (!it.fishList.length) continue;
+    const floorAt = it.pond ? (x, z) => pondFloor(it, x, z) : () => it.rim - it.depth;
+    it.fish = buildPondFish(it.fishList, { poly: it.poly, islands: it.islands, rim: it.rim, depth: it.depth, color: it.color }, floorAt);
+    it.g.add(it.fish.group);
+  }
+
   return {
     group,
     items,
     setRobots(map) {
       for (const it of items) if (it.robot) it.robot.on = !!(map && map[it.id]);
     },
-    tick(dt, t) {
+    /** `cold`: the water is cold, the fish stay down and move little. */
+    tick(dt, t, cold = false) {
       for (const it of items) {
+        if (it.fish) it.fish.tick(dt, t, cold);
         if (it.wm.normalMap) it.wm.normalMap.offset.set((t * 0.02) % 1, (t * 0.013) % 1);
         it.water.position.y = Math.sin(t * 0.9 + it.rim) * 0.006;
         const R = it.robot;

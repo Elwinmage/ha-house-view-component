@@ -17,7 +17,11 @@ STEPS = (("locate", 1.0), ("dtm", 2.5), ("dsm", 2.0), ("vectors", 1.5))
 PASSWORD = sys.argv[2] if len(sys.argv) > 2 else ""  # edit lock, as set in the options of the integration
 TOKENS = set()
 # built-in snapshots of the house catalog: what the integration answers to `house_view/catalog` before any download
-BUILTIN = {"trees": ("catalog_builtin", "tree.json"), "objects": ("catalog_builtin_objects", "object.json")}
+BUILTIN = {
+    "trees": ("catalog_builtin", "tree.json"),
+    "objects": ("catalog_builtin_objects", "object.json"),
+    "fish": ("catalog_builtin_fish", "fish.json"),
+}
 
 
 def catalog(section):

@@ -2,6 +2,7 @@
 // (trees, objects: data only, drawn here; see ../catalog-lib.js and doc/format.md of house-catalog).
 import * as THREE from 'three';
 import { climateFor, seasonBlend as climateBlend } from '../climate.js';
+import { decodeModel } from './sh3d-models.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BLOSSOM_DENSITY,
@@ -99,14 +100,15 @@ export const SPECIES = {
 };
 
 const BUILTIN_SPECIES = { ...SPECIES };
-const CATALOG = { trees: {}, objects: {} };
+const CATALOG = { trees: {}, objects: {}, fish: {} };
 
 /**
  * Take the entries of the house catalog: its trees join the species (an id of the catalog replaces the built-in
- * species of the same name), its objects are drawn in place of the furniture of the plan that names them.
+ * species of the same name), its objects are drawn in place of the furniture of the plan that names them, its fish
+ * swim in the ponds.
  * Entries the engine cannot read (a newer format) are left out. `lang`: language of the names.
  */
-export function setCatalog({ trees = {}, objects = {} } = {}, lang = 'en') {
+export function setCatalog({ trees = {}, objects = {}, fish = {} } = {}, lang = 'en') {
   for (const key of Object.keys(SPECIES)) delete SPECIES[key];
   Object.assign(SPECIES, BUILTIN_SPECIES);
   CATALOG.trees = {};
@@ -116,7 +118,25 @@ export function setCatalog({ trees = {}, objects = {} } = {}, lang = 'en') {
     SPECIES[id] = treeSpecies(id, trees[id], lang);
   }
   CATALOG.objects = Object.fromEntries(Object.entries(objects).filter(([, object]) => drawableObject(object)));
+  CATALOG.fish = Object.fromEntries(Object.entries(fish).filter(([, f]) => drawableFish(f)));
 }
+
+/** A fish the engine can draw: a length, a body and at least one variety with a colour. */
+export function drawableFish(f) {
+  return (
+    !!f &&
+    !!f.length &&
+    Number.isFinite(f.length.default) &&
+    !!f.body &&
+    f.body.width > 0 &&
+    f.body.height > 0 &&
+    Array.isArray(f.varieties) &&
+    f.varieties.some((v) => v && typeof v.base === 'string')
+  );
+}
+
+/** Fish of the catalog, by id: what the ponds may hold. */
+export const catalogFish = () => CATALOG.fish;
 
 /** Species of the catalog a plant of the plan stands for, by its name (keywords of the entries), or null. */
 export const catalogTreeFor = (name) => (name ? matchEntry(name, CATALOG.trees) : null);
@@ -614,17 +634,88 @@ export function objectGeometries(object, size, tint) {
   });
 }
 
-export function buildBoxFurnitureMesh(items, baseY) {
+const decoded = new WeakMap();
+
+/**
+ * Geometries of a piece drawn with its model (see sh3d-models.js): { solid, glass } (glass: the transparent parts,
+ * with their opacity), already placed. Null when the model cannot be read.
+ */
+function modelGeometries(it, doc, at) {
+  let m = decoded.get(doc);
+  if (m === undefined) {
+    m = decodeModel(doc);
+    decoded.set(doc, m);
+  }
+  if (!m) return null;
+  const [w, h, d] = it.size;
+  const sx = it.mirrored ? -w : w;
+  const out = { solid: null, glass: [] };
+  const col = new THREE.Color();
+  const build = (groups) => {
+    let count = 0;
+    for (const g of groups) count += g.n;
+    if (!count) return null;
+    const pos = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    let k = 0;
+    for (const g of groups) {
+      col.set(g.c);
+      for (let t = g.s; t < g.s + g.n; t += 3) {
+        // a mirrored piece: the triangles are turned the other way, so that they still face out
+        const tri = it.mirrored ? [m.idx[t], m.idx[t + 2], m.idx[t + 1]] : [m.idx[t], m.idx[t + 1], m.idx[t + 2]];
+        for (const v of tri) {
+          pos[k * 3] = m.pos[v * 3] * sx;
+          pos[k * 3 + 1] = m.pos[v * 3 + 1] * h;
+          pos[k * 3 + 2] = m.pos[v * 3 + 2] * d;
+          col.toArray(colors, k * 3);
+          k++;
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    return geo.applyMatrix4(at);
+  };
+  out.solid = build(m.groups.filter((g) => (g.a ?? 1) >= 0.9));
+  for (const g of m.groups.filter((x) => (x.a ?? 1) < 0.9)) {
+    const geo = build([g]);
+    if (geo) out.glass.push({ geo, alpha: g.a });
+  }
+  return out;
+}
+
+/** Only the attributes every piece has, so that they merge. */
+const plain = (g) => {
+  for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(name)) g.deleteAttribute(name);
+  return g;
+};
+
+/**
+ * Pieces of furniture: drawn with their model of the plan (`it.model`, a key of `models`), else with the object of
+ * the catalog their name stands for, else as a box. One merged mesh (and one for the transparent parts of the
+ * models), in a group.
+ */
+export function buildBoxFurnitureMesh(items, baseY, models = null) {
   const geos = [];
+  const glass = [];
   const col = new THREE.Color();
   for (const it of items) {
     const [w, h, d] = it.size;
+    const at = new THREE.Matrix4()
+      .makeTranslation(it.at[0], baseY + (it.elevation || 0), it.at[1])
+      .multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0)));
+    const doc = it.model && models ? models[it.model] : null;
+    const fromModel = doc ? modelGeometries(it, doc, at) : null;
+    if (fromModel && (fromModel.solid || fromModel.glass.length)) {
+      if (fromModel.solid) geos.push(fromModel.solid);
+      glass.push(...fromModel.glass);
+      continue;
+    }
     const object = catalogObjectFor(it.name);
     if (object) {
       // drawn from the catalog: same place, same footprint and height as the box it replaces
-      const at = new THREE.Matrix4()
-        .makeTranslation(it.at[0], baseY + (it.elevation || 0), it.at[1])
-        .multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0)));
       for (const g of objectGeometries(object, it.size, it.colored ? it.color : null)) geos.push(g.applyMatrix4(at));
       continue;
     }
@@ -634,18 +725,26 @@ export function buildBoxFurnitureMesh(items, baseY) {
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) col.toArray(colors, i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    g.applyMatrix4(
-      new THREE.Matrix4()
-        .makeTranslation(it.at[0], baseY + (it.elevation || 0) + h / 2, it.at[1])
-        .multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0))),
-    );
+    g.applyMatrix4(new THREE.Matrix4().makeTranslation(it.at[0], baseY + (it.elevation || 0) + h / 2, it.at[1]).multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0))));
     geos.push(g);
   }
-  if (!geos.length) return null;
-  const merged = mergeGeometries(geos);
-  const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.name = 'furniture-boxes';
-  return mesh;
+  if (!geos.length && !glass.length) return null;
+  const group = new THREE.Group();
+  group.name = 'furniture-boxes';
+  if (geos.length) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => plain(g.index ? g.toNonIndexed() : g))), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  if (glass.length) {
+    // the transparent parts (glass of a cabinet, of an aquarium…) at the opacity of their material
+    const alpha = glass.reduce((s, g) => s + g.alpha, 0) / glass.length;
+    const mesh = new THREE.Mesh(
+      mergeGeometries(glass.map((g) => plain(g.geo))),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, transparent: true, opacity: Math.max(alpha, 0.2), depthWrite: false, side: THREE.DoubleSide }),
+    );
+    group.add(mesh);
+  }
+  return group;
 }

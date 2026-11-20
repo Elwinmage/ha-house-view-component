@@ -9,6 +9,7 @@ import {
   poolValid,
   robotStep,
   POOL_KINDS,
+  islandsOf,
 } from '../src/pools.js';
 import { buildPools, offsetOutline } from '../src/engine/pools-3d.js';
 import { buildTerrain, syntheticTerrain } from '../src/engine/terrain.js';
@@ -118,5 +119,39 @@ describe('pools dug in the terrain', () => {
     // stored in the grid frame: converted with the registration
     const g = buildTerrain(t, sd, { base: 0, rot: 0, dx: 1, dz: 0, pools: [{ ...pool, frame: undefined }] });
     expect(g.digs[0].poly[0][0]).toBeCloseTo(3);
+  });
+});
+
+describe('islands of a pond', () => {
+  const isl = { shape: 'rect', pts: rectFromCorners([3, 3], [4, 4]), frame: 'plan' };
+
+  it('keeps the usable islands only', () => {
+    expect(islandsOf({ islands: [isl, { pts: [] }, null] })).toEqual([isl]);
+    expect(islandsOf({})).toEqual([]);
+    expect(islandsOf(null)).toEqual([]);
+  });
+
+  it('keeps the ground of an island above the water', () => {
+    const t = syntheticTerrain([0, 0], 40, 1);
+    const sd = { levels: [{ rooms: [{ poly: rectFromCorners([-12, -12], [-8, -8]) }] }], site: {} };
+    const pond = { id: 'p', kind: 'pond', pts: rectFromCorners([1, 1], [7, 6]), frame: 'plan', islands: [isl] };
+    const dug = buildTerrain(t, sd, { base: 0, pools: [pond] });
+    const without = buildTerrain(t, sd, { base: 0, pools: [{ ...pond, islands: [] }] });
+    const rim = dug.digs[0].rim;
+    expect(dug.digs[0].islands).toHaveLength(1);
+    expect(dug.heightAt(3.5, 3.5)).toBeGreaterThan(rim + 0.1);
+    expect(dug.heightAt(3.02, 3.5)).toBeCloseTo(rim + 0.1, 1);
+    expect(dug.heightAt(2, 2)).toBeCloseTo(rim);
+    expect(dug.ground.geometry.index.count).toBeGreaterThan(without.ground.geometry.index.count);
+  });
+
+  it('draws the banks, a pebble ring and, without terrain, the ground of the island', () => {
+    const p = buildPools([
+      { id: 'q', kind: 'pond', poly: rectFromCorners([0, 0], [8, 6]), islands: [isl.pts], rim: 0, depth: 0.8, flat: true },
+    ]);
+    const g = p.items[0].g;
+    const plain = buildPools([{ id: 'q', kind: 'pond', poly: rectFromCorners([0, 0], [8, 6]), rim: 0, depth: 0.8 }]);
+    expect(g.children.length).toBe(plain.items[0].g.children.length + 3);
+    expect(p.items[0].islands).toHaveLength(1);
   });
 });

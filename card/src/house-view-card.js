@@ -50,6 +50,19 @@ import pkg from '../package.json';
 import { autoOpeningLinks, openingStates } from './openings.js';
 import { renderOpenings } from './ui-openings.js';
 import { renderPools } from './ui-pools.js';
+import { renderBuilder } from './ui-builder.js';
+import {
+  addRoom,
+  builderFromLevels,
+  builderReport,
+  builderScene,
+  emptyBuilder,
+  normalizeBuilder,
+  sceneFromLevels,
+} from './plan-builder.js';
+import { importIfc } from './engine/ifc-import.js';
+import { parseSvgRooms, svgLevels } from './engine/svg-import.js';
+import { robotMapsWithRooms, robotPlanRooms } from './robot-plan.js';
 import { DemoSim, DEMO_EVENTS } from './demo.js';
 
 /** Room whose layer an entity belongs to (set while zoomed on it), else the room it stands in. */
@@ -355,14 +368,14 @@ class HouseViewCard extends LitElement {
   }
 
   /**
-   * Trees and objects of the house catalog. The integration downloads them and merges the entries saved with the
+   * Trees, objects and pond fish of the house catalog. The integration downloads them and merges the entries saved with the
    * catalog editor; the card only asks it (never the network) and draws them. Without them (an older integration)
    * the built-in species stay.
    */
   async _loadCatalog() {
     const h = this._hass;
     if (!h || !h.callWS || !this._engine) return;
-    this._catalog = this._catalog || { trees: {}, objects: {} };
+    this._catalog = this._catalog || { trees: {}, objects: {}, fish: {} };
     // each section on its own: one that cannot be read keeps what it had, and does not hide the other
     await Promise.all(
       Object.keys(this._catalog).map(async (section) => {
@@ -388,7 +401,7 @@ class HouseViewCard extends LitElement {
   _watchCatalog() {
     const h = this._hass;
     if (this._catalogUnsub || !h || !h.connection || !h.connection.subscribeMessage) return;
-    this._catalogUnsub = ['trees', 'objects'].map((section) =>
+    this._catalogUnsub = ['trees', 'objects', 'fish'].map((section) =>
       h.connection.subscribeMessage(() => this._loadCatalog(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
     );
   }
@@ -1606,22 +1619,134 @@ class HouseViewCard extends LitElement {
     }
   }
 
+  /** First plan of the home: the documents already stored (edits restored, demo edits, terrain) are kept. */
+  async _ensureData() {
+    if (this._data) return;
+    const info = (await this._api.info()) || {};
+    const [terrain, edits, ortho] = await Promise.all([
+      info.has_terrain ? this._api.getTerrain() : null,
+      info.has_edits ? this._api.getEdits() : null,
+      info.has_ortho ? this._api.getOrtho() : null,
+    ]);
+    this._data = { terrain, ortho, edits: edits || emptyEdits() };
+  }
+
+  /**
+   * Opens the simple plan builder: on the builder model kept in the scene, or a new one (one room to start with).
+   * A plan imported from a file is replaced only after a confirmation (`force`).
+   */
+  async _openBuilder(force = false, given = null, show = true) {
+    const sc = this._data && this._data.scene;
+    if (sc && !sc.builder && !force && !given) {
+      this._replaceAsk = () => this._openBuilder(true);
+      this.requestUpdate();
+      return;
+    }
+    this._replaceAsk = null;
+    await this._ensureData();
+    let model = given ? normalizeBuilder(given) : sc && sc.builder ? normalizeBuilder(sc.builder) : null;
+    if (!model) {
+      model = emptyBuilder(this._t('b_ground'));
+      const free = Object.values((this._hass && this._hass.areas) || {})[0];
+      const r = addRoom(model, model.levels[0].id, free ? free.name : this._t('b_room'));
+      if (free) r.area = free.area_id;
+    }
+    this._builder = model;
+    this._bLevel = model.levels[0].id;
+    this._bSel = model.rooms[0] ? model.rooms[0].id : null;
+    this._bOpening = null;
+    this._bPlace = null;
+    this._bBox = null;
+    if (given || !sc || !sc.builder) this._builderChanged(true);
+    if (show && this._panel !== 'builder') this._togglePanel('builder');
+    this.requestUpdate();
+  }
+
+  /**
+   * Rooms in meters from an SVG or a robot map: into the builder when they are all rectangles, otherwise a plan of
+   * polygons (walls drawn around the rooms).
+   */
+  async _plainPlan(levels, report, show = true) {
+    const model = builderFromLevels(levels, this._t('b_ground'));
+    if (model) {
+      await this._openBuilder(true, model, show);
+      this._report = { ...builderReport(this._builder), warnings: report.warnings };
+      return;
+    }
+    await this._ensureData();
+    this._data = { ...this._data, scene: sceneFromLevels(levels, this._homePlace.latitude, this._t('b_ground')) };
+    this._report = report;
+    await this._save('scene');
+    this._apply();
+    this._status = 'ready';
+  }
+
+  /** SVG plan at a scale (SVG units per meter); the parsed drawing stays at hand to change the scale. */
+  async _svgPlan(upm) {
+    const sv = this._svg;
+    if (!sv) return;
+    sv.upm = upm;
+    const levels = svgLevels(sv.parsed, upm);
+    const [x0, y0, x1, y1] = sv.parsed.bbox;
+    const size = `${((x1 - x0) / upm).toFixed(1)} × ${((y1 - y0) / upm).toFixed(1)} m`;
+    // the setup stays open: the scale can be corrected, the builder opened from there
+    await this._plainPlan(levels, { counts: {}, warnings: [this._t('svg_size').replace('{size}', size)] }, false);
+  }
+
+  /** Plan from the rooms of a robot vacuum's map entity. */
+  async _robotPlan(entity, force = false) {
+    if (this._data && this._data.scene && !force) {
+      this._replaceAsk = () => this._robotPlan(entity, true);
+      this.requestUpdate();
+      return;
+    }
+    this._replaceAsk = null;
+    const st = this._hass.states[entity];
+    const rooms = robotPlanRooms(st && st.attributes, (i) => `${this._t('b_room')} ${i}`);
+    if (!rooms.length) return;
+    this._svg = null;
+    await this._plainPlan([{ name: this._t('b_ground'), rooms }], { counts: {}, warnings: [this._t('robot_plan_note')] });
+  }
+
+  /** The builder model changed: new scene now, 3D rebuilt a moment later, plan saved after a pause. */
+  _builderChanged(now = false) {
+    if (!this._builder || !this._data) return;
+    this._data.scene = builderScene(this._builder, this._homePlace.latitude);
+    this._report = builderReport(this._builder);
+    clearTimeout(this._bApplyTimer);
+    const apply = () => {
+      const first = this._status !== 'ready';
+      this._apply(!first);
+      this._status = 'ready';
+      // the house grew or shrank: the camera frames it again (on the view in use)
+      const bb = this._engine.world && this._engine.world.sd ? JSON.stringify(this._engine.world.sd.bbox) : '';
+      if (first || bb !== this._bFrame) this._engine.goToView(Math.min(this._view || 0, this._views.length - 1), true);
+      this._bFrame = bb;
+      this.requestUpdate();
+    };
+    if (now) apply();
+    else this._bApplyTimer = setTimeout(apply, 250);
+    clearTimeout(this._bSaveTimer);
+    this._bSaveTimer = setTimeout(() => this._save('scene'), now ? 0 : 1500);
+    this.requestUpdate();
+  }
+
   async _onPlan(ev) {
     const input = ev.target;
     const file = input.files[0];
     if (!file) return;
     try {
-      const { scene, report } = await importSh3d(file);
-      // first plan of the home: the documents already stored (edits restored, demo edits, terrain) are kept
-      if (!this._data) {
-        const info = (await this._api.info()) || {};
-        const [terrain, edits, ortho] = await Promise.all([
-          info.has_terrain ? this._api.getTerrain() : null,
-          info.has_edits ? this._api.getEdits() : null,
-          info.has_ortho ? this._api.getOrtho() : null,
-        ]);
-        this._data = { terrain, ortho, edits: edits || emptyEdits() };
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      this._svg = null;
+      if (ext === 'svg') {
+        const parsed = parseSvgRooms(await file.text());
+        this._svg = { parsed, upm: parsed.unitsPerMeter };
+        await this._svgPlan(parsed.unitsPerMeter);
+        input.value = '';
+        return;
       }
+      const { scene, report } = ext === 'ifc' ? await importIfc(file, this._homePlace.latitude) : await importSh3d(file);
+      await this._ensureData();
       this._data = { ...this._data, scene };
       this._report = report;
       await this._save('scene');
@@ -1844,7 +1969,42 @@ class HouseViewCard extends LitElement {
       </details>
       <details open>
         <summary>${t('plan')}</summary>
-        <label class="file">${t('import_plan')}<input type="file" accept=".sh3d,.xml" @change=${this._onPlan} /></label>
+        <label class="file">${t('import_plan')}<input type="file" accept=".sh3d,.xml,.ifc,.svg" @change=${this._onPlan} /></label>
+        <div class="hint">${t('import_plan_hint')}</div>
+        <div class="row">
+          <button @click=${() => this._openBuilder()}>
+            ${t(this._data && this._data.scene && this._data.scene.builder ? 'b_edit' : 'b_create')}
+          </button>
+          ${robotMapsWithRooms(this._hass && this._hass.states).map(
+            (m) => html`<button title=${m.name} @click=${() => this._robotPlan(m.entity)}>${t('robot_plan')} (${m.count})</button>`,
+          )}
+        </div>
+        ${
+          this._svg
+            ? html`<label class="bnum"
+                >${t('svg_scale')}<input
+                  type="number"
+                  min="0.001"
+                  step="any"
+                  .value=${String(+this._svg.upm.toFixed(4))}
+                  @change=${(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (v > 0) this._svgPlan(v);
+                  }}
+              /></label>`
+            : nothing
+        }
+        ${
+          this._replaceAsk
+            ? html`<div class="report">
+                ${t('b_replace')}
+                <div class="row">
+                  <button @click=${() => this._replaceAsk()}>${t('b_replace_ok')}</button>
+                  <button @click=${() => ((this._replaceAsk = null), this.requestUpdate())}>${t('lock_cancel')}</button>
+                </div>
+              </div>`
+            : nothing
+        }
         ${
           this._report
             ? html`<div class="report">
@@ -1857,6 +2017,7 @@ class HouseViewCard extends LitElement {
               </div>`
             : nothing
         }
+        ${this._data && this._data.scene && this._data.scene.models ? chk('showModels', t('show_models'), true) : nothing}
         ${unmapped.length ? html`<div class="report">${t('rooms_unmapped')} : ${unmapped.join(', ')}</div>` : nothing}
       </details>
       ${
@@ -2541,20 +2702,28 @@ class HouseViewCard extends LitElement {
   _renderPanel() {
     const t = this._t;
     if (!this._panel) return nothing;
-    const title = { setup: t('setup'), edit: t('editor'), sim: t('simulation'), preview: t('preview'), demo: t('demo') }[this._panel];
+    const title = {
+      setup: t('setup'),
+      edit: t('editor'),
+      sim: t('simulation'),
+      preview: t('preview'),
+      demo: t('demo'),
+      builder: t('b_title'),
+    }[this._panel];
     const body = {
       setup: () => this._renderSetup(),
       edit: () => this._renderEdit(),
       sim: () => this._renderSim(),
       preview: () => this._renderPreview(),
       demo: () => this._renderDemo(),
+      builder: () => renderBuilder(this),
     }[this._panel]();
-    return html`<div class="panel" @pointerdown=${(e) => e.stopPropagation()}>
+    return html`<div class=${this._panel === 'builder' ? 'panel wide' : 'panel'} @pointerdown=${(e) => e.stopPropagation()}>
       <div class="head">
         <b>${title}</b>
         <span>
           ${
-            this._info && this._info.locked && (this._panel === 'setup' || this._panel === 'edit')
+            this._info && this._info.locked && ['setup', 'edit', 'builder'].includes(this._panel)
               ? html`<button class="x" title=${t('lock_now')} @click=${() => this._lockNow()}>🔒</button>`
               : nothing
           }
@@ -2563,7 +2732,7 @@ class HouseViewCard extends LitElement {
       </div>
       ${body}
       ${
-        this._msg && (this._panel === 'setup' || this._panel === 'edit')
+        this._msg && ['setup', 'edit', 'builder'].includes(this._panel)
           ? html`<div class=${this._msg.startsWith(t('error')) ? 'msg bad' : 'msg'}>${this._msg}</div>`
           : nothing
       }
@@ -3561,6 +3730,51 @@ class HouseViewCard extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 6px;
+    }
+    .panel.wide {
+      width: min(560px, calc(100% - 16px));
+    }
+    .bplan {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      flex: none;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 6px;
+      touch-action: none;
+      user-select: none;
+    }
+    .bplan .broom {
+      cursor: move;
+    }
+    .blist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .bbox {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+    }
+    .bnum {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 1;
+      font-size: 12px;
+    }
+    .bnum input {
+      width: 64px;
+    }
+    .bnum.wide select {
+      flex: 1;
+    }
+    .grow {
+      flex: 1;
+      min-width: 0;
     }
     .panel .head {
       display: flex;

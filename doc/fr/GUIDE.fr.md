@@ -25,7 +25,7 @@ Toutes les images de ce guide ont été prises sur le **logement de démonstrati
 ## 1. Ce qu'il faut
 
 - **Home Assistant 2026.3 ou plus récent** (le nettoyage par pièces de l'aspirateur et l'icône de l'intégration en ont besoin ; le reste fonctionne avec des versions plus anciennes).
-- **Un plan Sweet Home 3D** (`.sh3d`) de votre maison, enregistré avec Sweet Home 3D 5.3 ou plus récent. Ce qui compte :
+- **Un plan de la maison**. Le plus complet est un plan **Sweet Home 3D** (`.sh3d`, enregistré avec la version 5.3 ou plus récente) ; un fichier **IFC** (ArchiCAD, Revit, FreeCAD…) ou un plan **SVG** conviennent aussi, et sans aucun fichier la carte en dessine un simple ([4.2](#42-créer-un-plan-simple)). Dans un plan Sweet Home 3D, ce qui compte :
   - un **niveau par étage** (rez-de-chaussée, étage, sous-sol…) ;
   - les **murs** ;
   - les **pièces**, tracées avec l'outil *Créer des pièces*, et **nommées** : le nom sert à les relier aux zones (areas) de Home Assistant ;
@@ -34,7 +34,7 @@ Toutes les images de ce guide ont été prises sur le **logement de démonstrati
   - facultatif : les meubles, les lumières, les arbres et les objets du jardin (abri, portail, piscine…).
 - **Des zones (areas) dans Home Assistant** pour vos pièces, avec vos lumières, capteurs et volets rangés dedans : c'est ce qui permet à la vue de savoir quoi afficher où.
 
-Le terrain (relief, bâtiments voisins, routes, cadastre, photo aérienne) n'est pas à fournir : l'intégration le récupère elle-même (voir [4.2](#42-récupérer-le-terrain)).
+Le terrain (relief, bâtiments voisins, routes, cadastre, photo aérienne) n'est pas à fournir : l'intégration le récupère elle-même (voir [4.4](#44-récupérer-le-terrain)).
 
 ## 2. Installation
 
@@ -84,15 +84,40 @@ Ouvrez ⚙ **Configuration** (bouton de la carte vide, ou menu **⋮ → Configu
 
 ### 4.1 Importer le plan
 
-Dans **Plan Sweet Home 3D**, cliquez *Importer un .sh3d* et choisissez votre fichier. Le plan est lu dans le navigateur (seule la structure est gardée : niveaux, murs, pièces, ouvertures, lumières, meubles, végétation) et un **rapport** liste ce qui a été trouvé, avec d'éventuelles remarques (niveau sans pièce, boussole non réglée…).
+Dans **Plan de la maison**, cliquez *Importer un plan* et choisissez votre fichier : Sweet Home 3D (`.sh3d`), IFC (`.ifc`) ou SVG (`.svg`). Le plan est lu dans le navigateur (seule la structure est gardée : niveaux, murs, pièces, ouvertures, lumières, meubles, végétation) et un **rapport** liste ce qui a été trouvé, avec d'éventuelles remarques (niveau sans pièce, boussole non réglée…).
 
 ![Le plan importé et son rapport](../images/04-plan-importe.jpg)
 
-La maison apparaît aussitôt sur un sol plat.
+La maison apparaît aussitôt sur un sol plat. Les meubles sont dessinés avec leurs **propres modèles 3D**, ceux du fichier Sweet Home 3D (allégés, une couleur par matériau, la couleur moyenne d'une texture) ; la case *Meubles dessinés avec leurs modèles 3D du plan* revient à des formes simples. Un meuble au modèle dans un autre format qu'OBJ reste une boîte, ou l'objet du catalogue qui porte son nom.
 
 > **Conseil** : si une pièce n'a pas de zone Home Assistant du même nom, la configuration la signale. Vous pourrez la relier à la main dans l'éditeur ([6.5](#65-pièces--zones-home-assistant)).
 
-### 4.2 Récupérer le terrain
+**Les formats** :
+
+- **Sweet Home 3D** : niveaux, murs, pièces, portes et fenêtres, lumières, meubles et végétation.
+- **IFC** (exporté par ArchiCAD, Revit, FreeCAD, BlenderBIM…) : les étages deviennent des niveaux et les espaces (`IfcSpace`) des pièces, avec les murs, les portes et les fenêtres. Pensez à exporter les espaces : sans eux, pas de pièces, donc ni lumières ni lien avec les zones.
+- **SVG** (plan dessiné pour ha-floorplan, ou avec Inkscape) : chaque forme fermée qui porte un nom (son id, son libellé Inkscape ou un `<title>`) est une pièce ; l'id `area.sejour` donne « Sejour ». Les calques Inkscape qui contiennent des pièces deviennent des niveaux. Corrigez l'**échelle** (*Échelle : unités SVG par mètre*) si la taille annoncée ne correspond pas. Un SVG fait de rectangles s'ouvre dans le plan simple, pour y ajouter portes et fenêtres.
+
+Avec un plan IFC, SVG ou simple, chaque pièce reçoit un plafonnier allumé par les lumières de sa zone.
+
+### 4.2 Créer un plan simple
+
+Pas de plan ? *Créer un plan simple* (dans **Plan de la maison**) ouvre un éditeur de pièces rectangulaires ; la vue 3D se met à jour derrière.
+
+![Le plan simple : pièces, portes et fenêtres, et la vue 3D derrière](../images/35-plan-simple.jpg)
+
+- **Pièces** : *＋ Pièce* en ajoute une à côté de la précédente, nommée d'après une zone Home Assistant pas encore utilisée. Glissez une pièce pour la déplacer et ses poignées pour la redimensionner : les bords se collent aux pièces voisines, qui partagent alors leur mur. Les champs de la pièce sélectionnée règlent son nom, sa **zone HA**, sa largeur, sa profondeur et sa position.
+- **Portes et fenêtres** : choisissez *＋ Fenêtre*, *＋ Baie vitrée* ou *＋ Porte*, puis cliquez sur le mur de la pièce où la placer. Faites-la glisser le long du mur, et réglez sa largeur, sa hauteur et son allège.
+- **Niveaux** : *＋ Niveau* ajoute un étage qui reprend le contour des pièces du dessous, à renommer et à redécouper ; la hauteur sous plafond se règle par niveau. Le contour du niveau du dessous reste affiché en pointillés.
+- **Toit et orientation** : toit automatique, à deux pans ou plat ; angle du nord (le calage sur le terrain le corrige ensuite).
+
+Le plan s'enregistre tout seul et se rouvre avec *Modifier le plan simple*. Un plan simple remplace un plan importé, après confirmation ; les entités placées, l'arrosage, les clôtures… sont gardés.
+
+### 4.3 Partir de la carte du robot
+
+Si un robot aspirateur a cartographié la maison et qu'un extracteur de carte (Xiaomi Cloud Map Extractor, Roborock Custom Map…) donne ses pièces (attribut `rooms`), le bouton *Plan depuis la carte du robot* crée un plan simple avec ces pièces, à leur taille et à leur place. Ce sont des rectangles approximatifs, et seulement ceux du niveau du robot : ajustez-les, puis ajoutez portes, fenêtres et autres niveaux dans le plan simple.
+
+### 4.4 Récupérer le terrain
 
 Dans **Terrain (MNT)** :
 
@@ -269,6 +294,12 @@ Une pièce qui n'a **qu'une fenêtre** est liée toute seule au capteur de fenê
 
 > La piscine éventuellement dessinée dans Sweet Home 3D est gardée telle quelle.
 
+**Îles** (étang) : *＋ Île (Rectangle)* ou *＋ Île (Forme libre)*, puis dessinez-la dans l'eau comme le contour. Le sol y est gardé, un peu au-dessus de l'eau, avec une berge de galets : on peut y planter un arbre (section **Arbres**) ou y poser des entités.
+
+**Poissons** (étang) : les poissons viennent du catalogue de la maison (la carpe koï pour commencer). Ajoutez un **groupe** par variété, avec son nombre et sa taille : pour 3 carpes rouges, 1 rouge et blanche et 2 jaunes, faites trois groupes (Benigoi × 3, Kohaku × 1, Yamabuki ogon × 2). *Couleurs personnalisées* permet de choisir la couleur du corps, celle des taches, le motif (uni, grandes taches, taches moyennes, petites taches) et des écailles brillantes. Chaque poisson a sa propre robe, toujours la même ; il se promène dans l'eau en évitant les berges et les îles, prend la couleur de l'eau quand il descend, et reste au fond, presque immobile, quand il fait froid (moins de 8 °C).
+
+![Un étang avec son île, son cerisier et ses carpes koï](../images/36-etang-ile-carpes.jpg)
+
 ### 6.8 Robot aspirateur
 
 Pour chaque robot (liste *Robot*) :
@@ -307,7 +338,7 @@ Pour chaque robot (liste *Robot*) :
 
 ### 6.12 Le catalogue des arbres et des objets
 
-Les espèces d'arbres (avec leur aspect à chaque saison) et les objets du jardin ou les meubles dessinés à la place des simples boîtes viennent du [catalogue de la maison](https://github.com/Elwinmage/house-catalog). L'intégration le met à jour toute seule depuis GitHub (appareil *House view catalog* : une entité de mise à jour par section, un interrupteur *Mise à jour automatique*, un bouton *Mettre à jour*) et fonctionne hors ligne avec la copie qu'elle embarque.
+Les espèces d'arbres (avec leur aspect à chaque saison), les objets du jardin ou les meubles dessinés à la place des simples boîtes, et les poissons des étangs viennent du [catalogue de la maison](https://github.com/Elwinmage/house-catalog). L'intégration le met à jour toute seule depuis GitHub (appareil *House view catalog* : une entité de mise à jour par section, un interrupteur *Mise à jour automatique*, un bouton *Mettre à jour*) et fonctionne hors ligne avec la copie qu'elle embarque.
 
 Pour créer **votre propre arbre ou objet**, utilisez l'[éditeur de catalogue](https://github.com/Elwinmage/catalog-editor) : une carte Home Assistant où l'on règle la forme, les couleurs et les saisons en voyant le résultat. Ce que vous enregistrez est utilisé tout de suite par la vue, et vous pouvez ensuite le proposer au catalogue commun (une demande de fusion sur GitHub), pour que tout le monde en profite.
 
@@ -340,7 +371,7 @@ Pour filmer ou présenter la vue **sans montrer votre maison ni votre emplacemen
 
    ![Le logement de démonstration, vide](../images/03-demo-chargee.jpg)
 
-2. Importez `demo-maison.sh3d` (*Télécharger demo-maison.sh3d* dans ⚙) avec *Importer un .sh3d*.
+2. Importez `demo-maison.sh3d` (*Télécharger demo-maison.sh3d* dans ⚙) avec *Importer un plan*.
 3. *Récupérer le terrain* : la récupération passe par ses étapes et apporte un terrain fictif en trois plateaux (verger, maison, jardin avec piscine et étang), sans aucun accès réseau.
 
 Les entités de la démo sont **simulées par la carte** : rien n'est créé dans Home Assistant et rien de votre maison n'apparaît. Un **scénario de la journée** (1 h toutes les 2 s) fait vivre la maison : volets ouverts le matin, arrosage à l'aube, aspirateur dans la matinée, robot de piscine l'après-midi, fenêtres aérées, fuite d'eau avant le dîner, lumières et volets fermés le soir.
@@ -396,6 +427,9 @@ Une étiquette cachée par le toit ou un étage n'est pas affichée (sauf avec *
 
 **La carte du robot n'est pas alignée.**
 Avec l'intégration Roborock officielle, indiquez la base sur la carte d'un clic, puis réglez la rotation. Avec un extracteur de carte (Roborock Custom Map, Xiaomi Cloud Map Extractor), choisissez son entité : la carte se place seule.
+
+**Il n'y a pas de photo aérienne au sol.**
+Dans ⚙ → *Terrain*, vérifiez que *Photo aérienne au sol* est cochée. Si la récupération indique « ground texture unavailable », la raison donnée entre parenthèses vient du service de l'IGN ; relancez la récupération plus tard.
 
 **Je veux montrer la vue sans montrer ma maison.**
 Utilisez le [mode démo](#9-le-mode-démo).

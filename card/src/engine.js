@@ -12,6 +12,7 @@ import {
   createVegetation,
   setCatalog,
   setClimate,
+  catalogFish,
   SPECIES,
 } from './engine/catalog.js';
 import { normalizeEdits, outdoorEdit, isDsmRemoved } from './engine/edits.js';
@@ -24,7 +25,8 @@ import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
 import { buildPools } from './engine/pools-3d.js';
-import { poolValid } from './pools.js';
+import { poolValid, islandsOf } from './pools.js';
+import { pondFish } from './fish.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
 
@@ -175,6 +177,8 @@ export class HouseEngine {
     root.name = 'world';
     scene.add(root);
     const surfaces = [];
+    // furniture drawn with the models of the plan, unless switched off in the setup
+    const models = edits.registration && edits.registration.showModels === false ? null : sd.models || null;
     const w = {
       root,
       sd,
@@ -263,7 +267,7 @@ export class HouseEngine {
           g.add(f);
         }
       }
-      const boxMesh = buildBoxFurnitureMesh(boxes, level.elevation);
+      const boxMesh = buildBoxFurnitureMesh(boxes, level.elevation, models);
       if (boxMesh) g.add(boxMesh);
 
       for (const m of walls.metas) w.openings.register(m, g);
@@ -302,11 +306,18 @@ export class HouseEngine {
     const pools = edits.pools || [];
     const digs = w.terrain
       ? w.terrain.digs
-      : pools.filter((p) => poolValid(p) && p.frame === 'plan').map((p) => ({ id: p.id, poly: p.pts, rim: 0 }));
+      : pools
+          .filter((p) => poolValid(p) && p.frame === 'plan')
+          .map((p) => ({ id: p.id, poly: p.pts, islands: islandsOf(p).map((i) => i.pts), rim: 0, flat: true }));
     sd.site.holes = w.terrain ? [] : digs.map((d) => d.poly);
     w.site = buildSite(sd.site, surfaces, w.terrain);
     root.add(w.site.group);
-    w.pools = buildPools(digs.map((d) => ({ ...pools.find((p) => p.id === d.id), ...d })));
+    w.pools = buildPools(
+      digs.map((d) => {
+        const p = pools.find((x) => x.id === d.id);
+        return { ...p, ...d, fishList: p && p.kind === 'pond' ? pondFish(p.fish, catalogFish()) : [] };
+      }),
+    );
     w.pools.setRobots(this._poolRobots);
     root.add(w.pools.group);
 
@@ -340,7 +351,7 @@ export class HouseEngine {
       }
       w.outdoor.push({ id: it.id, name: it.name, sh3dLevel: it.sh3dLevel, ground, ...e });
       if (e.hidden) continue;
-      const mesh = buildBoxFurnitureMesh([{ ...it, at: [x, z], rot }], ground + e.dy);
+      const mesh = buildBoxFurnitureMesh([{ ...it, at: [x, z], rot }], ground + e.dy, models);
       if (mesh) og.add(mesh);
     }
     root.add(og);
@@ -1513,7 +1524,7 @@ export class HouseEngine {
     if (this.world.irrigation.count) this.world.irrigation.update(this.irrigState, Date.now(), this.irrigOpts);
     if (this.roomFx || this._fxDirty) this._animateFx(now / 1000);
     if (this.world.openings.busy) this.world.openings.tick(realDt);
-    if (this.world.pools.items.length) this.world.pools.tick(realDt, now / 1000);
+    if (this.world.pools.items.length) this.world.pools.tick(realDt, now / 1000, (this.env.state.temp ?? 15) < 8);
     this._animateRobot(realDt, now / 1000);
     if (this._slots) for (const s of this._slots.values()) this._animateRobot.call(s, realDt, now / 1000);
     this.controls.update();

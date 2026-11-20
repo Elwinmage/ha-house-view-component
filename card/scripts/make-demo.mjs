@@ -570,9 +570,28 @@ const edits = {
         return [Math.round((26 + Math.cos(a) * r * 1.3) * 100) / 100, Math.round((34 + Math.sin(a) * r) * 100) / 100];
       }),
       frame: 'plan',
+      // a small island off the middle, for a tree
+      islands: [
+        {
+          shape: 'free',
+          frame: 'plan',
+          pts: Array.from({ length: 10 }, (_, i) => {
+            const a = (i / 10) * Math.PI * 2;
+            const r = 0.95 + 0.15 * Math.sin(2 * a);
+            return [Math.round((26.6 + Math.cos(a) * r * 1.2) * 100) / 100, Math.round((34.3 + Math.sin(a) * r) * 100) / 100];
+          }),
+        },
+      ],
       color: '#3d6b4a',
       depth: 0.9,
       robot: '',
+      // koi of the house catalog: 3 red, 1 red and white, 2 yellow, 2 black, red and white
+      fish: [
+        { id: 'k1', species: 'koi', variety: 'benigoi', count: 3 },
+        { id: 'k2', species: 'koi', variety: 'kohaku', count: 1, length: 0.6 },
+        { id: 'k3', species: 'koi', variety: 'yamabuki-ogon', count: 2 },
+        { id: 'k4', species: 'koi', variety: 'showa', count: 2, length: 0.4 },
+      ],
     },
   ],
   irrigation: {
@@ -648,7 +667,7 @@ const edits = {
   ],
   room_views: {},
   pool: { dy: 0 },
-  trees: { removed: { dsm: [], sd: [] }, added: [] },
+  trees: { removed: { dsm: [], sd: [] }, added: [{ species: 'cherry-tree', at: [26.6, 34.3], h: 3.2 }] }, // the cherry tree of the island
 };
 writeFileSync(new URL('demo-edits.json', OUT), `${JSON.stringify(edits, null, 1)}\n`);
 console.log('demo written to', OUT.pathname);

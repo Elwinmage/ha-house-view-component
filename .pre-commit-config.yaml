@@ -34,8 +34,8 @@ repos:
         name: vitest (card)
         entry: vitest run --root card
         language: node
-        # three: needed by the modules under test; keep the version in line with card/package.json
-        additional_dependencies: ["vitest@3.2.4", "three@0.180.0"]
+        # three, fflate: needed by the modules under test; keep the versions in line with card/package.json
+        additional_dependencies: ["vitest@3.2.4", "three@0.180.0", "fflate@0.8.3"]
         files: ^card/(src|test)/
         pass_filenames: false
       - id: check-translations

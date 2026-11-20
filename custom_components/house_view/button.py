@@ -1,4 +1,4 @@
-"""Entities of the catalog (trees, objects): see catalog.py."""
+"""Entities of the catalog (trees, objects, fish): see catalog.py."""
 
 from __future__ import annotations
 

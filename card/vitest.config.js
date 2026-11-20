@@ -8,6 +8,10 @@ const hookDir = (process.env.NODE_PATH || '')
   .split(':')
   .map((p) => join(p, 'three'))
   .find((p) => existsSync(join(p, 'build', 'three.module.js')));
+const fflateDir = (process.env.NODE_PATH || '')
+  .split(':')
+  .map((p) => join(p, 'fflate'))
+  .find((p) => existsSync(join(p, 'esm', 'browser.js')));
 
 export default {
   resolve: {
@@ -17,6 +21,7 @@ export default {
             { find: /^three$/, replacement: join(hookDir, 'build', 'three.module.js') },
             // three/addons/* -> examples/jsm/* (package exports are not applied through NODE_PATH)
             { find: /^three\/addons\/(.*)$/, replacement: `${join(hookDir, 'examples', 'jsm')}/$1` },
+            ...(fflateDir ? [{ find: /^fflate$/, replacement: join(fflateDir, 'esm', 'browser.js') }] : []),
           ]
         : [],
   },

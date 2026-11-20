@@ -11,6 +11,7 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { catalogTreeFor } from './catalog.js';
 import { pointInPolygon, centroid } from './geometry.js';
+import { bakeModel, encodeModel, hexOf, modelFiles, parseMtl, parseObj } from './sh3d-models.js';
 
 const OUTDOOR_NAME = /abri|cabanon|remise|portail|portillon|poteau|barri[eè]re|garage|carport|pergola|pont|ponton|bassin|piscine|pool/i;
 const CM = 0.01;
@@ -28,6 +29,17 @@ const num = (el, name, def = 0) => {
 const kids = (el, tag) => Array.from(el.children).filter((c) => c.tagName === tag);
 
 // ---------------------------------------------------------------- zip
+
+/** Every entry of a .sh3d archive (Home.xml, models, textures): { name: bytes }, or null for a raw Home.xml. */
+export function readSh3dFiles(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] === 0x3c || (bytes[0] === 0xef && bytes[3] === 0x3c)) return null;
+  try {
+    return unzipSync(bytes);
+  } catch {
+    return null;
+  }
+}
 
 export function readHomeXml(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -97,6 +109,119 @@ const guessColor = (name) => {
   for (const [re, c] of COLOR_RULES) if (re.test(n)) return c;
   return '#c8bfae';
 };
+
+// ---------------------------------------------------------------- models of the pieces
+
+/** What the plan says of the model of a piece: { ref, rotation, mirrored, color, colors } (no model: null). */
+function modelOf(el) {
+  const ref = el.getAttribute('model');
+  if (!ref) return null;
+  const rot = (el.getAttribute('modelRotation') || '').split(/\s+/).map(Number);
+  const colors = {};
+  for (const m of kids(el, 'material')) {
+    const c = hex(m.getAttribute('color'));
+    if (c && m.getAttribute('name')) colors[m.getAttribute('name')] = c;
+  }
+  return {
+    ref,
+    rotation: rot.length === 9 && rot.every(Number.isFinite) ? rot : null,
+    mirrored: el.getAttribute('modelMirrored') === 'true',
+    color: hex(el.getAttribute('color')),
+    colors,
+  };
+}
+
+/** Colour of a textured material: its colour times the mean colour of its picture (when it could be read). */
+function texturedColors(mtl, dir, textures) {
+  for (const m of Object.values(mtl)) {
+    const mean = m.texture && (textures[dir + m.texture] || textures[m.texture]);
+    if (!mean) continue;
+    const kd = [1, 3, 5].map((k) => parseInt(m.color.slice(k, k + 2), 16) / 255);
+    m.color = hexOf(kd.map((v, k) => v * mean[k]));
+  }
+  return mtl;
+}
+
+/**
+ * Mean colour of each picture of the archive (textures of the models), [r, g, b] from 0 to 1; read in a browser only
+ * (nothing elsewhere).
+ */
+export async function textureMeans(files, limit = 300) {
+  const out = {};
+  if (!files || typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') return out;
+  const canvas = new OffscreenCanvas(8, 8);
+  const g = canvas.getContext('2d', { willReadFrequently: true });
+  let n = 0;
+  for (const [name, bytes] of Object.entries(files)) {
+    if (!/\.(jpe?g|png|gif|bmp)$/i.test(name) || n++ >= limit) continue;
+    try {
+      const bmp = await createImageBitmap(new Blob([bytes]));
+      g.clearRect(0, 0, 8, 8);
+      g.drawImage(bmp, 0, 0, 8, 8);
+      const d = g.getImageData(0, 0, 8, 8).data;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k];
+      out[name] = sum.map((v) => v / 64 / 255);
+    } catch {
+      // a picture that cannot be read: the colour of the material stays
+    }
+  }
+  return out;
+}
+
+/** Triangles kept for all the models of a plan, shared among them (fewer for each when there are many). */
+export const MODELS_BUDGET = 90000;
+
+/**
+ * The models of the pieces, from the files of the .sh3d (null: none), into scene.models; each piece drawn with a
+ * model gets `model` (its key) and `mirrored`. Pieces whose model cannot be read (another format than OBJ) stay
+ * boxes, and so do those whose model is a plain box. Returns the counts of pieces drawn with their model and of those
+ * whose model could not be read.
+ */
+export function attachModels(scene, files, textures = {}) {
+  const items = [...scene.furniture, ...scene.outdoor];
+  const wanted = new Map();
+  for (const it of items) {
+    const m = it._model;
+    delete it._model;
+    if (!m || !files) continue;
+    const key = [m.ref, (m.rotation || []).join(','), m.color || '', JSON.stringify(m.colors)].join('|');
+    if (!wanted.has(key)) wanted.set(key, { ...m, items: [] });
+    wanted.get(key).items.push({ it, mirrored: m.mirrored });
+  }
+  if (!wanted.size) return { drawn: 0, unreadable: 0 };
+  const decode = (u8) => strFromU8(u8);
+  const maxTris = Math.min(2500, Math.max(300, Math.floor(MODELS_BUDGET / wanted.size)));
+  const models = {};
+  const parsed = new Map();
+  let drawn = 0;
+  let unreadable = 0;
+  let n = 0;
+  for (const m of wanted.values()) {
+    let src = parsed.get(m.ref);
+    if (src === undefined) {
+      const f = modelFiles(files, m.ref, decode);
+      src = f ? { obj: parseObj(f.obj), mtl: texturedColors(parseMtl(f.mtl), f.dir, textures) } : null;
+      parsed.set(m.ref, src);
+    }
+    const baked = src && bakeModel(src.obj, src.mtl, { rotation: m.rotation, colors: m.colors, color: m.color, maxTris });
+    if (!baked) {
+      unreadable += m.items.length;
+      continue;
+    }
+    // a plain box (12 triangles at most) says nothing more than the box: the object of the catalog may draw it better
+    if (baked.idx.length <= 36) continue;
+    const key = `m${++n}`;
+    models[key] = encodeModel(baked);
+    for (const { it, mirrored } of m.items) {
+      it.model = key;
+      if (mirrored) it.mirrored = true;
+      drawn++;
+    }
+  }
+  if (n) scene.models = models;
+  return { drawn, unreadable };
+}
 
 // ---------------------------------------------------------------- parser
 
@@ -335,10 +460,21 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
       if (outdoor.some((o) => o.name === (name || 'objet') && Math.hypot(o.at[0] - x, o.at[1] - z) < 0.05 && Math.abs(o.size[0] - w) < 0.05)) continue;
       const n = (outdoorCount[name] = (outdoorCount[name] || 0) + 1);
       // id = name + occurrence: stable when the piece is moved in SH3D, so manual edits survive a re-import
-      outdoor.push({ id: `${name || 'objet'}#${n}`, name: name || 'objet', at: [x, z], rot: angle, size: [w, h, d], elevation: 0, color, colored, sh3dLevel: lv.name });
+      outdoor.push({
+        id: `${name || 'objet'}#${n}`,
+        name: name || 'objet',
+        at: [x, z],
+        rot: angle,
+        size: [w, h, d],
+        elevation: 0,
+        color,
+        colored,
+        sh3dLevel: lv.name,
+        _model: modelOf(el),
+      });
       continue;
     }
-    furniture.push({ kind: 'box', level: lv.id, at: [x, z], rot: angle, size: [w, h, d], elevation: elev, color, colored, name });
+    furniture.push({ kind: 'box', level: lv.id, at: [x, z], rot: angle, size: [w, h, d], elevation: elev, color, colored, name, _model: modelOf(el) });
   }
 
   // light radius from the size of its room
@@ -427,5 +563,10 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
 
 export async function importSh3d(file) {
   const buf = await file.arrayBuffer();
-  return parseHome(readHomeXml(buf), file.name);
+  const out = parseHome(readHomeXml(buf), file.name);
+  const files = readSh3dFiles(buf);
+  const { drawn, unreadable } = attachModels(out.scene, files, await textureMeans(files));
+  out.report.counts['modèles 3D'] = drawn;
+  if (unreadable) out.report.warnings.push(`${unreadable} meuble(s) au modèle illisible (format autre qu'OBJ) : dessinés en boîtes`);
+  return out;
 }

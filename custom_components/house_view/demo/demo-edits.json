@@ -395,9 +395,85 @@
     ]
    ],
    "frame": "plan",
+   "islands": [
+    {
+     "shape": "free",
+     "frame": "plan",
+     "pts": [
+      [
+       27.74,
+       34.3
+      ],
+      [
+       27.66,
+       34.94
+      ],
+      [
+       26.98,
+       35.29
+      ],
+      [
+       26.28,
+       35.12
+      ],
+      [
+       25.82,
+       34.77
+      ],
+      [
+       25.46,
+       34.3
+      ],
+      [
+       25.54,
+       33.66
+      ],
+      [
+       26.22,
+       33.31
+      ],
+      [
+       26.92,
+       33.48
+      ],
+      [
+       27.38,
+       33.83
+      ]
+     ]
+    }
+   ],
    "color": "#3d6b4a",
    "depth": 0.9,
-   "robot": ""
+   "robot": "",
+   "fish": [
+    {
+     "id": "k1",
+     "species": "koi",
+     "variety": "benigoi",
+     "count": 3
+    },
+    {
+     "id": "k2",
+     "species": "koi",
+     "variety": "kohaku",
+     "count": 1,
+     "length": 0.6
+    },
+    {
+     "id": "k3",
+     "species": "koi",
+     "variety": "yamabuki-ogon",
+     "count": 2
+    },
+    {
+     "id": "k4",
+     "species": "koi",
+     "variety": "showa",
+     "count": 2,
+     "length": 0.4
+    }
+   ]
   }
  ],
  "irrigation": {
@@ -625,6 +701,15 @@
    "dsm": [],
    "sd": []
   },
-  "added": []
+  "added": [
+   {
+    "species": "cherry-tree",
+    "at": [
+     26.6,
+     34.3
+    ],
+    "h": 3.2
+   }
+  ]
  }
 }

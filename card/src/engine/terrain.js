@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { SPECIES } from './catalog.js';
 import { pointInPolygon } from './geometry.js';
 import { compileOps, WALL_T } from './terrain-edit.js';
-import { poolValid, centroidOf, inPolygon, nearestOnOutline } from '../pools.js';
+import { poolValid, centroidOf, inPolygon, nearestOnOutline, islandsOf } from '../pools.js';
 
 const smooth01 = (u) => u * u * (3 - 2 * u);
 
@@ -178,17 +178,24 @@ export function buildTerrain(t, sd, cfg) {
   const digs = (cfg.pools || [])
     .filter(poolValid)
     .map((pl) => {
-      const conv = pl.frame === 'plan' ? (x, z) => [x, z] : gridToPlan(t, cfg);
+      const toPlanOf = (frame) => (frame === 'plan' ? (x, z) => [x, z] : gridToPlan(t, cfg));
+      const conv = toPlanOf(pl.frame);
       const poly = pl.pts.map(([x, z]) => conv(x, z));
       const [cx, cz] = centroidOf(poly);
-      return { id: pl.id, poly, rim: raw1(cx, cz) };
+      // islands of a pond: ground kept inside the water, a little above it
+      const islands = islandsOf(pl).map((i) => i.pts.map(([x, z]) => toPlanOf(i.frame || pl.frame)(x, z)));
+      return { id: pl.id, poly, islands, rim: raw1(cx, cz) };
     });
+  const ISLAND = 0.1; // height of the bank of an island above the rim; the middle rises up to 0.35 m more
+  const inIsland = (d, x, z) => d.islands.find((i) => inPolygon(i, x, z)) || null;
   const RIM = 0.6; // flat band around the water
   const FEATHER = 2;
   const raw = digs.length
     ? (x, z) => {
         let h = raw1(x, z);
         for (const d of digs) {
+          const isl = d.islands.length ? inIsland(d, x, z) : null;
+          if (isl) return d.rim + ISLAND + 0.35 * smooth01(Math.min(1, nearestOnOutline(isl, x, z).d / 2));
           const q = inPolygon(d.poly, x, z) ? 0 : nearestOnOutline(d.poly, x, z).d;
           if (q >= RIM + FEATHER) continue;
           const k = q <= RIM ? 1 : 1 - smooth01((q - RIM) / FEATHER);
@@ -198,8 +205,16 @@ export function buildTerrain(t, sd, cfg) {
       }
     : raw1;
   // vertices near an outline are moved onto it (just outside), so the cut follows the drawn shape
+  // (islands: just inside them, the ground being kept there)
   const snapPool = (x, z) => {
     for (const d of digs) {
+      for (const isl of d.islands) {
+        const q = nearestOnOutline(isl, x, z);
+        if (q.d >= cell * 0.75) continue;
+        if (q.d < 1e-6) return [x, z];
+        const side = inPolygon(isl, x, z) ? 1 : -1;
+        return [q.px + ((x - q.px) / q.d) * 0.03 * side, q.pz + ((z - q.pz) / q.d) * 0.03 * side];
+      }
       const q = nearestOnOutline(d.poly, x, z);
       if (q.d >= cell * 0.75) continue;
       const out = inPolygon(d.poly, x, z) ? -1 : 1;
@@ -270,7 +285,7 @@ export function buildTerrain(t, sd, cfg) {
         // centre of the (snapped) cell inside a drawn pool: cut out
         const mx = (pos[a * 3] + pos[b * 3] + pos[c * 3] + pos[d * 3]) / 4;
         const mz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2] + pos[d * 3 + 2]) / 4;
-        if (digs.some((g) => inPolygon(g.poly, mx, mz))) continue;
+        if (digs.some((g) => inPolygon(g.poly, mx, mz) && !inIsland(g, mx, mz))) continue;
       }
       idx.push(a, c, b, b, c, d); // counter-clockwise seen from +y
     }

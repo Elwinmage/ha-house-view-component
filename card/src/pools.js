@@ -67,6 +67,11 @@ export function newPool(kind, id) {
   return { id, kind: k, shape: 'rect', pts: [], color: POOL_KINDS[k].color, depth: POOL_KINDS[k].depth, robot: '' };
 }
 
+/** Islands of a pond with a usable outline: [{ pts, frame }] (same rule as a pool). */
+export function islandsOf(p) {
+  return (p && Array.isArray(p.islands) ? p.islands : []).filter((i) => poolValid(i));
+}
+
 /** A usable pool: at least 3 points and a positive area. */
 export function poolValid(p) {
   return !!p && Array.isArray(p.pts) && p.pts.length >= 3 && Math.abs(polygonArea(p.pts)) > 0.05;
