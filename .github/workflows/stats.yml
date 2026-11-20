@@ -18,7 +18,7 @@ jobs:
         run: |
           # Home Assistant analytics only counts opt-in installations: x4 gives an estimate
           DATA=$(curl -s https://analytics.home-assistant.io/custom_integrations.json)
-          REAL_COUNT=$(echo "$DATA" | jq '.house_view.total // 0')
+          REAL_COUNT=$(echo "$DATA" | jq '.house_view.total // 2')
           ESTIMATED_COUNT=$((REAL_COUNT * 4))
           mkdir -p ./badges
           echo "{\"estimated\": $ESTIMATED_COUNT}" > ./badges/stats.json
