@@ -1,0 +1,91 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Een woning toevoegen",
+        "description": "Elke woning heeft haar plattegrond, haar terrein en haar correcties; een kaart toont er één van. De locatie bepaalt de zon en het terrein.",
+        "data": {
+          "name": "Naam van de woning",
+          "location": "Locatie"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Geef de woning een naam.",
+      "name_taken": "Een andere woning heeft al deze naam."
+    },
+    "abort": {
+      "demo_exists": "De demowoning bestaat al."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "House View-opties",
+        "menu_options": {
+          "github": "GitHub-back-up",
+          "lock": "Bewerkingsbeveiliging",
+          "demo": "Demo"
+        }
+      },
+      "github": {
+        "title": "GitHub-back-up",
+        "description": "Privé-repository die de knoppen “Back-up naar GitHub” / “Herstellen” in de instellingen van de kaart gebruiken. Laat de repository leeg om dit uit te schakelen.",
+        "data": {
+          "repo": "Repository (eigenaar/naam)",
+          "token": "Token (fine-grained, Contents: lezen en schrijven)",
+          "branch": "Branch",
+          "path": "Map in de repository"
+        }
+      },
+      "lock": {
+        "title": "Bewerkingsbeveiliging",
+        "description": "Wachtwoord dat de kaart vraagt voordat de editor (✎) en de instellingen (⚙) openen, om onbedoelde wijzigingen te voorkomen. Huidige status: {status}. Laat het veld leeg om het huidige wachtwoord te behouden. De kaart vraagt er na 10 minuten zonder wijziging opnieuw om.",
+        "data": {
+          "password": "Nieuw wachtwoord (minstens 4 tekens)",
+          "remove": "De beveiliging verwijderen"
+        }
+      },
+      "demo": {
+        "title": "Demowoning",
+        "description": "Verberg de demowoning: de instellingen van de kaart bieden niet langer aan om ze te starten. Huidige status: {status}. Een reeds geladen demowoning blijft beschikbaar.",
+        "data": {
+          "hide_demo": "De demo verbergen"
+        }
+      }
+    },
+    "error": {
+      "bad_repo": "Gebruik de vorm eigenaar/naam.",
+      "token_required": "Een token is vereist.",
+      "repo_public": "Deze repository is openbaar: gebruik een privérepository (ze bevat de plattegrond van je huis).",
+      "cannot_connect": "Repository niet bereikbaar met dit token.",
+      "too_short": "Minstens 4 tekens."
+    }
+  },
+  "exceptions": {
+    "catalog_unknown": {
+      "message": "De catalogus is nog niet gecontroleerd."
+    },
+    "catalog_incompatible": {
+      "message": "Catalogus {version} vereist versie {minimum} van de integratie of nieuwer."
+    },
+    "catalog_install_failed": {
+      "message": "Catalogusupdate mislukt: {error}"
+    },
+    "catalog_check_failed": {
+      "message": "Cataloguscontrole mislukt: {error}"
+    }
+  },
+  "entity": {
+    "switch": {
+      "catalog_auto_update": {
+        "name": "Automatische update"
+      }
+    },
+    "button": {
+      "catalog_update_now": {
+        "name": "Nu bijwerken"
+      }
+    }
+  }
+}

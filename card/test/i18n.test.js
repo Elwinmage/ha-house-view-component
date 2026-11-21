@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { T, makeT } from '../src/i18n.js';
 
-const LANGS = ['fr', 'es', 'de', 'it', 'pl', 'pt'];
+const LANGS = ['fr', 'es', 'de', 'it', 'pl', 'pt', 'nl'];
 
 describe('card interface languages', () => {
   for (const lang of LANGS) {

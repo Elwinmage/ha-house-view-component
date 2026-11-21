@@ -186,7 +186,7 @@ describe('trees', () => {
 
   it('tells what it can draw', () => {
     expect(drawableTree(OAK)).toBe(true);
-    for (const tree of Object.values(TREES)) expect(drawableTree(tree)).toBe(true);
+    for (const [id, tree] of Object.entries(TREES)) expect(drawableTree(tree), id).toBe(true);
     const broken = [
       null,
       {},

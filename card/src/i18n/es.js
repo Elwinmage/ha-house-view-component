@@ -2,7 +2,7 @@
 export default {
   loading: 'Cargando la vista…',
   empty: 'Todavía no se ha guardado ningún plano.',
-  empty_admin: 'Abra la configuración (⚙) para importar su plano de Sweet Home 3D.',
+  empty_admin: 'Abra la configuración (⚙) para importar su plano (Sweet Home 3D, IFC o SVG) o dibujar uno sencillo.',
   ed_sec_weather: 'Hora y tiempo',
   ed_sec_display: 'Visualización',
   ed_sec_lights: 'Luces',
@@ -560,7 +560,7 @@ export default {
   sea_tide_hint:
     'Hora de una pleamar real de su puerto (tablas de mareas): la marea de la vista se ajusta a ella y sigue la fecha real (dos pleamares al día que se retrasan unos 50 min, mareas vivas en luna nueva y llena). La amplitud de arriba es la de las mareas vivas. Déjelo vacío para una marea aproximada.',
   pools_hint:
-    'Trace el vaso desde arriba (rectángulo a partir de dos esquinas, o forma libre punto a punto): el terreno se excava hasta su profundidad y el agua se mueve. La piscina del plano de Sweet Home 3D se queda como está.',
+    'Trace el vaso desde arriba (rectángulo a partir de dos esquinas, o forma libre punto a punto): el terreno se excava hasta su profundidad y el agua se mueve. La piscina del plano importado se queda como está.',
   pool_pool: 'Piscina',
   pool_pond: 'Estanque',
   pool_name: 'Nombre',
@@ -683,4 +683,10 @@ export default {
   compass: 'N,NE,E,SE,S,SO,O,NO',
   sim_temp: 'Temperatura',
   sim_snow: 'Nieve en el suelo y en el tejado',
+  weather_clear: 'Despejado',
+  weather_cloudy: 'Nublado',
+  weather_rain: 'Lluvia',
+  weather_storm: 'Tormenta',
+  weather_snow: 'Nieve',
+  weather_fog: 'Niebla',
 };

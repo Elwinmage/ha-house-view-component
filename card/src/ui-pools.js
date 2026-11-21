@@ -164,7 +164,7 @@ function renderPoolEditor(card, p) {
       ${['rect', 'free'].map(
         (s) =>
           html`<button
-            class=${D && !D.island && D.shape === s ? 'on' : ''}
+            class=${(D && !D.island ? D.shape : p.shape || 'rect') === s ? 'on' : ''}
             @click=${() => {
               p.shape = s;
               drawTool(card, p);

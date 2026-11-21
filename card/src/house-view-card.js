@@ -2652,7 +2652,7 @@ class HouseViewCard extends LitElement {
               snowCover: undefined,
             })}
         >
-          ${Object.entries(WEATHER_PRESETS).map(([k, p]) => html`<option value=${k} ?selected=${k === s.weather}>${p.label}</option>`)}
+          ${Object.keys(WEATHER_PRESETS).map((k) => html`<option value=${k} ?selected=${k === s.weather}>${t(`weather_${k}`)}</option>`)}
         </select></label
       >
       ${this._range(t('sim_cloud'), s.cloud ?? st.cloud ?? 0, 0, 1, 0.01, (v) => this._setSim({ cloud: v }), pct, true)}
@@ -2693,7 +2693,7 @@ class HouseViewCard extends LitElement {
       <label>${t('preview_season')}</label>
       <div class="chips">${seasonsOf(this._climate).map((k) => chip('season', k, t(`season_${k}`)))}</div>
       <label>${t('preview_weather')}</label>
-      <div class="chips">${PREVIEW.weather.map((k) => chip('weather', k, WEATHER_PRESETS[k].label))}</div>
+      <div class="chips">${PREVIEW.weather.map((k) => chip('weather', k, t(`weather_${k}`)))}</div>
       <label>${t('preview_hour')}</label>
       <div class="chips">${Object.keys(PREVIEW.hour).map((k) => chip('hour', k, t(`hour_${k}`)))}</div>
       ${this._preview ? html`<button @click=${() => this._endPreview()}>${t('preview_live')}</button>` : nothing}
@@ -2930,7 +2930,7 @@ class HouseViewCard extends LitElement {
                 ${t('preview')} :
                 ${[
                   this._preview.season && t(`season_${this._preview.season}`),
-                  this._preview.weather && WEATHER_PRESETS[this._preview.weather].label,
+                  this._preview.weather && t(`weather_${this._preview.weather}`),
                   this._preview.hour && t(`hour_${this._preview.hour}`),
                 ]
                   .filter(Boolean)
@@ -3982,6 +3982,15 @@ class HouseViewCard extends LitElement {
     :is(.panel, .win) button:disabled {
       opacity: 0.4;
       cursor: default;
+    }
+    /* selected choice: must come after the generic button rule above, which has the same specificity */
+    :is(.panel, .win) button.on:not(.x),
+    :is(.panel, .win) button[aria-pressed='true'] {
+      background: var(--primary-color, #03a9f4);
+      border-color: #fff;
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 0 0 1px var(--primary-color, #03a9f4);
     }
     :is(.panel, .win) .file input {
       display: none;

@@ -140,6 +140,30 @@ function weepingSolids(top, radius, bottom) {
   return solids;
 }
 
+/** Fronds of a palm: the number around the trunk. */
+export const FRONDS = 9;
+
+/**
+ * The crown of a palm: a tuft at the top of the trunk and fronds that leave it, rise a little and droop at their tip
+ * (each one two flat blobs along its length, turned about the vertical axis by `yaw`).
+ */
+function palmSolids(top, radius, bottom) {
+  const span = Math.max(0.5, top - bottom);
+  const t = Math.min(span, radius * 0.8);
+  const solids = [{ kind: 'blob', at: [0, top - 0.25 * t, 0], size: [0.28 * radius, 0.3 * t, 0.28 * radius] }];
+  for (let i = 0; i < FRONDS; i++) {
+    const a = (i / FRONDS) * Math.PI * 2 + (i % 2) * 0.18;
+    const lift = i % 2 ? 0.05 : 0.2; // two ranks: the upper fronds rise, the lower ones droop
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const at = (reach, drop) => [reach * radius * c, top - drop * t, reach * radius * s];
+    solids.push({ kind: 'blob', at: at(0.28, 0.1 - lift), size: [0.32 * radius, 0.08 * t, 0.15 * radius], yaw: -a });
+    solids.push({ kind: 'blob', at: at(0.62, 0.5 - lift), size: [0.34 * radius, 0.07 * t, 0.14 * radius], yaw: -a });
+    solids.push({ kind: 'blob', at: at(0.98, 1.2 - lift), size: [0.26 * radius, 0.06 * t, 0.1 * radius], yaw: -a });
+  }
+  return solids;
+}
+
 /**
  * The solids of a full crown, for a tree of the default height: blobs `{ kind: 'blob', at: [x, y, z], size: [rx, ry,
  * rz] }` filling the box between the top of the trunk and the top of the tree for a round shape, stacked cones
@@ -160,6 +184,7 @@ export function crownSolids(tree) {
     }));
   }
   if (tree.shape === 'weeping') return weepingSolids(top, radius, bottom);
+  if (tree.shape === 'palm') return palmSolids(top, radius, bottom);
   const step = (2 * half) / TIERS;
   return Array.from({ length: TIERS }, (_, tier) => ({
     kind: 'cone',
@@ -218,7 +243,7 @@ export function varietyTree(tree, variety) {
 }
 
 /** Shapes of crown the engine draws. */
-export const SHAPES_OF_TREES = ['round', 'conical', 'weeping'];
+export const SHAPES_OF_TREES = ['round', 'conical', 'weeping', 'palm'];
 
 /** A descriptor the engine can draw: the fields the geometry reads are there (an entry of a newer format is skipped). */
 export function drawableTree(tree) {

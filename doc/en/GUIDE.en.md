@@ -1,6 +1,6 @@
 # House View: installation, setup and user guide
 
-House View shows your house in 3D in Home Assistant. Your Sweet Home 3D plan is laid on the real relief of the ground and lit by the sun of the moment. The view also shows the weather, the seasons of the plants, the lights of each room and the state of your devices (shutters, windows, robot vacuum, watering, pool, alarms…).
+House View shows your house in 3D in Home Assistant. Your plan (Sweet Home 3D, IFC or SVG, or a simple plan drawn in the card) is laid on the real relief of the ground and lit by the sun of the moment. The view also shows the weather, the seasons of the plants, the lights of each room and the state of your devices (shutters, windows, robot vacuum, watering, pool, alarms…).
 
 All the pictures of this guide were taken on the **demo home** that comes with the integration: a fictitious house, terrain and entities. They show the French interface of the card; the card is also in English, and the labels quoted below are the English ones.
 

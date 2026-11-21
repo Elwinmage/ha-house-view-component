@@ -3,6 +3,7 @@ import de from './i18n/de.js';
 import it from './i18n/it.js';
 import pl from './i18n/pl.js';
 import pt from './i18n/pt.js';
+import nl from './i18n/nl.js';
 
 export const T = {
   es,
@@ -10,10 +11,11 @@ export const T = {
   it,
   pl,
   pt,
+  nl,
   fr: {
     loading: 'Chargement de la vue…',
     empty: 'Aucun plan n’est encore enregistré.',
-    empty_admin: 'Ouvrez la configuration (⚙) pour importer votre plan Sweet Home 3D.',
+    empty_admin: 'Ouvrez la configuration (⚙) pour importer votre plan (Sweet Home 3D, IFC ou SVG), ou en dessiner un simple.',
     ed_sec_weather: 'Heure et météo',
     ed_sec_display: 'Affichage',
     ed_sec_lights: 'Lumières',
@@ -571,7 +573,7 @@ export const T = {
     sea_tide_hint:
       "Heure d'une vraie pleine mer de votre port (annuaire des marées, SHOM…) : la marée de la vue est alors calée dessus et suit la date réelle (2 pleines mers par jour qui reculent d'environ 50 min, vives-eaux à la nouvelle et pleine lune). L'amplitude ci-dessus est celle des vives-eaux. Laissez vide pour une marée approximative.",
     pools_hint:
-      "Dessinez le bassin vu de dessus (rectangle par deux coins, ou forme libre point par point) : le terrain est creusé de sa profondeur et l'eau s'anime. La piscine du plan Sweet Home 3D reste telle quelle.",
+      "Dessinez le bassin vu de dessus (rectangle par deux coins, ou forme libre point par point) : le terrain est creusé de sa profondeur et l'eau s'anime. La piscine du plan importé reste telle quelle.",
     pool_pool: 'Piscine',
     pool_pond: 'Étang',
     pool_name: 'Nom',
@@ -694,11 +696,17 @@ export const T = {
     compass: 'N,NE,E,SE,S,SO,O,NO',
     sim_temp: 'Température',
     sim_snow: 'Neige au sol et sur le toit',
+    weather_clear: 'Dégagé',
+    weather_cloudy: 'Nuageux',
+    weather_rain: 'Pluie',
+    weather_storm: 'Orage',
+    weather_snow: 'Neige',
+    weather_fog: 'Brouillard',
   },
   en: {
     loading: 'Loading the view…',
     empty: 'No plan has been saved yet.',
-    empty_admin: 'Open the setup (⚙) to import your Sweet Home 3D plan.',
+    empty_admin: 'Open the setup (⚙) to import your plan (Sweet Home 3D, IFC or SVG), or draw a simple one.',
     ed_sec_weather: 'Time and weather',
     ed_sec_display: 'Display',
     ed_sec_lights: 'Lights',
@@ -1252,7 +1260,7 @@ export const T = {
     sea_tide_hint:
       'Time of a real high water of your harbour (tide tables): the tide of the view is then set on it and follows the real date (two high waters a day sliding by about 50 min, springs at new and full moon). The amplitude above is the spring range. Leave empty for an approximate tide.',
     pools_hint:
-      'Draw the basin from above (rectangle from two corners, or free shape point by point): the ground is dug to its depth and the water moves. The pool of the Sweet Home 3D plan stays as it is.',
+      'Draw the basin from above (rectangle from two corners, or free shape point by point): the ground is dug to its depth and the water moves. The pool of the imported plan stays as it is.',
     pool_pool: 'Pool',
     pool_pond: 'Pond',
     pool_name: 'Name',
@@ -1375,6 +1383,12 @@ export const T = {
     compass: 'N,NE,E,SE,S,SW,W,NW',
     sim_temp: 'Temperature',
     sim_snow: 'Snow on the ground and roof',
+    weather_clear: 'Clear',
+    weather_cloudy: 'Cloudy',
+    weather_rain: 'Rain',
+    weather_storm: 'Storm',
+    weather_snow: 'Snow',
+    weather_fog: 'Fog',
   },
 };
 

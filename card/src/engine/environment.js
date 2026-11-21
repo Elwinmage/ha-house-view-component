@@ -17,12 +17,12 @@ export function sunPosition(doy, hour, latDeg, northOffsetDeg = 0) {
 }
 
 export const WEATHER_PRESETS = {
-  clear: { label: 'Dégagé', cloud: 0.05, precip: 0, precipType: 'none', wind: 0.15, fog: 0, temp: 18, lightning: false },
-  cloudy: { label: 'Nuageux', cloud: 0.75, precip: 0, precipType: 'none', wind: 0.3, fog: 0, temp: 14, lightning: false },
-  rain: { label: 'Pluie', cloud: 0.92, precip: 0.6, precipType: 'rain', wind: 0.35, fog: 0.004, temp: 11, lightning: false },
-  storm: { label: 'Orage', cloud: 1, precip: 1, precipType: 'rain', wind: 0.9, fog: 0.006, temp: 16, lightning: true },
-  snow: { label: 'Neige', cloud: 0.85, precip: 0.55, precipType: 'snow', wind: 0.15, fog: 0.006, temp: -2, lightning: false },
-  fog: { label: 'Brouillard', cloud: 0.6, precip: 0, precipType: 'none', wind: 0.05, fog: 0.012, temp: 8, lightning: false },
+  clear: { cloud: 0.05, precip: 0, precipType: 'none', wind: 0.15, fog: 0, temp: 18, lightning: false },
+  cloudy: { cloud: 0.75, precip: 0, precipType: 'none', wind: 0.3, fog: 0, temp: 14, lightning: false },
+  rain: { cloud: 0.92, precip: 0.6, precipType: 'rain', wind: 0.35, fog: 0.004, temp: 11, lightning: false },
+  storm: { cloud: 1, precip: 1, precipType: 'rain', wind: 0.9, fog: 0.006, temp: 16, lightning: true },
+  snow: { cloud: 0.85, precip: 0.55, precipType: 'snow', wind: 0.15, fog: 0.006, temp: -2, lightning: false },
+  fog: { cloud: 0.6, precip: 0, precipType: 'none', wind: 0.05, fog: 0.012, temp: 8, lightning: false },
 };
 
 const RAIN_VERT = /* glsl */ `
@@ -88,6 +88,9 @@ export class Environment {
     this.wetness = 0;
     this.surfaces = []; // { material, base, snow, wet, key }
     this.time = 0;
+    this._dir = new THREE.Vector3();
+    this._ground = new THREE.Vector3();
+    this._rainLen = 0.9;
     this.rainFall = 0; // fall phase of the rain (see RAIN_VERT)
     this.rainSpeed = 1;
     this.flash = 0;
@@ -153,6 +156,30 @@ export class Environment {
     this.applyState();
   }
 
+  /**
+   * The rain and the snow fall over what the camera sees, not only over the house: the box of particles follows the point
+   * looked at on the ground and grows with the view (a zoomed-out map is covered, with fewer drops per square metre).
+   */
+  _fitPrecipitation(camera, frustumH) {
+    const frustumW = (camera.right - camera.left) / camera.zoom;
+    const spread = Math.min(700, Math.max(56, 1.15 * Math.hypot(frustumW, frustumH * 1.6)));
+    const boxY = Math.min(140, Math.max(24, 0.3 * spread));
+    const box = this.rainMat.uniforms.uBox.value; // shared with the snow
+    box.set(spread, boxY, spread);
+    camera.getWorldDirection(this._dir);
+    if (this._dir.y < -0.05) {
+      const t = -camera.position.y / this._dir.y; // the ground point at the middle of the screen
+      this._ground.copy(camera.position).addScaledVector(this._dir, t);
+      this.rainMat.uniforms.uCenter.value.set(this._ground.x, 0, this._ground.z);
+      this.snowMat.uniforms.uCenter.value.copy(this.rainMat.uniforms.uCenter.value);
+    }
+    this.rainMat.uniforms.uLen.value = this._rainLen * Math.max(1, spread / 56) ** 0.6;
+    // more particles as the box grows (up to 6x the density of the close view, spread over a much wider ground)
+    const more = Math.min(6, spread / 56);
+    this.rain.geometry.setDrawRange(0, Math.min(this.rainCount, Math.floor(8000 * more * rainLook(this.state.precip).share)) * 2);
+    this.snow.geometry.setDrawRange(0, Math.min(this.snowCount, Math.floor(7000 * more * Math.min(1, this.state.precip * 1.4))));
+  }
+
   registerSurface(entry) {
     if (!entry.base) entry.base = entry.material.color.clone();
     this.surfaces.push(entry);
@@ -178,7 +205,7 @@ export class Environment {
     center.y = 0;
 
     // rain: line segments animated in the vertex shader
-    const NR = 9000;
+    const NR = 48000;
     const rp = new Float32Array(NR * 2 * 3);
     const re = new Float32Array(NR * 2);
     const rs = new Float32Array(NR * 2);
@@ -222,7 +249,7 @@ export class Environment {
     this.scene.add(this.rain);
 
     // snow: points
-    const NS = 7000;
+    const NS = 42000;
     const sp = new Float32Array(NS * 3);
     const ss = new Float32Array(NS);
     for (let i = 0; i < NS; i++) {
@@ -306,7 +333,8 @@ export class Environment {
     this.snow.geometry.setDrawRange(0, Math.floor(this.snowCount * Math.min(1, s.precip * 1.4)));
     this.rainMat.uniforms.uSlant.value.set(dx, dz);
     this.snowMat.uniforms.uSlant.value.set(dx * 0.6, dz * 0.6); // flakes are slow: they drift more per metre, kept readable
-    this.rainMat.uniforms.uLen.value = 0.9 * look.length;
+    this._rainLen = 0.9 * look.length;
+    this.rainMat.uniforms.uLen.value = this._rainLen;
     this.rainSpeed = look.speed;
     this.rainMat.uniforms.uAlpha.value = Math.min(1, (0.25 + 0.4 * (0.4 + 0.6 * day)) * look.alpha);
 
@@ -345,6 +373,7 @@ export class Environment {
     this.snowMat.uniforms.uTime.value = this.time;
     const frustumH = (camera.top - camera.bottom) / camera.zoom;
     this.snowMat.uniforms.uPx.value = viewportHeightPx / frustumH;
+    this._fitPrecipitation(camera, frustumH);
 
     // surfaces
     const wetC = new THREE.Color('#2e3a2c');

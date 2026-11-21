@@ -2,7 +2,7 @@
 export default {
   loading: 'Wczytywanie widoku…',
   empty: 'Nie zapisano jeszcze żadnego planu.',
-  empty_admin: 'Otwórz ustawienia (⚙), aby zaimportować plan z Sweet Home 3D.',
+  empty_admin: 'Otwórz ustawienia (⚙), aby zaimportować plan (Sweet Home 3D, IFC lub SVG) albo narysować prosty.',
   ed_sec_weather: 'Godzina i pogoda',
   ed_sec_display: 'Wyświetlanie',
   ed_sec_lights: 'Światła',
@@ -556,7 +556,7 @@ export default {
   sea_tide_hint:
     'Godzina prawdziwego przypływu w Twoim porcie (tablice pływów): pływ w widoku jest do niego dostrojony i podąża za prawdziwą datą (dwa przypływy dziennie, każdego dnia ok. 50 min później; pływy syzygijne przy nowiu i pełni). Amplituda powyżej dotyczy pływów syzygijnych. Zostaw puste dla pływu przybliżonego.',
   pools_hint:
-    'Narysuj nieckę z góry (prostokąt z dwóch narożników lub dowolny kształt punkt po punkcie): teren zostaje wykopany do jej głębokości, a woda się porusza. Basen z planu Sweet Home 3D zostaje bez zmian.',
+    'Narysuj nieckę z góry (prostokąt z dwóch narożników lub dowolny kształt punkt po punkcie): teren zostaje wykopany do jej głębokości, a woda się porusza. Basen z zaimportowanego planu zostaje bez zmian.',
   pool_pool: 'Basen',
   pool_pond: 'Oczko wodne',
   pool_name: 'Nazwa',
@@ -680,4 +680,10 @@ export default {
   compass: 'N,NE,E,SE,S,SW,W,NW',
   sim_temp: 'Temperatura',
   sim_snow: 'Śnieg na gruncie i dachu',
+  weather_clear: 'Pogodnie',
+  weather_cloudy: 'Pochmurno',
+  weather_rain: 'Deszcz',
+  weather_storm: 'Burza',
+  weather_snow: 'Śnieg',
+  weather_fog: 'Mgła',
 };

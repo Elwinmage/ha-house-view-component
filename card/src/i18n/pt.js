@@ -2,7 +2,7 @@
 export default {
   loading: 'A carregar a vista…',
   empty: 'Ainda não foi guardada nenhuma planta.',
-  empty_admin: 'Abra as definições (⚙) para importar a sua planta do Sweet Home 3D.',
+  empty_admin: 'Abra as definições (⚙) para importar a sua planta (Sweet Home 3D, IFC ou SVG) ou desenhar uma simples.',
   ed_sec_weather: 'Hora e meteorologia',
   ed_sec_display: 'Visualização',
   ed_sec_lights: 'Luzes',
@@ -558,7 +558,7 @@ export default {
   sea_tide_hint:
     'Hora de uma preia-mar real do seu porto (tabelas de marés): a maré da vista fica calibrada nela e segue a data real (duas preias-mares por dia, atrasando cerca de 50 min; marés vivas na lua nova e cheia). A amplitude acima é a das marés vivas. Deixe vazio para uma maré aproximada.',
   pools_hint:
-    'Trace o tanque de cima (retângulo a partir de dois cantos, ou forma livre ponto a ponto): o terreno é escavado até à sua profundidade e a água mexe-se. A piscina da planta do Sweet Home 3D fica como está.',
+    'Trace o tanque de cima (retângulo a partir de dois cantos, ou forma livre ponto a ponto): o terreno é escavado até à sua profundidade e a água mexe-se. A piscina da planta importada fica como está.',
   pool_pool: 'Piscina',
   pool_pond: 'Lago',
   pool_name: 'Nome',
@@ -681,4 +681,10 @@ export default {
   compass: 'N,NE,E,SE,S,SO,O,NO',
   sim_temp: 'Temperatura',
   sim_snow: 'Neve no solo e no telhado',
+  weather_clear: 'Limpo',
+  weather_cloudy: 'Nublado',
+  weather_rain: 'Chuva',
+  weather_storm: 'Tempestade',
+  weather_snow: 'Neve',
+  weather_fog: 'Nevoeiro',
 };

@@ -2,7 +2,8 @@
 export default {
   loading: 'Ansicht wird geladen …',
   empty: 'Noch kein Grundriss gespeichert.',
-  empty_admin: 'Öffnen Sie die Einstellungen (⚙), um Ihren Sweet-Home-3D-Grundriss zu importieren.',
+  empty_admin:
+    'Öffnen Sie die Einstellungen (⚙), um Ihren Grundriss (Sweet Home 3D, IFC oder SVG) zu importieren oder einen einfachen zu zeichnen.',
   ed_sec_weather: 'Uhrzeit und Wetter',
   ed_sec_display: 'Anzeige',
   ed_sec_lights: 'Lichter',
@@ -221,7 +222,7 @@ export default {
     'Ein Kreis pro Ventil, mit einem oder mehreren Sprinklern. Bei geöffnetem Ventil wird der bewässerte Sektor gezeigt und der Strahl animiert.',
   irr_circuit: 'Kreis',
   irr_heads: 'Sprinkler',
-  irr_head: 'Sprinkler',
+  irr_head: 'Regner',
   irr_model: 'Modell',
   irr_rmin: 'Min. Reichweite (m)',
   irr_rmax: 'Max. Reichweite',
@@ -564,7 +565,7 @@ export default {
   sea_tide_hint:
     'Uhrzeit eines echten Hochwassers Ihres Hafens (Gezeitentafel): Die Tide der Ansicht richtet sich danach und folgt dem echten Datum (zwei Hochwasser täglich, je ca. 50 Min. später; Springtide bei Neu- und Vollmond). Die Amplitude oben gilt für Springtide. Leer lassen für eine ungefähre Tide.',
   pools_hint:
-    'Zeichnen Sie das Becken von oben (Rechteck aus zwei Ecken oder Freiform Punkt für Punkt): Das Gelände wird bis zu seiner Tiefe ausgehoben und das Wasser bewegt sich. Der Pool aus dem Sweet-Home-3D-Grundriss bleibt unverändert.',
+    'Zeichnen Sie das Becken von oben (Rechteck aus zwei Ecken oder Freiform Punkt für Punkt): Das Gelände wird bis zu seiner Tiefe ausgehoben und das Wasser bewegt sich. Der Pool des importierten Grundrisses bleibt unverändert.',
   pool_pool: 'Pool',
   pool_pond: 'Teich',
   pool_name: 'Name',
@@ -687,4 +688,10 @@ export default {
   compass: 'N,NO,O,SO,S,SW,W,NW',
   sim_temp: 'Temperatur',
   sim_snow: 'Schnee auf Boden und Dach',
+  weather_clear: 'Klar',
+  weather_cloudy: 'Bewölkt',
+  weather_rain: 'Regen',
+  weather_storm: 'Gewitter',
+  weather_snow: 'Schnee',
+  weather_fog: 'Nebel',
 };

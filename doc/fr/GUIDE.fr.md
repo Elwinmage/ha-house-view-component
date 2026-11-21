@@ -1,6 +1,6 @@
 # House View : guide d'installation, de configuration et d'utilisation
 
-House View affiche votre maison en 3D dans Home Assistant : le plan dessiné dans Sweet Home 3D, posé sur le vrai relief du terrain, éclairé par le soleil du moment, avec la météo, les saisons de la végétation, les lumières de chaque pièce et l'état de vos appareils (volets, fenêtres, robot aspirateur, arrosage, piscine, alarmes…).
+House View affiche votre maison en 3D dans Home Assistant : le plan de votre maison (Sweet Home 3D, IFC ou SVG, ou un plan simple dessiné dans la carte), posé sur le vrai relief du terrain, éclairé par le soleil du moment, avec la météo, les saisons de la végétation, les lumières de chaque pièce et l'état de vos appareils (volets, fenêtres, robot aspirateur, arrosage, piscine, alarmes…).
 
 Toutes les images de ce guide ont été prises sur le **logement de démonstration** fourni avec l'intégration : une maison, un terrain et des entités fictifs.
 
