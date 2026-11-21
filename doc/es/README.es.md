@@ -35,6 +35,7 @@ La interfaz de la tarjeta y las opciones de la integración existen en inglés, 
 ## Resumen
 
 <p align="center"><img src="../images/four-seasons.webp" alt="La casa de demostración sobre su terreno durante las cuatro estaciones: sensores, riego, piscina, árboles" width="880"></p>
+<p align="center"><img src="../images/sea.webp" alt="La misma casa junto al mar: olas animadas, marea, playa, sonido del oleaje" width="880"></p>
 
 House View convierte el plano de su casa en una imagen viva de ella. Lo que la distingue:
 

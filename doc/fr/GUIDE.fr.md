@@ -342,6 +342,20 @@ Les espèces d'arbres (avec leur aspect à chaque saison), les objets du jardin 
 
 Pour créer **votre propre arbre ou objet**, utilisez l'[éditeur de catalogue](https://github.com/Elwinmage/catalog-editor) : une carte Home Assistant où l'on règle la forme, les couleurs et les saisons en voyant le résultat. Ce que vous enregistrez est utilisé tout de suite par la vue, et vous pouvez ensuite le proposer au catalogue commun (une demande de fusion sur GitHub), pour que tout le monde en profite.
 
+### 6.13 La mer
+
+Pour une maison en bord de mer ou d'océan, la section *Mer* de l'éditeur ajoute une mer animée au terrain (le relief est celui récupéré : les données du terrain incluent le fond marin).
+
+- **Mer** activée ou non, et **niveau** de l'eau en mètres (l'aide indique le point le plus bas du terrain et le niveau de la maison ; la mer remplit tout ce qui est sous le niveau, les maisons restent au sec).
+- **Plage** : sable, galets, corail, roche ou aucune ; le sol près de l'eau est teinté en conséquence (bande de sable mouillé, écume sur le rivage).
+- **Vagues** : la houle grandit avec le vent de la météo et se propage dans la direction d'où il vient ; le curseur règle la hauteur de base.
+- **Marée** : amplitude en mètres en vives-eaux (0 = aucune). La marée suit le **calendrier réel** : deux pleines mers par jour qui reculent d'environ 50 minutes chaque jour, fortes à la nouvelle et pleine lune, faibles aux quartiers. Pour la caler sur votre port, saisissez dans *Pleine mer observée* l'heure d'une vraie pleine mer (annuaire des marées, SHOM…) : les jours suivants restent à quelques dizaines de minutes des tables. Sans cela la marée n'est qu'approximative. Le modèle n'a pas de table harmonique du lieu (ni effets locaux, ni surcote de pression ou de vent).
+- **Clarté** : eau turquoise limpide ou eau trouble.
+- **Bruit du ressac** : son d'ambiance qui suit les vagues (les navigateurs exigent un premier clic ou toucher sur la page avant tout son).
+
+Les réglages sont enregistrés dans la clé `sea` des modifications. Limites connues : un seul niveau d'eau pour tout le terrain (une rivière ou un étang à un autre niveau n'est pas dessiné), et la couleur saisonnière de l'herbe est remplacée par la teinte de plage tant que la mer est active.
+
+
 ## 7. La configuration (⚙)
 
 ![La configuration](../images/33-configuration.jpg)

@@ -35,6 +35,7 @@ Die Oberfläche der Karte und die Optionen der Integration gibt es auf Englisch,
 ## Überblick
 
 <p align="center"><img src="../images/four-seasons.webp" alt="Das Demohaus auf seinem Gelände durch die vier Jahreszeiten: Sensoren, Bewässerung, Pool, Bäume" width="880"></p>
+<p align="center"><img src="../images/sea.webp" alt="Dasselbe Haus am Meer: bewegte Wellen, Gezeiten, Strand, Brandungsgeräusch" width="880"></p>
 
 House View macht aus dem Plan Ihres Hauses ein lebendiges Abbild davon. Was es auszeichnet:
 

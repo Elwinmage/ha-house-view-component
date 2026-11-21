@@ -537,6 +537,28 @@ export default {
   opening_auto_back: 'Volver al enlace automático',
   opening_now: 'Ahora: apertura',
   pools: 'Piscinas y estanques',
+  sea: 'Mar y masas de agua',
+  sea_hint:
+    'Un mar, una laguna, un río o un canal alrededor de la casa: el nivel del agua sigue el relieve del terreno, con playa, olas que siguen el viento, marea y sonido del oleaje.',
+  sea_on: 'Mostrar el mar',
+  sea_range: 'Terreno: punto más bajo {low} m, suelo de la casa {house} m (misma referencia que el nivel del agua).',
+  sea_level: 'Nivel del agua (altitud, m)',
+  sea_beach: 'Playa',
+  sea_beach_sand: 'Arena',
+  sea_beach_pebbles: 'Guijarros',
+  sea_beach_coral: 'Arena de coral',
+  sea_beach_rock: 'Rocas',
+  sea_beach_none: 'Ninguna (el suelo conserva su color)',
+  sea_waves: 'Olas',
+  sea_tide: 'Marea (amplitud)',
+  sea_no_tide: 'ninguna',
+  sea_clarity: 'Claridad del agua',
+  sea_sound: 'Sonido del oleaje',
+  sea_sound_hint:
+    'El navegador mantiene el sonido apagado hasta el primer clic en la vista; el volumen sigue las olas, es decir el tiempo.',
+  sea_tide_ref: 'Pleamar observada',
+  sea_tide_hint:
+    'Hora de una pleamar real de su puerto (tablas de mareas): la marea de la vista se ajusta a ella y sigue la fecha real (dos pleamares al día que se retrasan unos 50 min, mareas vivas en luna nueva y llena). La amplitud de arriba es la de las mareas vivas. Déjelo vacío para una marea aproximada.',
   pools_hint:
     'Trace el vaso desde arriba (rectángulo a partir de dos esquinas, o forma libre punto a punto): el terreno se excava hasta su profundidad y el agua se mueve. La piscina del plano de Sweet Home 3D se queda como está.',
   pool_pool: 'Piscina',

@@ -35,6 +35,7 @@ Interfejs karty i opcje integracji są dostępne po angielsku, francusku, włosk
 ## Przegląd
 
 <p align="center"><img src="../images/four-seasons.webp" alt="Dom demonstracyjny na swoim terenie w czterech porach roku: czujniki, nawadnianie, basen, drzewa" width="880"></p>
+<p align="center"><img src="../images/sea.webp" alt="Ten sam dom nad morzem: ruchome fale, przypływ, plaża, szum przyboju" width="880"></p>
 
 House View zamienia plan Twojego domu w jego żywy obraz. Co go wyróżnia:
 

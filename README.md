@@ -35,6 +35,7 @@ The card interface and the options of the integration exist in English, French, 
 ## Overview
 
 <p align="center"><img src="doc/images/four-seasons.webp" alt="The demo house on its terrain through the four seasons: sensors, watering, pool, trees" width="880"></p>
+<p align="center"><img src="doc/images/sea.webp" alt="The same house by the sea: moving waves, tide, beach, surf sound" width="880"></p>
 
 House View turns the plan of your home into a living picture of it. Most 3D cards for Home Assistant load a heavy model of the building (a GLB / OBJ export) and attach entities to its objects, or stack transparent layers on a picture. House View takes another road: a **light procedural scene** drawn live from your plan, which also shows the garden and the sky, not only the walls. Nothing like it, as far as we know, combines the following:
 
@@ -46,6 +47,7 @@ House View turns the plan of your home into a living picture of it. Most 3D card
 - **Doors, windows, shutters and gates that move**: linked to your contacts and covers, they open and close on the view; a gate (swinging or sliding, 1 or 2 leaves, bars or solid, straight or arched) follows its cover or contact.
 - **Robot vacuum**: cleaning by rooms in a tap, a 3D robot moving on the plan, rooms tinted with their progress, several robots, Roborock position support.
 - **A garden that works**: drip lines and sprinklers animated by their valves (wet spots, jets), fences of every kind (mesh, wood, wall, wrought iron, reed, gabions and nine hedges: cherry laurel, thuja, Leyland…), flower beds with the number and the colours you choose, pools and ponds with their fish.
+- **A living sea**: for a house by the coast, a moving sea with waves driven by the wind, tide following the hour, sand, pebble, coral or rock beaches and the sound of the surf (*Sea* section of the editor).
 - **A catalog that grows**: trees with up to four renderings a year and colour varieties (apple trees with red, yellow or green fruit, cherry, willow, eucalyptus…) and objects come from the open [house catalog](https://github.com/Elwinmage/house-catalog), updated in the background, usable offline, extensible with the [catalog editor](https://github.com/Elwinmage/catalog-editor).
 - **Show it without showing your home**: a *Load the demo* button adds a fictitious house at an arbitrary place, to film, present or try the card.
 - **Nothing to install but the integration**: the card is served by the integration (no Lovelace resource), everything is edited from the card itself (✎), several homes can coexist, your corrections are kept apart from the plan so that re-importing it loses nothing, and the interface speaks seven languages (English, French, Spanish, German, Italian, Polish, Portuguese).

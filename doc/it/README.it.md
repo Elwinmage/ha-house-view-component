@@ -35,6 +35,7 @@ L'interfaccia della scheda e le opzioni dell'integrazione esistono in inglese, f
 ## Panoramica
 
 <p align="center"><img src="../images/four-seasons.webp" alt="La casa dimostrativa sul suo terreno nelle quattro stagioni: sensori, irrigazione, piscina, alberi" width="880"></p>
+<p align="center"><img src="../images/sea.webp" alt="La stessa casa in riva al mare: onde animate, marea, spiaggia, suono della risacca" width="880"></p>
 
 House View trasforma la pianta della vostra casa in un'immagine viva di essa. Ciò che la distingue:
 

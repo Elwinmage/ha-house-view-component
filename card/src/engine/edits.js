@@ -1,6 +1,8 @@
 // Manual corrections kept apart from the plan (.sh3d) and the terrain (.json), so that re-importing
 // either of them keeps what was fixed by hand. Exported / imported as a small JSON file.
 
+import { normalizeSea } from './sea-3d.js';
+
 export function emptyEdits() {
   return {
     version: 1,
@@ -19,6 +21,7 @@ export function emptyEdits() {
     // entities listed on the left while zoomed on a room: room id -> { list: [entity ids], all: every entity of its area }
     room_entities: {},
     openings: {}, // openingKey -> { contact, opener, shutter } set by hand ('' = none)
+    sea: null, // the sea or a wide water: { on, level, beach, waves, tide, clarity } (see sea-3d.js)
     pools: [], // drawn pools and ponds: { id, kind, shape, pts, frame, color, depth, robot }
     irrigation: { soil: 'loam', lines: [], circuits: [] }, // drip lines and sprinkler circuits (see irrigation.js)
     // robot vacuums: dock position and calibration of each one (see VAC_DEFAULTS in vacuum.js), `entity` naming it;
@@ -55,6 +58,7 @@ export function normalizeEdits(raw) {
   if (raw.room_areas && typeof raw.room_areas === 'object') e.room_areas = raw.room_areas;
   if (raw.room_entities && typeof raw.room_entities === 'object') e.room_entities = raw.room_entities;
   if (raw.openings && typeof raw.openings === 'object' && !Array.isArray(raw.openings)) e.openings = raw.openings;
+  e.sea = normalizeSea(raw.sea);
   if (Array.isArray(raw.pools)) e.pools = raw.pools.filter((p) => p && typeof p === 'object' && p.id);
   if (raw.room_views && typeof raw.room_views === 'object') e.room_views = raw.room_views;
   if (raw.irrigation && typeof raw.irrigation === 'object') {

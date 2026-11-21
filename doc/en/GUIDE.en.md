@@ -342,6 +342,20 @@ The species of trees (with their look in each season), the garden objects or pie
 
 To create **your own tree or object**, use the [catalog editor](https://github.com/Elwinmage/catalog-editor): a Home Assistant card where you set the shape, the colours and the seasons while seeing the result. What you save is used by the view at once, and you can then propose it to the shared catalog (a pull request on GitHub), so that everyone benefits.
 
+### 6.13 The sea
+
+For a house by the sea or an ocean, the *Sea* section of the editor adds a moving sea to the terrain (the shape of the ground is the one fetched: the terrain data includes the sea bed).
+
+- **Sea** on/off, and the **level** of the water in metres (the hint shows the lowest ground and the level of the house; the sea fills everything below the level, and the houses stay dry).
+- **Beach**: sand, pebbles, coral, rock or none; the ground close to the water is tinted accordingly (a strip of wet sand, foam on the shore).
+- **Waves**: the swell grows with the wind of the weather and travels in the direction it comes from; the slider sets the base height.
+- **Tide**: amplitude in metres at spring tides (0 = none). The tide follows the **real calendar**: two high waters a day that slide by about 50 minutes each day, strong at new and full moon, weak at the quarters. To fit your harbour, enter in *Observed high water* the time of one real high water (tide tables, SHOM…): the following days then stay within a few tens of minutes of the tables. Without it the tide is only approximate. The model has no harmonic table of the place (no local effects, no pressure or wind surge).
+- **Clarity**: clear turquoise water or murky water.
+- **Sound of the surf**: ambient sound that follows the waves (browsers require a first click or tap on the page before any sound).
+
+The settings are saved in the `sea` key of the edits. Known limits: a single water level for the whole terrain (a river or a pond at another level is not drawn), and the seasonal colour of the grass is replaced by the beach tinting while the sea is on.
+
+
 ## 7. The setup (⚙)
 
 ![The setup](../images/33-configuration.jpg)

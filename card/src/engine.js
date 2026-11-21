@@ -28,6 +28,9 @@ import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
 import { buildPools } from './engine/pools-3d.js';
+import { buildSea, activeSea, seaWaves, swellDirection } from './engine/sea-3d.js';
+import { tideLevel, simMs } from './engine/tide.js';
+import { SeaSound } from './engine/sea-sound.js';
 import { poolValid, islandsOf, poolRoomsOf } from './pools.js';
 import { pondFish } from './fish.js';
 
@@ -196,7 +199,7 @@ export class HouseEngine {
         const k = lightsOverride && lightsOverride.find((x) => x.id === l.id);
         return k ? { ...l, on: k.on, color: k.color, brightness: k.brightness } : { ...l };
       }),
-      terrain: terr ? buildTerrain(terr.data, sd, { ...terr, ops: edits.terrain, pools: edits.pools }) : null,
+      terrain: terr ? buildTerrain(terr.data, sd, { ...terr, ops: edits.terrain, pools: edits.pools, sea: activeSea(edits.sea) }) : null,
       levelsById: {},
       roof: null,
       site: null,
@@ -323,6 +326,11 @@ export class HouseEngine {
     );
     w.pools.setRobots(this._poolRobots);
     root.add(w.pools.group);
+    // the sea: a water plane at its level around the terrain
+    const seaCfg = activeSea(edits.sea);
+    w.sea = seaCfg && w.terrain ? buildSea(w.terrain, w.terrain.seaY, seaCfg) : null;
+    if (w.sea) root.add(w.sea.group);
+    this._seaSound(!!(w.sea && seaCfg.sound));
 
     // detached objects (shed, gate...) : anchored to the terrain, whatever level they were drawn on in SH3D
     w.outdoor = [];
@@ -1629,6 +1637,7 @@ export class HouseEngine {
     if (this.roomFx || this._fxDirty) this._animateFx(now / 1000);
     if (this.world.openings.busy) this.world.openings.tick(realDt);
     if (this.world.gates.count) this.world.gates.tick(realDt);
+    if (this.world.sea) this._tickSea(now / 1000);
     if (this.world.pools.items.length) this.world.pools.tick(realDt, now / 1000, (this.env.state.temp ?? 15) < 8);
     this._animateRobot(realDt, now / 1000);
     if (this._slots) for (const s of this._slots.values()) this._animateRobot.call(s, realDt, now / 1000);
@@ -1637,7 +1646,31 @@ export class HouseEngine {
     if (this.onFrame) this.onFrame();
   }
 
+  /** Waves, glint and tide of the sea: the tide follows the moon (two high waters a day), the wind raises and steers the swell. */
+  _tickSea(t) {
+    const { sea } = this.world;
+    const cfg = activeSea(this.edits.sea);
+    const st = this.env.state;
+    const day = Math.min(1, Math.max(0.15, this.env.sunDir.y * 2 + 0.3));
+    if (cfg.tide) sea.setTide((cfg.tide / 2) * tideLevel(simMs(st.doy, st.hour), cfg.tideRef));
+    const waves = seaWaves(cfg.waves, st.wind ?? 0.15);
+    sea.tick(t, this.env.sunDir, this.camera, day, {
+      waves,
+      dir: swellDirection((st.windBearing ?? 270) + (this.env.site.northOffsetDeg || 0)),
+    });
+    if (this.seaSound) this.seaSound.setLevel(waves);
+  }
+
+  /** The sound of the surf, on or off (it needs a first tap on the view before the browser lets it play). */
+  _seaSound(on) {
+    if (on) {
+      if (!this.seaSound) this.seaSound = new SeaSound();
+      this.seaSound.start(this.renderer.domElement);
+    } else if (this.seaSound) this.seaSound.stop();
+  }
+
   dispose() {
+    if (this.seaSound) this.seaSound.dispose();
     this.disposed = true;
     this.running = false;
     this._ro.disconnect();

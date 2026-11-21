@@ -6,3 +6,4 @@ custom_components/house_view/frontend/*.js
 custom_components/house_view/frontend/*.map
 reports/
 .coverage
+card/sea/sea.html

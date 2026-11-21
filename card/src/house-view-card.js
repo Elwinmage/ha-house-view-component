@@ -52,6 +52,7 @@ import { autoOpeningLinks, openingStates } from './openings.js';
 import { gatesOf, gateOpenness } from './gates.js';
 import { normalizeFence } from './fences.js';
 import { renderOpenings } from './ui-openings.js';
+import { renderSea } from './ui-sea.js';
 import { renderPools } from './ui-pools.js';
 import { POOL_ROOM } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
@@ -100,6 +101,7 @@ const SECTION_ICONS = {
   rooms: 'mdi:floor-plan',
   openings: 'mdi:window-closed-variant',
   pools: 'mdi:pool',
+  sea: 'mdi:waves',
   vacuum: 'mdi:robot-vacuum',
   irrigation: 'mdi:sprinkler-variant',
   fences: 'mdi:fence',
@@ -2199,8 +2201,8 @@ class HouseViewCard extends LitElement {
             (v) => html`<option value=${v} ?selected=${v === (this._provider || 'auto')}>${t(`fetch_provider_${v}`)}</option>`,
           )}
         </select>
-        <span>${t('lat')}</span><input name="lat" type="number" step="0.000001" .value=${String(c.latitude)} /> <span>${t('lon')}</span
-        ><input name="lon" type="number" step="0.000001" .value=${String(c.longitude)} />
+        <span>${t('lat')}</span><input name="lat" class="coord" type="number" step="any" .value=${String(c.latitude)} />
+        <span>${t('lon')}</span><input name="lon" class="coord" type="number" step="any" .value=${String(c.longitude)} />
         <span>${t('fetch_size')}</span>
         <select name="size">
           ${[80, 120, 200].map((v) => html`<option value=${v} ?selected=${v === 120}>${v} m</option>`)}
@@ -2608,6 +2610,7 @@ class HouseViewCard extends LitElement {
     ${this._sec('zones', `${t('zones')} (${this._data.edits.zones.length})`, () => renderZonesEditor(this))}
     ${this._sec('rooms', t('rooms'), () => renderRooms(this))} ${this._sec('openings', t('openings'), () => renderOpenings(this))}
     ${this._sec('pools', `${t('pools')} (${this._data.edits.pools.length})`, () => renderPools(this))}
+    ${this._sec('sea', t('sea'), () => renderSea(this))}
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
     ${this._sec('gates', `${t('gates')} (${this._data.edits.gates.length})`, () => renderGates(this))}
@@ -3942,6 +3945,10 @@ class HouseViewCard extends LitElement {
     }
     :is(.panel, .win) input[type='number'] {
       width: 72px;
+    }
+    /* latitude / longitude: any number of decimals (44.64789945352658), so the field is wide enough to show them */
+    :is(.panel, .win) input[type='number'].coord {
+      width: 150px;
     }
     :is(.panel, .win) .row {
       display: flex;

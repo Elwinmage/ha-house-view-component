@@ -72,7 +72,7 @@ def validate_edits(doc: Any) -> None:
     for key in ("fences", "entities", "sensors", "panel", "zones", "vacuums", "pools"):
         if key in doc and not isinstance(doc[key], list):
             raise ValueError(f"edits.{key} must be a list")
-    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings"):
+    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings", "sea"):
         if key in doc and not isinstance(doc[key], dict):
             raise ValueError(f"edits.{key} must be an object")
 

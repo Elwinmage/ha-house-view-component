@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { SPECIES } from './catalog.js';
 import { pointInPolygon } from './geometry.js';
 import { compileOps, WALL_T } from './terrain-edit.js';
+import { tintBeach } from './sea-3d.js';
 import { poolValid, centroidOf, inPolygon, nearestOnOutline, islandsOf } from '../pools.js';
 
 const smooth01 = (u) => u * u * (3 - 2 * u);
@@ -317,6 +318,18 @@ export function buildTerrain(t, sd, cfg) {
     col[k * 3 + 1] = 1 - 0.42 * steep;
     col[k * 3 + 2] = 1 - 0.55 * steep;
   }
+  // a sea: the beach around the waterline (the aerial photo, when there is one, already shows it)
+  const seaY = cfg.sea ? cfg.sea.level - zRef + base : null;
+  // (the material is then white and the grass green goes into the vertex colours, so that the sand is not turned green)
+  const seaTint = !!cfg.sea && !photo;
+  if (seaTint) {
+    for (let k = 0; k < col.length; k += 3) {
+      col[k] *= 0.145; // the grass #6aa84f, in linear colour
+      col[k + 1] *= 0.4;
+      col[k + 2] *= 0.076;
+    }
+    tintBeach(geo.getAttribute('position').array, nrm.array, col, seaY, cfg.sea.beach);
+  }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
   // skirt so the slab edge does not look paper-thin
@@ -452,7 +465,7 @@ export function buildTerrain(t, sd, cfg) {
   }
 
   const material = new THREE.MeshStandardMaterial({
-    color: photo ? '#ffffff' : '#6aa84f',
+    color: photo || seaTint ? '#ffffff' : '#6aa84f',
     roughness: 1,
     side: THREE.DoubleSide,
     vertexColors: !photo, // the photo has its own shading
@@ -504,7 +517,7 @@ export function buildTerrain(t, sd, cfg) {
     }
     return out;
   };
-  return { group, material, heightAt, digs, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
+  return { group, material, heightAt, digs, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, seaY, seaTint, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
 }
 
 /**

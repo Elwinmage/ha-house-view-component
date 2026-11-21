@@ -98,8 +98,9 @@ def test_ortho_and_new_edit_lists():
             "alarms": {},
             "room_entities": {},
             "openings": {},
+            "sea": {"on": True},
         }
     )
-    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings"):
+    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings", "sea"):
         with pytest.raises(ValueError):
             validate.validate_edits({key: []})

@@ -35,6 +35,7 @@ L'interface de la carte et les options de l'intégration existent en anglais, fr
 ## Aperçu
 
 <p align="center"><img src="../images/four-seasons.webp" alt="La maison de démonstration sur son terrain au fil des quatre saisons : capteurs, arrosage, piscine, arbres" width="880"></p>
+<p align="center"><img src="../images/sea.webp" alt="La même maison en bord de mer : vagues animées, marée, plage, bruit du ressac" width="880"></p>
 
 House View transforme le plan de votre maison en une image vivante de celle-ci. La plupart des cartes 3D pour Home Assistant chargent un modèle lourd du bâtiment (export GLB / OBJ) et y rattachent des entités, ou superposent des calques transparents sur une image. House View prend un autre chemin : une **scène procédurale légère**, dessinée en direct à partir de votre plan, qui montre aussi le jardin et le ciel, pas seulement les murs. À notre connaissance, rien d'autre ne réunit tout ceci :
 
@@ -46,6 +47,7 @@ House View transforme le plan de votre maison en une image vivante de celle-ci. 
 - **Portes, fenêtres, volets et portails qui bougent** : liés à vos contacts et à vos volets, ils s'ouvrent et se ferment dans la vue ; un portail (battant ou coulissant, 1 ou 2 vantaux, barreaudé ou plein, droit ou arrondi) suit son volet roulant ou son contact.
 - **Aspirateur robot** : nettoyage par pièces en un tap, un robot 3D qui circule sur le plan, des pièces teintées selon leur avancement, plusieurs robots, position Roborock prise en charge.
 - **Un jardin qui travaille** : goutte-à-goutte et arroseurs animés par leurs vannes (taches d'humidité, jets), clôtures de toutes sortes (grillage, bois, mur, fer forgé, canisse, gabions et neuf haies : laurier-palme, thuya, Leyland…), zones fleuries dont vous choisissez le nombre et les couleurs des fleurs, piscines et bassins avec leurs poissons.
+- **Une mer vivante** : pour une maison en bord de côte, une mer animée aux vagues pilotées par le vent, marée suivant l'heure, plages de sable, galets, corail ou roche et bruit du ressac (section *Mer* de l'éditeur).
 - **Un catalogue qui grandit** : les arbres, avec jusqu'à quatre rendus par an et des variétés de couleur (pommiers à fruits rouges, jaunes ou verts, cerisier, saule, eucalyptus…), et les objets viennent du [catalogue house-catalog](https://github.com/Elwinmage/house-catalog), ouvert, mis à jour en arrière-plan, utilisable hors ligne et extensible avec l'[éditeur de catalogue](https://github.com/Elwinmage/catalog-editor).
 - **La montrer sans montrer sa maison** : un bouton *Charger la démo* ajoute une maison fictive en un lieu quelconque, pour filmer, présenter ou essayer la carte.
 - **Rien à installer que l'intégration** : la carte est servie par l'intégration (aucune ressource Lovelace), tout se modifie depuis la carte elle-même (✎), plusieurs maisons peuvent coexister, vos corrections sont gardées à part du plan : le réimporter ne fait rien perdre ; l'interface parle anglais et français (options en sept langues).
