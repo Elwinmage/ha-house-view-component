@@ -23,6 +23,7 @@ from . import ign, sources
 from .const import (
     CONF_BRANCH,
     CONF_DEMO,
+    CONF_HIDE_DEMO,
     CONF_PATH,
     CONF_REPO,
     CONF_TOKEN,
@@ -129,6 +130,7 @@ class HouseViewInfoView(HomeAssistantView):
                 "github": store.options.get(CONF_REPO) if store.options.get(CONF_TOKEN) else None,
                 "locked": store.lock is not None,
                 "demo": store.demo,
+                "hide_demo": bool(store.options.get(CONF_HIDE_DEMO)),
                 "fetch": store.job,
                 "updated": store.updated,
             }

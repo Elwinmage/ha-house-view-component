@@ -24,7 +24,8 @@
         "title": "Options de House View",
         "menu_options": {
           "github": "Sauvegarde GitHub",
-          "lock": "Protection de l'édition"
+          "lock": "Protection de l'édition",
+          "demo": "Démo"
         }
       },
       "github": {
@@ -43,6 +44,13 @@
         "data": {
           "password": "Nouveau mot de passe (4 caractères ou plus)",
           "remove": "Supprimer la protection"
+        }
+      },
+      "demo": {
+        "title": "Maison de démonstration",
+        "description": "Masquer la démo : le réglage de la carte ne propose plus de la démarrer. État actuel : {status}. Une démo déjà chargée reste disponible.",
+        "data": {
+          "hide_demo": "Masquer la démo"
         }
       }
     },

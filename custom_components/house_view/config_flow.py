@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import LocationSelector, TextSelector, TextS
 from .const import (
     CONF_BRANCH,
     CONF_DEMO,
+    CONF_HIDE_DEMO,
     CONF_LOCATION,
     CONF_LOCK,
     CONF_PASSWORD,
@@ -81,7 +82,7 @@ class HouseViewConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HouseViewOptionsFlow(OptionsFlow):
-    """Menu: GitHub backup settings, edit password. Each step keeps the settings of the other one."""
+    """Menu: GitHub backup settings, edit password, demo display. Each step keeps the settings of the other one."""
 
     @property
     def _folder(self) -> str:
@@ -89,7 +90,20 @@ class HouseViewOptionsFlow(OptionsFlow):
         return self.config_entry.data.get(CONF_STORAGE, DOMAIN).replace(".", "/")
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["github", "lock"])
+        return self.async_show_menu(step_id="init", menu_options=["github", "lock", "demo"])
+
+    async def async_step_demo(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Hide the demo home: the card then shows none of its buttons (the demo home itself, when loaded, stays)."""
+        options = dict(self.config_entry.options)
+        if user_input is not None:
+            if user_input.get(CONF_HIDE_DEMO):
+                options[CONF_HIDE_DEMO] = True
+            else:
+                options.pop(CONF_HIDE_DEMO, None)
+            return self.async_create_entry(data=options)
+        schema = vol.Schema({vol.Optional(CONF_HIDE_DEMO, default=bool(options.get(CONF_HIDE_DEMO))): bool})
+        status = "🙈" if options.get(CONF_HIDE_DEMO) else "👁"
+        return self.async_show_form(step_id="demo", data_schema=schema, description_placeholders={"status": status})
 
     async def async_step_lock(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Set, change or remove the edit password (an empty field keeps the current one)."""
@@ -122,7 +136,7 @@ class HouseViewOptionsFlow(OptionsFlow):
         """GitHub backup settings. An empty repository disables the backup."""
         errors: dict[str, str] = {}
         current = {**self.config_entry.options, **(user_input or {})}
-        keep = {k: v for k, v in self.config_entry.options.items() if k == CONF_LOCK}
+        keep = {k: v for k, v in self.config_entry.options.items() if k in (CONF_LOCK, CONF_HIDE_DEMO)}
         if user_input is not None:
             repo = user_input.get(CONF_REPO, "").strip()
             if not repo:

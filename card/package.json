@@ -11,7 +11,8 @@
     "format": "prettier --write \"src/**/*.js\" \"test/**/*.{js,html}\"",
     "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.{js,html}\"",
     "icons": "node scripts/mdi-names.mjs",
-    "demo": "node scripts/make-demo.mjs"
+    "demo": "node scripts/make-demo.mjs",
+    "drop": "node scripts/build-drop.mjs"
   },
   "devDependencies": {
     "@mdi/svg": "^7.4.47",

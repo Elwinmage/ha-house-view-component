@@ -10,6 +10,8 @@ import {
   robotStep,
   POOL_KINDS,
   islandsOf,
+  poolRoomsOf,
+  POOL_ROOM,
 } from '../src/pools.js';
 import { buildPools, offsetOutline } from '../src/engine/pools-3d.js';
 import { buildTerrain, syntheticTerrain } from '../src/engine/terrain.js';
@@ -153,5 +155,40 @@ describe('islands of a pond', () => {
     const plain = buildPools([{ id: 'q', kind: 'pond', poly: rectFromCorners([0, 0], [8, 6]), rim: 0, depth: 0.8 }]);
     expect(g.children.length).toBe(plain.items[0].g.children.length + 3);
     expect(p.items[0].islands).toHaveLength(1);
+  });
+});
+
+describe('pools as rooms', () => {
+  const items = [
+    {
+      id: 'a',
+      pond: false,
+      poly: [
+        [0, 0],
+        [2, 0],
+        [2, 2],
+      ],
+      rim: 0.1,
+    },
+    {
+      id: 'b',
+      pond: true,
+      poly: [
+        [5, 5],
+        [6, 5],
+        [6, 6],
+      ],
+      rim: 0,
+    },
+  ];
+  it('gives each pool a room on the ground level', () => {
+    const rooms = poolRoomsOf(items, [{ id: 'a', name: 'Piscine nord' }], 'L0', (k) => `default ${k}`);
+    expect(rooms.map((r) => r.id)).toEqual([`${POOL_ROOM}a`, `${POOL_ROOM}b`]);
+    expect(rooms.map((r) => r.name)).toEqual(['Piscine nord', 'default pond']);
+    expect(rooms[0]).toMatchObject({ level: 'L0', pool: 'a', floor: 0.1, poly: items[0].poly });
+  });
+  it('copes with no drawn pools', () => {
+    expect(poolRoomsOf([], undefined, 'L0', () => '')).toEqual([]);
+    expect(poolRoomsOf([items[0]], undefined, 'L0', (k) => k)[0].name).toBe('pool');
   });
 });

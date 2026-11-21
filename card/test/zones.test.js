@@ -14,6 +14,8 @@ import {
   fitRatio,
   facesEye,
   rectSamples,
+  parseCardConfig,
+  linkUrl,
 } from '../src/zones.js';
 import { alarmList, isAlarmKind, isRaised, tapAction, polyCentre, roomAlarms } from '../src/alarms.js';
 
@@ -286,5 +288,20 @@ describe('visibility of a rectangle on a wall', () => {
       expect(Math.abs(p[0])).toBeCloseTo(0.4, 6);
       expect(Math.abs(p[1] - 1.5)).toBeCloseTo(0.2, 6);
     }
+  });
+});
+
+describe('links', () => {
+  it('parse the configuration of a card', () => {
+    expect(parseCardConfig('{"type":"picture-entity","entity":"camera.a"}')).toEqual({ type: 'picture-entity', entity: 'camera.a' });
+    expect(parseCardConfig({ type: 'x' })).toEqual({ type: 'x' });
+    for (const bad of ['', '{', '[]', '{"entity":"a"}', '3', null, undefined]) expect(parseCardConfig(bad)).toBeNull();
+  });
+  it('turn a path into an address', () => {
+    expect(linkUrl('/lovelace/cameras')).toBe('/lovelace/cameras');
+    expect(linkUrl(' lovelace/cam ')).toBe('/lovelace/cam');
+    expect(linkUrl('https://example.org/x')).toBe('https://example.org/x');
+    expect(linkUrl('')).toBe('');
+    expect(linkUrl(undefined)).toBe('');
   });
 });

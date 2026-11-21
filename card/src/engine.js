@@ -28,7 +28,7 @@ import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
 import { buildPools } from './engine/pools-3d.js';
-import { poolValid, islandsOf } from './pools.js';
+import { poolValid, islandsOf, poolRoomsOf } from './pools.js';
 import { pondFish } from './fish.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
@@ -601,7 +601,21 @@ export class HouseEngine {
   }
 
   get rooms() {
-    return this.world ? this.world.sd.levels.flatMap((l) => l.rooms.map((r) => ({ id: r.id, name: r.name, level: l.id }))) : [];
+    if (!this.world) return [];
+    const rooms = this.world.sd.levels.flatMap((l) => l.rooms.map((r) => ({ id: r.id, name: r.name, level: l.id })));
+    return [...rooms, ...this.poolRooms().map((r) => ({ id: r.id, name: r.name, level: r.level, pool: true }))];
+  }
+
+  /**
+   * Pools and ponds seen as rooms (id `pool:<id>`, on the ground level): they can be zoomed on, hold entities and links,
+   * and be mapped to an HA area like a room of the plan. { id, name, level, poly, pool, floor }
+   */
+  poolRooms() {
+    const w = this.world;
+    if (!w || !w.pools || !w.sd.levels.length) return [];
+    const level = w.sd.levels[0].id;
+    const label = this.opts.poolName || ((kind) => (kind === 'pond' ? 'Pond' : 'Pool'));
+    return poolRoomsOf(w.pools.items, this.edits.pools, level, label);
   }
 
   get lights() {
@@ -727,7 +741,8 @@ export class HouseEngine {
       const r = lv.rooms.find((x) => x.id === roomId);
       if (r) return { room: r, level: lv };
     }
-    return null;
+    const pr = this.poolRooms().find((x) => x.id === roomId);
+    return pr ? { room: pr, level: this.world.levelsById[pr.level] } : null;
   }
 
   /** Zoom on a room: hide the roof and the levels above it, keep the viewing direction. */
@@ -758,7 +773,7 @@ export class HouseEngine {
     const d = Math.max(...zs) - Math.min(...zs);
     const target = new THREE.Vector3(
       (Math.max(...xs) + Math.min(...xs)) / 2,
-      info.level.elevation + 0.5,
+      (info.room.floor ?? info.level.elevation) + 0.5, // a pool: the height of its rim
       (Math.max(...zs) + Math.min(...zs)) / 2,
     );
     for (const lv of this.world.sd.levels) this.visibility.levels[lv.id] = lv.elevation <= info.level.elevation;
@@ -836,7 +851,10 @@ export class HouseEngine {
   roomAt(levelId, x, z) {
     const lv = this.world.levelsById[levelId];
     const r = lv && lv.rooms.find((rm) => pointInPoly(x, z, rm.poly));
-    return r ? r.id : null;
+    if (r) return r.id;
+    // the water of a pool or a pond is a room of the ground level
+    const pr = lv && this.poolRooms().find((rm) => rm.level === levelId && pointInPoly(x, z, rm.poly));
+    return pr ? pr.id : null;
   }
 
   /**
@@ -870,10 +888,9 @@ export class HouseEngine {
         }
       }
     }
-    const cand = this.world.floors.filter((f) => this.visibility.levels[f.level.id] !== false).map((f) => f.mesh);
-    const hit = ray.intersectObjects(cand, false)[0];
+    const hit = ray.intersectObjects(this._roomMeshes(), false)[0];
     if (hit) {
-      const f = this.world.floors.find((x) => x.mesh === hit.object);
+      const f = this._roomOfMesh(hit.object);
       return { point: hit.point, room: f.room.id, level: f.level.id, floorY: hit.point.y, mesh: hit.object };
     }
     let p = null;
@@ -1217,7 +1234,7 @@ export class HouseEngine {
         geo.setIndex([0, 3, 2, 0, 2, 1]);
       }
       if (!geo) continue;
-      const color = z.kind === 'aquarium' ? '#29d3e8' : '#b47cff';
+      const color = z.kind === 'aquarium' ? '#29d3e8' : z.kind === 'link' ? '#ffb347' : '#b47cff';
       const mat = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -1526,10 +1543,27 @@ export class HouseEngine {
     return this._raycaster;
   }
 
+  /** Meshes that stand for a room under the pointer: floors of the visible levels, water of the pools (ground level). */
+  _roomMeshes() {
+    const w = this.world;
+    const meshes = w.floors.filter((f) => this.visibility.levels[f.level.id] !== false).map((f) => f.mesh);
+    const ground = w.sd.levels[0];
+    if (w.pools && ground && this.visibility.levels[ground.id] !== false) for (const it of w.pools.items) meshes.push(it.water);
+    return meshes;
+  }
+
+  /** { room, level, mesh } of a mesh given by _roomMeshes. */
+  _roomOfMesh(mesh) {
+    const f = this.world.floors.find((x) => x.mesh === mesh);
+    if (f) return f;
+    const it = this.world.pools.items.find((x) => x.water === mesh);
+    const room = this.poolRooms().find((r) => r.pool === it.id);
+    return { mesh, room, level: this.world.levelsById[room.level] };
+  }
+
   _pickRoom(ev) {
-    const cand = this.world.floors.filter((f) => this.visibility.levels[f.level.id] !== false).map((f) => f.mesh);
-    const hit = this.rayAt(ev).intersectObjects(cand, false)[0];
-    return hit ? this.world.floors.find((f) => f.mesh === hit.object) : null;
+    const hit = this.rayAt(ev).intersectObjects(this._roomMeshes(), false)[0];
+    return hit ? this._roomOfMesh(hit.object) : null;
   }
 
   _hover(ev, leave = false) {

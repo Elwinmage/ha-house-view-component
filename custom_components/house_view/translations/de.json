@@ -24,7 +24,8 @@
         "title": "House View-Optionen",
         "menu_options": {
           "github": "GitHub-Sicherung",
-          "lock": "Bearbeitungsschutz"
+          "lock": "Bearbeitungsschutz",
+          "demo": "Demo"
         }
       },
       "github": {
@@ -43,6 +44,13 @@
         "data": {
           "password": "Neues Passwort (mindestens 4 Zeichen)",
           "remove": "Schutz entfernen"
+        }
+      },
+      "demo": {
+        "title": "Demo-Haus",
+        "description": "Demo ausblenden: Die Einrichtung der Karte bietet den Start nicht mehr an. Aktueller Zustand: {status}. Ein bereits geladenes Demo-Haus bleibt verfügbar.",
+        "data": {
+          "hide_demo": "Demo ausblenden"
         }
       }
     },

@@ -41,6 +41,7 @@ CONF_PATH = "path"
 
 # Options (edit lock): salted hash of the password asked by the card before its editors open
 CONF_LOCK = "edit_lock"
+CONF_HIDE_DEMO = "hide_demo"  # option: the card hides the demo home (its buttons) in the setup
 CONF_PASSWORD = "password"
 CONF_REMOVE = "remove"
 UNLOCK_HEADER = "X-House-View-Unlock"  # token returned by /api/house_view/unlock, sent with every write

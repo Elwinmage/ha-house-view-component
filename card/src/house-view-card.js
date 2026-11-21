@@ -18,6 +18,7 @@ import {
   pushZones,
   openZone,
   renderAquariumDialog,
+  renderLinkDialog,
   renderZoneThumbs,
   placeZones,
   renderZonesEditor,
@@ -52,6 +53,7 @@ import { gatesOf, gateOpenness } from './gates.js';
 import { normalizeFence } from './fences.js';
 import { renderOpenings } from './ui-openings.js';
 import { renderPools } from './ui-pools.js';
+import { POOL_ROOM } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
 import {
   addRoom,
@@ -381,6 +383,7 @@ class HouseViewCard extends LitElement {
       fpsCap: this._config.fps_cap,
       onRoomClick: (roomId) => this._roomClick(roomId),
       onZoneClick: (id) => openZone(this, id),
+      poolName: (kind) => this._t(`pool_${kind}`),
       onHover: (info, ev) => this._hover(info, ev),
     });
     this._engine.onFrame = () => {
@@ -404,7 +407,7 @@ class HouseViewCard extends LitElement {
   async _loadCatalog() {
     const h = this._hass;
     if (!h || !h.callWS || !this._engine) return;
-    this._catalog = this._catalog || { trees: {}, objects: {}, fish: {} };
+    this._catalog = this._catalog || { trees: {}, objects: {}, pond_fish: {} };
     // each section on its own: one that cannot be read keeps what it had, and does not hide the other
     await Promise.all(
       Object.keys(this._catalog).map(async (section) => {
@@ -430,7 +433,7 @@ class HouseViewCard extends LitElement {
   _watchCatalog() {
     const h = this._hass;
     if (this._catalogUnsub || !h || !h.connection || !h.connection.subscribeMessage) return;
-    this._catalogUnsub = ['trees', 'objects', 'fish'].map((section) =>
+    this._catalogUnsub = ['trees', 'objects', 'pond_fish'].map((section) =>
       h.connection.subscribeMessage(() => this._loadCatalog(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
     );
   }
@@ -767,7 +770,7 @@ class HouseViewCard extends LitElement {
 
   _roomClick(roomId) {
     if (!this._hass) return;
-    if (this._vacMode) return this._vacToggleRoom(roomId);
+    if (this._vacMode) return roomId.startsWith(POOL_ROOM) ? undefined : this._vacToggleRoom(roomId); // no cleaning in the water
     // in the editor a tap on a room opens the editing of its layer of entities (zoom), whatever the tap action
     const act = this._editing ? 'zoom' : this._config.tap_action;
     if (this._editing && this._engine.focus === roomId) return;
@@ -1539,6 +1542,11 @@ class HouseViewCard extends LitElement {
     return !!this._demo || this._config.mode === 'simulation';
   }
 
+  /** True when the integration option hides the demo: no button to start it (a demo home already shown keeps its own). */
+  get _demoHidden() {
+    return !!(this._info && this._info.hide_demo) && !this._demo;
+  }
+
   _setDemo(on) {
     if (on === !!this._demo) return;
     clearInterval(this._demoTimer);
@@ -2006,15 +2014,19 @@ class HouseViewCard extends LitElement {
         ${label}</label
       >`;
     return html`
-      <details ?open=${!!this._demo}>
-        <summary>${t('demo')}</summary>
-        <div class="hint">${t(this._demo ? 'demo_on_hint' : 'demo_hint')}</div>
-        <div class="row">
-          <button @click=${() => this._startDemo()}>${t(this._demo ? 'demo_reset' : 'demo_start')}</button>
-          ${this._demo ? html`<button @click=${() => this._downloadDemoHouse()}>${t('demo_download')}</button>` : nothing}
-          ${this._demo ? html`<button @click=${() => this._leaveDemo()}>${t('demo_leave')}</button>` : nothing}
-        </div>
-      </details>
+      ${
+        this._demoHidden
+          ? nothing
+          : html`<details ?open=${!!this._demo}>
+              <summary>${t('demo')}</summary>
+              <div class="hint">${t(this._demo ? 'demo_on_hint' : 'demo_hint')}</div>
+              <div class="row">
+                <button @click=${() => this._startDemo()}>${t(this._demo ? 'demo_reset' : 'demo_start')}</button>
+                ${this._demo ? html`<button @click=${() => this._downloadDemoHouse()}>${t('demo_download')}</button>` : nothing}
+                ${this._demo ? html`<button @click=${() => this._leaveDemo()}>${t('demo_leave')}</button>` : nothing}
+              </div>
+            </details>`
+      }
       <details open>
         <summary>${t('plan')}</summary>
         <label class="file">${t('import_plan')}<input type="file" accept=".sh3d,.xml,.ifc,.svg" @change=${this._onPlan} /></label>
@@ -2887,7 +2899,7 @@ class HouseViewCard extends LitElement {
             : nothing
         }
         ${this._renderPanel()} ${this._renderWindows()} ${this._renderVacuum()} ${this._renderLock()}
-        ${ready ? renderAlarmList(this) : nothing} ${renderAquariumDialog(this)}
+        ${ready ? renderAlarmList(this) : nothing} ${renderAquariumDialog(this)} ${renderLinkDialog(this)}
         ${
           this._focus && ready && !this._vacMode
             ? html`<div class="back-row">
@@ -3191,6 +3203,30 @@ class HouseViewCard extends LitElement {
     .zthumb > * {
       display: block;
       flex: none;
+    }
+    .zthumb.zlink {
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(255, 179, 71, 0.85);
+      color: #1b1b1b;
+      font-weight: 600;
+      font-size: 34px;
+      text-align: center;
+    }
+    .zthumb.zlink ha-icon {
+      --mdc-icon-size: 96px;
+    }
+    .dialog .box.wide {
+      width: min(92%, 900px);
+      height: min(88%, 700px);
+      display: flex;
+      flex-direction: column;
+    }
+    .linkframe {
+      flex: 1;
+      width: 100%;
+      border: 0;
+      background: #fff;
     }
     .dialog {
       position: absolute;

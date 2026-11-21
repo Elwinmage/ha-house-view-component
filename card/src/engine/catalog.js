@@ -112,7 +112,8 @@ const CATALOG = { trees: {}, objects: {}, fish: {} };
  * swim in the ponds.
  * Entries the engine cannot read (a newer format) are left out. `lang`: language of the names.
  */
-export function setCatalog({ trees = {}, objects = {}, fish = {} } = {}, lang = 'en') {
+// the sections of house-catalog: `pond_fish` holds the fish of the ponds
+export function setCatalog({ trees = {}, objects = {}, pond_fish: fish = {} } = {}, lang = 'en') {
   for (const key of Object.keys(SPECIES)) delete SPECIES[key];
   Object.assign(SPECIES, BUILTIN_SPECIES);
   CATALOG.trees = {};

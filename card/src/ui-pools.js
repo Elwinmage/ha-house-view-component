@@ -288,7 +288,7 @@ function renderPoolEditor(card, p) {
 function renderFishGroups(card, p, commit) {
   const t = card._t;
   const lang = (card._hass && card._hass.language) || 'en';
-  const catalog = (card._catalog && card._catalog.fish) || {};
+  const catalog = (card._catalog && card._catalog.pond_fish) || {};
   const ids = Object.keys(catalog).sort();
   const groups = (p.fish = p.fish || []);
   const add = () => {

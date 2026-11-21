@@ -1,14 +1,17 @@
-// General entities on the left, central alarm badge, and the zones a tap opens (media players, aquariums): their
+// General entities on the left, central alarm badge, and the zones a tap opens (media players, aquariums, links to
+// a dashboard or a card): their
 // rendering on the view and their editor sections. Plain functions of the card instance, like ui-sections.js.
 import { html, nothing } from 'lit';
 import { alarmList, tapAction, roomAlarms } from './alarms.js';
 import { areaOfEntity } from './ha-bridge.js';
-import { rectAt, aquariumSize, onFloor, boxOf, rectCorners, quadMatrix, keepRatio, fitRatio } from './zones.js';
+import { parseCardConfig, linkUrl, rectAt, aquariumSize, onFloor, boxOf, rectCorners, quadMatrix, keepRatio, fitRatio } from './zones.js';
 
 /** Element of ha-reef-card that draws an aquarium of reeftank (its aquarium view). */
 export const AQUARIUM_CARD = 'reef-aquarium-card';
 /** Width in pixels of the picture of an aquarium laid on its zone (its height follows the zone). */
 const THUMB_W = 360;
+const ZONE_ICON = { media: 'mdi:play-box-outline', aquarium: 'mdi:fishbowl-outline', link: 'mdi:link-variant' };
+const ZONE_LABEL = { media: 'zone_media', aquarium: 'zone_aquarium', link: 'zone_link' };
 
 /** Home Assistant area of the room a zone stands in (undefined: the picker starts from the current room). */
 function zoneArea(card, z) {
@@ -402,8 +405,67 @@ export function openZone(card, id) {
     if (z.entity) card._moreInfo(z.entity);
     return;
   }
+  if (z.kind === 'link') {
+    card._linkOpen = z;
+    card.requestUpdate();
+    return;
+  }
   card._aquariumOpen = z;
   card.requestUpdate();
+}
+
+/**
+ * Dialog of a link (dashboard in a frame, or any Lovelace card), opened by a tap on its zone, like the view of an
+ * aquarium. The card is made by the card helpers of Home Assistant and kept between renders.
+ */
+export function renderLinkDialog(card) {
+  const z = card._linkOpen;
+  if (!z) return nothing;
+  const t = card._t;
+  const close = () => {
+    card._linkOpen = null;
+    card.requestUpdate();
+  };
+  let body;
+  if (z.link === 'card') {
+    const cfg = parseCardConfig(z.card);
+    body = cfg ? linkCardElement(card, z, cfg) : html`<div class="hint">${t('zone_link_bad_card')}</div>`;
+  } else {
+    const url = linkUrl(z.path);
+    body = url
+      ? html`<iframe class="linkframe" src=${url} title=${z.name || ''}></iframe>`
+      : html`<div class="hint">${t('zone_link_no_path')}</div>`;
+  }
+  return html`<div class="dialog" @pointerdown=${(e) => e.stopPropagation()} @click=${(e) => e.target === e.currentTarget && close()}>
+    <div class="box wide">
+      <div class="head"><b>${z.name || t('zone_link')}</b><button class="x" @click=${close}>✕</button></div>
+      ${body}
+    </div>
+  </div>`;
+}
+
+/** The element of a card of a link zone (a placeholder until the card helpers have made it). */
+function linkCardElement(card, z, cfg) {
+  card._linkEls = card._linkEls || new Map();
+  const key = `${z.id}|${JSON.stringify(cfg)}`;
+  let el = card._linkEls.get(key);
+  if (!el) {
+    el = document.createElement('div');
+    card._linkEls.set(key, el);
+    const make = window.loadCardHelpers ? window.loadCardHelpers() : Promise.reject(new Error('no card helpers'));
+    make
+      .then((h) => h.createCardElement(cfg))
+      .then((c) => {
+        el._card = c;
+        c.hass = card._realHass || card._hass;
+        el.replaceChildren(c);
+      })
+      .catch(() => {
+        el.textContent = card._t('zone_link_bad_card');
+      });
+  }
+  if (el._card) el._card.hass = card._realHass || card._hass;
+  return el;
 }
 
 /** Dialog with the view of an aquarium (ha-reef-card), opened by a tap on its zone. */
@@ -446,13 +508,21 @@ function aquariumElement(card, aquarium, place, view) {
 
 /** Pictures of the aquariums laid on their zones (fish moving), placed on every frame by placeZones. */
 export function renderZoneThumbs(card) {
-  if (!card._data || card._status !== 'ready' || !customElements.get(AQUARIUM_CARD)) return nothing;
-  const zones = card._data.edits.zones.filter(
-    (z) => z.kind === 'aquarium' && z.aquarium && z.thumb !== false && z.shape === 'rect' && z.rect,
-  );
+  if (!card._data || card._status !== 'ready') return nothing;
+  const shown = (z) => z.thumb !== false && z.shape === 'rect' && z.rect;
+  const aq = customElements.get(AQUARIUM_CARD);
+  const zones = card._data.edits.zones.filter((z) => shown(z) && ((aq && z.kind === 'aquarium' && z.aquarium) || z.kind === 'link'));
   if (!zones.length) return nothing;
   return html`<div class="anchors">
     ${zones.map((z) => {
+      if (z.kind === 'link') {
+        // a tile on its surface: the tap is taken by the zone (engine), the tile is only seen
+        const H = Math.round((THUMB_W * z.rect.h) / z.rect.w);
+        return html`<div class="zthumb zlink" data-zone=${z.id} style=${`width:${THUMB_W}px;height:${H}px`}>
+          <ha-icon icon=${z.icon || (z.link === 'card' ? 'mdi:card-text-outline' : 'mdi:view-dashboard-outline')}></ha-icon>
+          <span>${z.name || ''}</span>
+        </div>`;
+      }
       const W = THUMB_W;
       const H = Math.round((THUMB_W * z.rect.h) / z.rect.w);
       // the picture keeps the proportions of the tank inside the zone (never stretched)
@@ -555,7 +625,7 @@ export function renderZonesEditor(card) {
     return (a && aquariumSize(a.dims, floor)) || [1, 0.6];
   };
   const eng = card._engine;
-  const color = (z) => (z.kind === 'aquarium' ? '#29d3e8' : '#b47cff');
+  const color = (z) => (z.kind === 'aquarium' ? '#29d3e8' : z.kind === 'link' ? '#ffb347' : '#b47cff');
   const placeRect = (z) =>
     ed.setClickTool({
       key: 'zone-rect',
@@ -595,6 +665,7 @@ export function renderZonesEditor(card) {
   const add = (kind) => {
     const z = { id: newId('z'), kind, name: '', thumb: true };
     if (kind === 'aquarium' && aquariums.length) Object.assign(z, { aquarium: aquariums[0].id, name: aquariums[0].name });
+    if (kind === 'link') Object.assign(z, { link: 'dashboard', path: '', card: '' });
     list.push(z);
     card._zoneSel = z.id;
     save();
@@ -628,6 +699,75 @@ export function renderZonesEditor(card) {
         ${a.views.map((v) => html`<option value=${v.id} ?selected=${v.id === z.view}>${v.name}</option>`)}
       </select>`;
   };
+  const kindFields = (z) => {
+    if (z.kind === 'media')
+      return html`<span>${t('zone_player')}</span>${card._entityInput(
+          z.entity,
+          (id) => {
+            z.entity = id;
+            save();
+          },
+          ['media_player'],
+          zoneArea(card, z),
+        )}`;
+    if (z.kind === 'link')
+      return html`<span>${t('zone_link_kind')}</span>
+        <select
+          @change=${(e) => {
+            z.link = e.target.value;
+            save();
+          }}
+        >
+          <option value="dashboard" ?selected=${z.link !== 'card'}>${t('zone_link_dashboard')}</option>
+          <option value="card" ?selected=${z.link === 'card'}>${t('zone_link_card')}</option>
+        </select>
+        ${
+          z.link === 'card'
+            ? html`<span>${t('zone_link_card_cfg')}</span>
+                <textarea
+                  rows="6"
+                  spellcheck="false"
+                  placeholder='{"type": "picture-entity", "entity": "camera.garden"}'
+                  .value=${typeof z.card === 'string' ? z.card : z.card ? JSON.stringify(z.card, null, 2) : ''}
+                  @change=${(e) => {
+                    z.card = e.target.value.trim();
+                    save();
+                  }}
+                ></textarea>
+                ${z.card && !parseCardConfig(z.card) ? html`<span></span><span class="hint">${t('zone_link_bad_card')}</span>` : nothing}`
+            : html`<span>${t('zone_link_path')}</span>
+                <input
+                  type="text"
+                  placeholder="/lovelace/cameras"
+                  .value=${z.path || ''}
+                  @change=${(e) => {
+                    z.path = e.target.value.trim();
+                    save();
+                  }}
+                />`
+        }
+        <span>${t('zone_link_icon')}</span>${card._iconInput(z.icon, (icon) => {
+          z.icon = icon || undefined;
+          save();
+        })}`;
+    return html`<span>${t('zone_aquarium')}</span>
+      <select
+        @change=${(e) => {
+          const a = aquariums.find((x) => x.id === e.target.value);
+          z.aquarium = e.target.value;
+          if (a && (!z.name || aquariums.some((x) => x.name === z.name))) z.name = a.name;
+          if (a && z.rect) {
+            const size = aquariumSize(a.dims, onFloor(z.rect));
+            if (size) z.rect = { ...z.rect, w: size[0], h: size[1] };
+          }
+          z.view = ''; // the views belong to an aquarium
+          save();
+        }}
+      >
+        ${aquariums.map((a) => html`<option value=${a.id} ?selected=${a.id === z.aquarium}>${a.name}</option>`)}
+      </select>
+      ${viewSelect(z)}`;
+  };
   const body = (z) => {
     const floor = z.rect && onFloor(z.rect);
     return html`<div class="grid">
@@ -640,42 +780,14 @@ export function renderZonesEditor(card) {
             save();
           }}
         />
-        ${
-          z.kind === 'media'
-            ? html`<span>${t('zone_player')}</span>${card._entityInput(
-                  z.entity,
-                  (id) => {
-                    z.entity = id;
-                    save();
-                  },
-                  ['media_player'],
-                  zoneArea(card, z),
-                )}`
-            : html`<span>${t('zone_aquarium')}</span>
-                <select
-                  @change=${(e) => {
-                    const a = aquariums.find((x) => x.id === e.target.value);
-                    z.aquarium = e.target.value;
-                    if (a && (!z.name || aquariums.some((x) => x.name === z.name))) z.name = a.name;
-                    if (a && z.rect) {
-                      const size = aquariumSize(a.dims, onFloor(z.rect));
-                      if (size) z.rect = { ...z.rect, w: size[0], h: size[1] };
-                    }
-                    z.view = ''; // the views belong to an aquarium
-                    save();
-                  }}
-                >
-                  ${aquariums.map((a) => html`<option value=${a.id} ?selected=${a.id === z.aquarium}>${a.name}</option>`)}
-                </select>
-                ${viewSelect(z)}`
-        }
+        ${kindFields(z)}
       </div>
       <div class="row">
         <button class=${tool === 'zone-rect' ? 'on' : ''} @click=${() => (tool === 'zone-rect' ? ed.setClickTool(null) : placeRect(z))}>
           ${t('zone_draw')}
         </button>
         ${
-          z.kind === 'media'
+          z.kind !== 'aquarium'
             ? html`<button
                 class=${tool === 'zone-box' ? 'on' : ''}
                 @click=${() => (tool === 'zone-box' ? ed.setClickTool(null) : pickObject(z))}
@@ -763,13 +875,13 @@ export function renderZonesEditor(card) {
       (z) =>
         html`<div class=${`zone ${sel === z ? 'open' : ''}`}>
           <div class="ent-head" @click=${() => choose(z.id)}>
-            <ha-icon icon=${z.kind === 'media' ? 'mdi:play-box-outline' : 'mdi:fishbowl-outline'}></ha-icon>
-            <b>${z.name || (z.kind === 'media' ? z.entity : '') || t(z.kind === 'media' ? 'zone_media' : 'zone_aquarium')}</b>
+            <ha-icon icon=${ZONE_ICON[z.kind] || ZONE_ICON.aquarium}></ha-icon>
+            <b>${z.name || (z.kind === 'media' ? z.entity : '') || t(ZONE_LABEL[z.kind] || 'zone_aquarium')}</b>
             <small>${where(z)}</small>
           </div>
           ${
             sel === z
-              ? card._asWindow(z.name || t(z.kind === 'media' ? 'zone_media' : 'zone_aquarium'), body(z), () => {
+              ? card._asWindow(z.name || t(ZONE_LABEL[z.kind] || 'zone_aquarium'), body(z), () => {
                   card._zoneSel = null;
                   ed.setClickTool(null);
                   pushZones(card);
@@ -780,6 +892,7 @@ export function renderZonesEditor(card) {
     )}
     <div class="row">
       <button @click=${() => add('media')}>${t('zone_add_media')}</button>
+      <button @click=${() => add('link')}>${t('zone_add_link')}</button>
       ${aquariums.length ? html`<button @click=${() => add('aquarium')}>${t('zone_add_aquarium')}</button>` : nothing}
     </div>
     ${aquariums.length || !card._aquariumsLoaded ? nothing : html`<div class="hint">${t('zone_no_reeftank')}</div>`}

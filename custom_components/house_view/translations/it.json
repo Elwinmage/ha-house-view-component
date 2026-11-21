@@ -24,7 +24,8 @@
         "title": "Opzioni di House View",
         "menu_options": {
           "github": "Backup GitHub",
-          "lock": "Protezione delle modifiche"
+          "lock": "Protezione delle modifiche",
+          "demo": "Demo"
         }
       },
       "github": {
@@ -43,6 +44,13 @@
         "data": {
           "password": "Nuova password (almeno 4 caratteri)",
           "remove": "Rimuovere la protezione"
+        }
+      },
+      "demo": {
+        "title": "Casa dimostrativa",
+        "description": "Nascondi la demo: le impostazioni della scheda non propongono più di avviarla. Stato attuale: {status}. Una demo già caricata resta disponibile.",
+        "data": {
+          "hide_demo": "Nascondi la demo"
         }
       }
     },

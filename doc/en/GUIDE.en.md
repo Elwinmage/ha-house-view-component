@@ -264,7 +264,7 @@ Automatic detection on or off, bells in the rooms, entities added by hand, ignor
 
 ### 6.4 Clickable zones
 
-A **media player** laid on a piece of furniture of the plan (tap it) or on a rectangle against a wall or on a floor; an **aquarium** of the [reeftank](https://github.com/Elwinmage/ha-reeftank-component) integration on a rectangle the size of the tank. A tap opens the player, or the aquarium view of the [ha-reef-card](https://github.com/Elwinmage/ha-reef-card) card; the rectangle of an aquarium shows that view live, fish included, never stretched. While placing, the surface aimed at lights up; a zone is moved by dragging it.
+A **media player** laid on a piece of furniture of the plan (tap it) or on a rectangle against a wall or on a floor; an **aquarium** of the [reeftank](https://github.com/Elwinmage/ha-reeftank-component) integration on a rectangle the size of the tank. A tap opens the player, or the aquarium view of the [ha-reef-card](https://github.com/Elwinmage/ha-reef-card) card; the rectangle of an aquarium shows that view live, fish included, never stretched. While placing, the surface aimed at lights up; a zone is moved by dragging it. A **link** (*Add a link*) opens, in the same window, a dashboard of Home Assistant (a path such as `/lovelace/cameras`, or a full address, shown in a frame) or any Lovelace card (its configuration as JSON, e.g. `{"type": "picture-entity", "entity": "camera.garden"}`). On a rectangle it shows as a tile with its icon (chosen with the icon picker, which lists the icons while you type) and its name.
 
 ![Clickable zones](../images/29-zones.jpg)
 
@@ -288,7 +288,7 @@ A room with **only one window** is linked on its own to the window sensor, the o
 
 ### 6.7 Pools and ponds
 
-*＋ Pool* or *＋ Pond*, then draw the outline seen from above: **Rectangle** (two opposite corners) or **Free shape** (point by point, then *Finish*). Set the name, the water colour, the depth (0.2 to 6 m) and, if you have one, the **cleaning robot** (`binary_sensor`, `switch`, `input_boolean` or `vacuum`). The terrain is dug: vertical walls, flat bottom and coping for a pool; sloping bottom and a pebble bank for a pond.
+*＋ Pool* or *＋ Pond*, then draw the outline seen from above: **Rectangle** (two opposite corners) or **Free shape** (point by point, then *Finish*). Set the name, the water colour, the depth (0.2 to 6 m) and, if you have one, the **cleaning robot** (`binary_sensor`, `switch`, `input_boolean` or `vacuum`). The terrain is dug: vertical walls, flat bottom and coping for a pool; sloping bottom and a pebble bank for a pond. A pool or a pond counts as a **room**: a tap zooms the camera on it (the view can be saved like that of a room), entities and links can be placed in it, and it can be linked to a Home Assistant area like a room of the plan.
 
 ![A drawn pool](../images/25-piscines-editeur.jpg)
 
@@ -349,7 +349,7 @@ To create **your own tree or object**, use the [catalog editor](https://github.c
 - **Demo**: see [Demo mode](#9-demo-mode).
 - **Plan** and **Terrain**: see [the first setup](#4-first-setup-the-plan-and-the-terrain).
 - **GitHub backup**: set a **private** repository in the integration options (*Settings → Devices & services → House View → Configure → GitHub backup*: repository `owner/name`, *fine-grained* token with *Contents: read and write*, branch, folder), then *Back up to GitHub* / *Restore from GitHub*. A public repository is refused: it would hold the plan of your house.
-- **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free.
+- **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free. - **Hide the demo**: integration options → *Demo* → *Hide the demo* removes the demo section from the setup of the card (a demo home already loaded keeps its own buttons).
 - **Edits file**: export or import all your edits (entities, watering, fences…) as a JSON file.
 
 ## 8. Several homes

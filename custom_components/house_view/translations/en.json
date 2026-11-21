@@ -24,7 +24,8 @@
         "title": "House View options",
         "menu_options": {
           "github": "GitHub backup",
-          "lock": "Edit protection"
+          "lock": "Edit protection",
+          "demo": "Demo"
         }
       },
       "github": {
@@ -43,6 +44,13 @@
         "data": {
           "password": "New password (4 characters or more)",
           "remove": "Remove the protection"
+        }
+      },
+      "demo": {
+        "title": "Demo home",
+        "description": "Hide the demo home: the setup of the card no longer offers to start it. Current state: {status}. A demo home already loaded stays available.",
+        "data": {
+          "hide_demo": "Hide the demo"
         }
       }
     },

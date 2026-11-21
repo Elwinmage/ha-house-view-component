@@ -264,7 +264,7 @@ Détection automatique activée ou non, cloches dans les pièces, entités ajout
 
 ### 6.4 Zones cliquables
 
-Un **lecteur multimédia** posé sur un meuble du plan (cliquez-le) ou sur un rectangle collé à un mur ou au sol ; un **aquarium** de l'intégration [reeftank](https://github.com/Elwinmage/ha-reeftank-component) sur un rectangle à la taille de la cuve. Un clic ouvre le lecteur, ou la vue de l'aquarium de la carte [ha-reef-card](https://github.com/Elwinmage/ha-reef-card) ; le rectangle d'un aquarium montre cette vue en direct, poissons compris, sans jamais être déformé. Pendant le placement, la surface visée s'allume ; une zone se déplace en la glissant.
+Un **lecteur multimédia** posé sur un meuble du plan (cliquez-le) ou sur un rectangle collé à un mur ou au sol ; un **aquarium** de l'intégration [reeftank](https://github.com/Elwinmage/ha-reeftank-component) sur un rectangle à la taille de la cuve. Un clic ouvre le lecteur, ou la vue de l'aquarium de la carte [ha-reef-card](https://github.com/Elwinmage/ha-reef-card) ; le rectangle d'un aquarium montre cette vue en direct, poissons compris, sans jamais être déformé. Pendant le placement, la surface visée s'allume ; une zone se déplace en la glissant. Un **lien** (*Ajouter un lien*) ouvre, dans la même fenêtre, un tableau de bord de Home Assistant (un chemin comme `/lovelace/cameras`, ou une adresse complète, affiché dans un cadre) ou n'importe quelle carte Lovelace (sa configuration en JSON, par ex. `{"type": "picture-entity", "entity": "camera.jardin"}`). Sur un rectangle, il apparaît comme une tuile avec son icône (choisie avec le sélecteur d'icônes, qui propose la liste pendant la saisie) et son nom.
 
 ![Zones cliquables](../images/29-zones.jpg)
 
@@ -288,7 +288,7 @@ Une pièce qui n'a **qu'une fenêtre** est liée toute seule au capteur de fenê
 
 ### 6.7 Piscines et étangs
 
-*＋ Piscine* ou *＋ Étang*, puis dessinez le contour vu de dessus : **Rectangle** (deux coins opposés) ou **Forme libre** (point par point, puis *Terminer*). Réglez le nom, la couleur de l'eau, la profondeur (0,2 à 6 m) et, si vous en avez un, le **robot nettoyeur** (`binary_sensor`, `switch`, `input_boolean` ou `vacuum`). Le terrain est creusé : parois verticales, fond plat et margelle pour une piscine ; fond en pente et berge de galets pour un étang.
+*＋ Piscine* ou *＋ Étang*, puis dessinez le contour vu de dessus : **Rectangle** (deux coins opposés) ou **Forme libre** (point par point, puis *Terminer*). Réglez le nom, la couleur de l'eau, la profondeur (0,2 à 6 m) et, si vous en avez un, le **robot nettoyeur** (`binary_sensor`, `switch`, `input_boolean` ou `vacuum`). Le terrain est creusé : parois verticales, fond plat et margelle pour une piscine ; fond en pente et berge de galets pour un étang. Une piscine ou un étang compte comme une **pièce** : un clic zoome la caméra dessus (la vue peut être enregistrée comme celle d'une pièce), on peut y placer des entités et des liens, et le relier à une zone Home Assistant comme une pièce du plan.
 
 ![Une piscine dessinée](../images/25-piscines-editeur.jpg)
 
@@ -349,7 +349,7 @@ Pour créer **votre propre arbre ou objet**, utilisez l'[éditeur de catalogue](
 - **Démo** : voir [Le mode démo](#9-le-mode-démo).
 - **Plan** et **Terrain** : voir [la mise en place](#4-première-mise-en-place--le-plan-et-le-terrain).
 - **Sauvegarde GitHub** : réglez un dépôt **privé** dans les options de l'intégration (*Paramètres → Appareils et services → House View → Configurer → Sauvegarde GitHub* : dépôt `propriétaire/nom`, jeton *fine-grained* avec *Contents : read and write*, branche, dossier), puis *Sauvegarder sur GitHub* / *Restaurer depuis GitHub*. Un dépôt public est refusé : il contiendrait le plan de votre maison.
-- **Protection de l'édition** : un mot de passe peut être demandé avant d'ouvrir l'éditeur et la configuration (options de l'intégration → *Protection de l'édition*). La carte le redemande après 10 minutes sans modification ; le bouton 🔒 reverrouille tout de suite. Regarder la vue, zoomer, commander les lumières ou l'aspirateur restent libres.
+- **Protection de l'édition** : un mot de passe peut être demandé avant d'ouvrir l'éditeur et la configuration (options de l'intégration → *Protection de l'édition*). La carte le redemande après 10 minutes sans modification ; le bouton 🔒 reverrouille tout de suite. Regarder la vue, zoomer, commander les lumières ou l'aspirateur restent libres. - **Masquer la démo** : options de l'intégration → *Démo* → *Masquer la démo* retire la section démo de la configuration de la carte (une démo déjà chargée garde ses propres boutons).
 - **Fichier d'éditions** : exporter ou importer toutes vos éditions (entités, arrosage, clôtures…) dans un fichier JSON.
 
 ## 8. Plusieurs logements

@@ -24,7 +24,8 @@
         "title": "Opções do House View",
         "menu_options": {
           "github": "Cópia no GitHub",
-          "lock": "Proteção da edição"
+          "lock": "Proteção da edição",
+          "demo": "Demo"
         }
       },
       "github": {
@@ -43,6 +44,13 @@
         "data": {
           "password": "Nova palavra-passe (4 caracteres ou mais)",
           "remove": "Remover a proteção"
+        }
+      },
+      "demo": {
+        "title": "Casa de demonstração",
+        "description": "Ocultar a demo: as definições do cartão deixam de propor iniciá-la. Estado atual: {status}. Uma demo já carregada continua disponível.",
+        "data": {
+          "hide_demo": "Ocultar a demo"
         }
       }
     },

@@ -13,7 +13,7 @@ import {
   swimStep,
 } from '../src/fish.js';
 import { buildPondFish } from '../src/engine/fish-3d.js';
-import { drawableFish } from '../src/engine/catalog.js';
+import { catalogFish, drawableFish, setCatalog } from '../src/engine/catalog.js';
 
 const KOI = {
   name: { en: 'Koi' },
@@ -212,5 +212,14 @@ describe('3D fish', () => {
         () => -1,
       ).fish,
     ).toEqual([]);
+  });
+});
+
+describe('fish of the catalog', () => {
+  it('come from the pond_fish section of house-catalog', () => {
+    setCatalog({ pond_fish: { koi: KOI, broken: { name: { en: 'x' } } } });
+    expect(Object.keys(catalogFish())).toEqual(['koi']);
+    setCatalog({});
+    expect(catalogFish()).toEqual({});
   });
 });

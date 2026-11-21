@@ -187,3 +187,20 @@ export function applyQuad(matrix, X, Y) {
   const w = m[3] * X + m[7] * Y + m[15];
   return [(m[0] * X + m[4] * Y + m[12]) / w, (m[1] * X + m[5] * Y + m[13]) / w];
 }
+
+/** Parse the configuration of a card typed as JSON (a YAML-less editor): the object, or null when it is not one. */
+export function parseCardConfig(text) {
+  try {
+    const cfg = typeof text === 'string' ? JSON.parse(text) : text;
+    return cfg && typeof cfg === 'object' && !Array.isArray(cfg) && typeof cfg.type === 'string' ? cfg : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** URL of a dashboard link: a path of this Home Assistant (`/lovelace/cameras`) or a full address. '' when unusable. */
+export function linkUrl(path) {
+  const p = String(path || '').trim();
+  if (/^https?:\/\//i.test(p)) return p;
+  return p.startsWith('/') ? p : p ? `/${p}` : '';
+}

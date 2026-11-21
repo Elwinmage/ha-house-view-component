@@ -271,6 +271,7 @@ async def test_demo_home(hass, hass_client, hass_admin_user, hass_read_only_acce
     assert entry.data["location"] == {"latitude": 45.0, "longitude": 2.0}
     info = await (await client.get(f"/api/house_view/info?home={home}")).json()
     assert info["demo"] is True
+    assert info["hide_demo"] is False
     assert (info["has_scene"], info["has_terrain"], info["has_edits"]) == (False, False, True)  # flat, no plan
     assert (info["latitude"], info["longitude"]) == (45.0, 2.0)
     assert (await (await client.get("/api/house_view/info")).json())["demo"] is False  # the first home

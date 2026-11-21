@@ -61,6 +61,9 @@ export function rectFromCorners(a, b) {
   ];
 }
 
+/** Prefix of the id of the room that stands for a pool or a pond (see HouseEngine.poolRooms). */
+export const POOL_ROOM = 'pool:';
+
 /** Defaults of a pool or pond of kind `kind`. */
 export function newPool(kind, id) {
   const k = POOL_KINDS[kind] ? kind : 'pool';
@@ -99,4 +102,22 @@ export function robotStep(poly, r, dt, speed = 0.35, margin = 0.3, rand = Math.r
   const [cx, cz] = centroidOf(poly);
   const h = Math.atan2(cz - r.z, cx - r.x);
   return { x: r.x + Math.cos(h) * speed * dt, z: r.z + Math.sin(h) * speed * dt, h };
+}
+
+/**
+ * Rooms that stand for the pools and ponds built in the 3D scene (`items`: { id, pond, poly, rim }), on `level`:
+ * { id, name, level, poly, pool, floor }. A pool without a name takes `label(kind)`.
+ */
+export function poolRoomsOf(items, pools, level, label) {
+  return items.map((it) => {
+    const p = (pools || []).find((x) => x.id === it.id) || {};
+    return {
+      id: `${POOL_ROOM}${it.id}`,
+      name: p.name || label(it.pond ? 'pond' : 'pool'),
+      level,
+      poly: it.poly,
+      pool: it.id,
+      floor: it.rim,
+    };
+  });
 }
