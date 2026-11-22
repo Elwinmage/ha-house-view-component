@@ -106,7 +106,8 @@ export function robotStep(poly, r, dt, speed = 0.35, margin = 0.3, rand = Math.r
 
 /**
  * Rooms that stand for the pools and ponds built in the 3D scene (`items`: { id, pond, poly, rim }), on `level`:
- * { id, name, level, poly, pool, floor }. A pool without a name takes `label(kind)`.
+ * { id, name, level, poly, pool, rim }. A pool without a name takes `label(kind)`. The height of the water side is
+ * `rim`, never `floor`: on a room of the plan, `floor` is the colour of its floor.
  */
 export function poolRoomsOf(items, pools, level, label) {
   return items.map((it) => {
@@ -117,7 +118,19 @@ export function poolRoomsOf(items, pools, level, label) {
       level,
       poly: it.poly,
       pool: it.id,
-      floor: it.rim,
+      rim: it.rim,
     };
   });
+}
+
+/**
+ * What the camera frames to show a room: { target: [x, y, z], span } (the point looked at, half a metre above the
+ * floor, and the size the view must hold). The floor is the one of the level (`elevation`), or the rim of a pool.
+ */
+export function roomFocus(room, elevation) {
+  const xs = room.poly.map((p) => p[0]);
+  const zs = room.poly.map((p) => p[1]);
+  const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+  const floor = Number.isFinite(room.rim) ? room.rim : elevation;
+  return { target: [(x0 + x1) / 2, floor + 0.5, (z0 + z1) / 2], span: Math.max(x1 - x0, z1 - z0) * 1.25 + 1 };
 }

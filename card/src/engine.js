@@ -31,7 +31,7 @@ import { buildPools } from './engine/pools-3d.js';
 import { buildSea, activeSea, seaWaves, swellDirection } from './engine/sea-3d.js';
 import { tideLevel, simMs } from './engine/tide.js';
 import { SeaSound } from './engine/sea-sound.js';
-import { poolValid, islandsOf, poolRoomsOf } from './pools.js';
+import { poolValid, islandsOf, poolRoomsOf, roomFocus } from './pools.js';
 import { pondFish } from './fish.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
@@ -775,21 +775,14 @@ export class HouseEngine {
       this._tweenTo({ pos: new THREE.Vector3(...saved.pos), target: new THREE.Vector3(...saved.target), zoom: saved.zoom });
       return true;
     }
-    const xs = info.room.poly.map((p) => p[0]);
-    const zs = info.room.poly.map((p) => p[1]);
-    const w = Math.max(...xs) - Math.min(...xs);
-    const d = Math.max(...zs) - Math.min(...zs);
-    const target = new THREE.Vector3(
-      (Math.max(...xs) + Math.min(...xs)) / 2,
-      (info.room.floor ?? info.level.elevation) + 0.5, // a pool: the height of its rim
-      (Math.max(...zs) + Math.min(...zs)) / 2,
-    );
+    const look = roomFocus(info.room, info.level.elevation);
+    const target = new THREE.Vector3(...look.target);
     for (const lv of this.world.sd.levels) this.visibility.levels[lv.id] = lv.elevation <= info.level.elevation;
     this.visibility.roof = false;
     this._refreshLights();
     const c = this.camera;
     const aspect = (c.right - c.left) / (c.top - c.bottom);
-    const span = Math.max(w, d) * 1.25 + 1; // the room fills most of the view
+    const { span } = look; // the room fills most of the view
     const zoom = Math.min(Math.max(Math.min(VIEW_H / span, (VIEW_H * aspect) / span), this.controls.minZoom), this.controls.maxZoom);
     const dir = c.position.clone().sub(this.controls.target);
     this._tweenTo({ pos: target.clone().add(dir), target, zoom });

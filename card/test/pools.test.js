@@ -11,6 +11,7 @@ import {
   POOL_KINDS,
   islandsOf,
   poolRoomsOf,
+  roomFocus,
   POOL_ROOM,
 } from '../src/pools.js';
 import { buildPools, offsetOutline } from '../src/engine/pools-3d.js';
@@ -185,7 +186,16 @@ describe('pools as rooms', () => {
     const rooms = poolRoomsOf(items, [{ id: 'a', name: 'Piscine nord' }], 'L0', (k) => `default ${k}`);
     expect(rooms.map((r) => r.id)).toEqual([`${POOL_ROOM}a`, `${POOL_ROOM}b`]);
     expect(rooms.map((r) => r.name)).toEqual(['Piscine nord', 'default pond']);
-    expect(rooms[0]).toMatchObject({ level: 'L0', pool: 'a', floor: 0.1, poly: items[0].poly });
+    expect(rooms[0]).toMatchObject({ level: 'L0', pool: 'a', rim: 0.1, poly: items[0].poly });
+  });
+  it('frames a room of the plan at the height of its level, a pool at its rim', () => {
+    // `floor` of a room of the plan is the colour of its floor: taken for a height, it sent the camera nowhere
+    const room = { id: 'r1', floor: '#b99a6b', poly: [[0, 0], [4, 0], [4, 3], [0, 3]] }; // prettier-ignore
+    expect(roomFocus(room, 2.8)).toEqual({ target: [2, 3.3, 1.5], span: 6 });
+    const [pool] = poolRoomsOf(items, [], 'L0', (k) => k);
+    const { target, span } = roomFocus(pool, 0);
+    expect(target[1]).toBeCloseTo(0.6); // rim at 0.1
+    expect([...target, span].every(Number.isFinite)).toBe(true);
   });
   it('copes with no drawn pools', () => {
     expect(poolRoomsOf([], undefined, 'L0', () => '')).toEqual([]);
