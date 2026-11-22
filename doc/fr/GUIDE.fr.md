@@ -323,7 +323,7 @@ Pour chaque robot (liste *Robot*) :
 
 ### 6.10 Clôtures
 
-*Clôturer d'après le cadastre* (les parcelles de la maison sont présélectionnées ; **en France seulement**, le cadastre venant des services de l'IGN : ailleurs, tracez la clôture à la main) ou *Tracer une clôture* point par point. Chaque côté a son type (grillage, bois, mur, haie, ou ouvert pour un portail) et sa hauteur ; *Modifier les côtés* change un côté, le coupe en deux ou retire un point.
+*Clôturer d'après le cadastre* (les parcelles de la maison sont présélectionnées ; **en France seulement**, le cadastre venant des services de l'IGN : ailleurs, tracez la clôture à la main) ou *Tracer une clôture* point par point. Chaque côté a son type (grillage, bois, mur, haie, ou ouvert là où il n'y a pas de clôture ; un portail s'ajoute dans *Portails* et ouvre la clôture tout seul) et sa hauteur ; *Modifier les côtés* change un côté, le coupe en deux ou retire un point.
 
 ![Clôtures](../images/27-clotures.jpg)
 
@@ -360,10 +360,10 @@ Les réglages sont enregistrés dans la clé `sea` des modifications. Limites co
 
 ![La configuration](../images/33-configuration.jpg)
 
-- **Démo** : voir [Le mode démo](#9-le-mode-démo).
+- **Démo** (masquée par défaut, à activer dans les options de l'intégration) : voir [Le mode démo](#9-le-mode-démo).
 - **Plan** et **Terrain** : voir [la mise en place](#4-première-mise-en-place--le-plan-et-le-terrain).
 - **Sauvegarde GitHub** : réglez un dépôt **privé** dans les options de l'intégration (*Paramètres → Appareils et services → House View → Configurer → Sauvegarde GitHub* : dépôt `propriétaire/nom`, jeton *fine-grained* avec *Contents : read and write*, branche, dossier), puis *Sauvegarder sur GitHub* / *Restaurer depuis GitHub*. Un dépôt public est refusé : il contiendrait le plan de votre maison.
-- **Protection de l'édition** : un mot de passe peut être demandé avant d'ouvrir l'éditeur et la configuration (options de l'intégration → *Protection de l'édition*). La carte le redemande après 10 minutes sans modification ; le bouton 🔒 reverrouille tout de suite. Regarder la vue, zoomer, commander les lumières ou l'aspirateur restent libres. - **Masquer la démo** : options de l'intégration → *Démo* → *Masquer la démo* retire la section démo de la configuration de la carte (une démo déjà chargée garde ses propres boutons).
+- **Protection de l'édition** : un mot de passe peut être demandé avant d'ouvrir l'éditeur et la configuration (options de l'intégration → *Protection de l'édition*). La carte le redemande après 10 minutes sans modification ; le bouton 🔒 reverrouille tout de suite. Regarder la vue, zoomer, commander les lumières ou l'aspirateur restent libres.
 - **Fichier d'éditions** : exporter ou importer toutes vos éditions (entités, arrosage, clôtures…) dans un fichier JSON.
 
 ## 8. Plusieurs logements
@@ -380,6 +380,8 @@ Supprimer une entrée supprime ses documents ; les autres logements ne sont pas 
 ## 9. Le mode démo
 
 Pour filmer ou présenter la vue **sans montrer votre maison ni votre emplacement**.
+
+La démo est **masquée par défaut**. Activez-la d'abord : *Paramètres → Appareils et services → House View → Configurer → Démo*, décochez *Masquer la démo* ; la section **Démo** apparaît alors dans ⚙.
 
 1. ⚙ → **Démo** → *Charger la démo* : un logement « Démo » est ajouté, avec un emplacement fictif (45° N) ; vos logements ne sont pas touchés. Il démarre **vide et plat**, pour être filmé depuis le début.
 

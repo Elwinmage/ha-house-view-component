@@ -31,6 +31,7 @@ from .const import (
     DEMO_LOCATION,
     DEMO_TITLE,
     DOMAIN,
+    HIDE_DEMO_DEFAULT,
 )
 from .github import GitHubBackup, GitHubError
 from .lock import MIN_LENGTH, hash_password
@@ -82,7 +83,7 @@ class HouseViewConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HouseViewOptionsFlow(OptionsFlow):
-    """Menu: GitHub backup settings, edit password, demo display. Each step keeps the settings of the other one."""
+    """Menu: GitHub backup settings, edit password, demo display. Each step keeps the settings of the other ones."""
 
     @property
     def _folder(self) -> str:
@@ -93,16 +94,18 @@ class HouseViewOptionsFlow(OptionsFlow):
         return self.async_show_menu(step_id="init", menu_options=["github", "lock", "demo"])
 
     async def async_step_demo(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Hide the demo home: the card then shows none of its buttons (the demo home itself, when loaded, stays)."""
+        """Show or hide the demo home in the setup of the card: hidden until this box is unchecked.
+
+        The choice is stored as it is (true or false): a home that never went through this step has no value and
+        takes the default. A demo home already loaded keeps its own buttons either way.
+        """
         options = dict(self.config_entry.options)
+        hidden = bool(options.get(CONF_HIDE_DEMO, HIDE_DEMO_DEFAULT))
         if user_input is not None:
-            if user_input.get(CONF_HIDE_DEMO):
-                options[CONF_HIDE_DEMO] = True
-            else:
-                options.pop(CONF_HIDE_DEMO, None)
+            options[CONF_HIDE_DEMO] = bool(user_input[CONF_HIDE_DEMO])
             return self.async_create_entry(data=options)
-        schema = vol.Schema({vol.Optional(CONF_HIDE_DEMO, default=bool(options.get(CONF_HIDE_DEMO))): bool})
-        status = "🙈" if options.get(CONF_HIDE_DEMO) else "👁"
+        schema = vol.Schema({vol.Optional(CONF_HIDE_DEMO, default=hidden): bool})
+        status = "🙈" if hidden else "👁"
         return self.async_show_form(step_id="demo", data_schema=schema, description_placeholders={"status": status})
 
     async def async_step_lock(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

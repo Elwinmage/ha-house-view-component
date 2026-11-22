@@ -323,7 +323,7 @@ Para cada robot (lista *Robot*):
 
 ### 6.10 Vallas
 
-*Fence from the cadastre* (las parcelas de la casa vienen preseleccionadas; **solo en Francia**, ya que el catastro viene de los servicios del IGN: en otros lugares, trace la valla a mano) o *Draw a fence* punto a punto. Cada lado tiene su tipo (malla, madera, muro, seto, o abierto para un portón) y su altura; *Edit the sides* cambia un lado, lo corta en dos o quita un punto.
+*Fence from the cadastre* (las parcelas de la casa vienen preseleccionadas; **solo en Francia**, ya que el catastro viene de los servicios del IGN: en otros lugares, trace la valla a mano) o *Draw a fence* punto a punto. Cada lado tiene su tipo (malla, madera, muro, seto, o abierto donde no hay valla; un portón se añade en *Gates* y abre la valla por sí solo) y su altura; *Edit the sides* cambia un lado, lo corta en dos o quita un punto.
 
 ![Vallas](../images/27-clotures.jpg)
 
@@ -366,6 +366,8 @@ Borrar una entrada borra sus documentos; las demás viviendas no se tocan.
 ## 9. El modo demo
 
 Para grabar o presentar la vista **sin mostrar su casa ni su ubicación**.
+
+La demo está **oculta por defecto**. Actívela primero: *Ajustes → Dispositivos y servicios → House View → Configurar → Demo*, desmarque *Ocultar la demo*; la sección **Demo** aparece entonces en ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: se añade una vivienda «Démo», con una ubicación ficticia (45° N); sus viviendas no se tocan. Empieza **vacía y plana**, para grabarla desde el principio.
 

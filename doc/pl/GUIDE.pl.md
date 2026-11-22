@@ -323,7 +323,7 @@ Dla każdego robota (lista *Robot*):
 
 ### 6.10 Ogrodzenia
 
-*Fence from the cadastre* (działki domu są wstępnie zaznaczone; **tylko we Francji**, bo kataster pochodzi z usług IGN: gdzie indziej narysuj ogrodzenie ręcznie) lub *Draw a fence* punkt po punkcie. Każdy bok ma swój typ (siatka, drewno, mur, żywopłot lub otwarty na bramę) i wysokość; *Edit the sides* zmienia bok, dzieli go na dwa lub usuwa punkt.
+*Fence from the cadastre* (działki domu są wstępnie zaznaczone; **tylko we Francji**, bo kataster pochodzi z usług IGN: gdzie indziej narysuj ogrodzenie ręcznie) lub *Draw a fence* punkt po punkcie. Każdy bok ma swój typ (siatka, drewno, mur, żywopłot lub otwarty tam, gdzie nie ma ogrodzenia; bramę dodaje się w *Gates*, a ogrodzenie otwiera się samo) i wysokość; *Edit the sides* zmienia bok, dzieli go na dwa lub usuwa punkt.
 
 ![Ogrodzenia](../images/27-clotures.jpg)
 
@@ -366,6 +366,8 @@ Usunięcie wpisu usuwa jego dokumenty; pozostałe domy nie są ruszane.
 ## 9. Tryb demo
 
 Aby nagrać lub zaprezentować widok **bez pokazywania swojego domu ani lokalizacji**.
+
+Demo jest **domyślnie ukryte**. Najpierw je włącz: *Ustawienia → Urządzenia oraz usługi → House View → Konfiguruj → Demo*, odznacz *Ukryj demo*; sekcja **Demo** pojawi się wtedy w ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: dodany zostaje dom „Démo” z fikcyjną lokalizacją (45° N); Twoje domy nie są ruszane. Zaczyna się **pusty i płaski**, aby można go było nagrywać od początku.
 

@@ -139,7 +139,7 @@ export default {
   name: 'Nome',
   undo_point: 'Desfazer o último ponto',
   fence_hedge: 'Sebe',
-  fence_none: 'Aberto (portão)',
+  fence_none: 'Aberto (sem vedação)',
   gate: 'Portão',
   gates: 'Portões',
   gate_add: 'Adicionar um portão',
@@ -188,7 +188,8 @@ export default {
   fence_tool_paint: 'Mudar o tipo',
   fence_tool_cut: 'Cortar um lado',
   fence_tool_unpoint: 'Remover um ponto',
-  fence_hint_paint: 'Escolha um tipo e toque nos lados a mudar («Aberto» para um portão ou um lado sem vedação).',
+  fence_hint_paint:
+    'Escolha um tipo e toque nos lados a mudar («Aberto» para um lado sem vedação; um portão acrescenta-se na secção Portões, que abre a vedação sozinha).',
   fence_hint_cut: 'Toque num lado onde cortar: cada pedaço poderá depois ter o seu próprio tipo.',
   fence_hint_unpoint: 'Toque perto de um ponto para o remover: os seus dois lados passam a ser um só.',
   irrigation: 'Rega',

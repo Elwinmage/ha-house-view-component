@@ -106,6 +106,3 @@ export const DEMO_ENTITIES = [
   ['binary_sensor.robot_piscine', 'jardin', 'off', { icon: 'mdi:robot-vacuum-variant' }],
   ['media_player.salon', 'sejour', 'off', { volume_level: 0.3, supported_features: 152463 }],
 ];
-
-/** Fictitious place of the demo home (sun and seasons only: nothing is fetched there). */
-export const DEMO_LOCATION = { latitude: 45, longitude: 2 };

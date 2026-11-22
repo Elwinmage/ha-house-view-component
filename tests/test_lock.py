@@ -221,7 +221,7 @@ async def test_options_flow_lock(hass):
 
 
 async def test_options_flow_hide_demo(hass):
-    """The demo can be hidden: the option is kept by the other steps, and removed when the box is unchecked."""
+    """The demo is hidden until the box is unchecked: the choice is stored as it is and kept by the other steps."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={CONF_LOCK: LOCK})
     entry.add_to_hass(hass)
 
@@ -232,14 +232,16 @@ async def test_options_flow_hide_demo(hass):
         assert r["description_placeholders"] == {"status": status}
         return await hass.config_entries.options.async_configure(r["flow_id"], data)
 
-    r = await step({"hide_demo": True}, "👁")
+    # a home that never set the option: hidden, and the form left as it is keeps it hidden
+    r = await step({}, "🙈")
     assert r["type"] == "create_entry"
     assert entry.options == {CONF_LOCK: LOCK, "hide_demo": True}
     await step({"hide_demo": False}, "🙈")
-    assert entry.options == {CONF_LOCK: LOCK}
-    # the GitHub step keeps the option
-    await step({"hide_demo": True}, "👁")
-    r = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "github"})
-    await hass.config_entries.options.async_configure(r["flow_id"], {"repo": ""})
-    assert entry.options == {CONF_LOCK: LOCK, "hide_demo": True}
+    assert entry.options == {CONF_LOCK: LOCK, "hide_demo": False}
+    # the GitHub step keeps the choice, shown or hidden
+    for hidden, status in ((False, "👁"), (True, "👁")):
+        await step({"hide_demo": hidden}, status)
+        r = await hass.config_entries.options.async_init(entry.entry_id)
+        r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "github"})
+        await hass.config_entries.options.async_configure(r["flow_id"], {"repo": ""})
+        assert entry.options == {CONF_LOCK: LOCK, "hide_demo": hidden}

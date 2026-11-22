@@ -30,6 +30,7 @@ from .const import (
     DEMO_HOUSE,
     DOMAIN,
     EVENT_UPDATED,
+    HIDE_DEMO_DEFAULT,
     HOME_PARAM,
     KEY_EDITS,
     KEY_ORTHO,
@@ -130,7 +131,7 @@ class HouseViewInfoView(HomeAssistantView):
                 "github": store.options.get(CONF_REPO) if store.options.get(CONF_TOKEN) else None,
                 "locked": store.lock is not None,
                 "demo": store.demo,
-                "hide_demo": bool(store.options.get(CONF_HIDE_DEMO)),
+                "hide_demo": bool(store.options.get(CONF_HIDE_DEMO, HIDE_DEMO_DEFAULT)),
                 "fetch": store.job,
                 "updated": store.updated,
             }

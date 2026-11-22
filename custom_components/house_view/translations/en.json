@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Demo home",
-        "description": "Hide the demo home: the setup of the card no longer offers to start it. Current state: {status}. A demo home already loaded stays available.",
+        "description": "The demo home is hidden by default: uncheck the box and the setup of the card offers to start it. Current state: {status}. A demo home already loaded stays available.",
         "data": {
           "hide_demo": "Hide the demo"
         }

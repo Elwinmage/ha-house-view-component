@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Casa de demostración",
-        "description": "Ocultar la demo: los ajustes de la tarjeta ya no ofrecen iniciarla. Estado actual: {status}. Una demo ya cargada sigue disponible.",
+        "description": "La demo está oculta por defecto: desmarque la casilla para que los ajustes de la tarjeta ofrezcan iniciarla. Estado actual: {status}. Una demo ya cargada sigue disponible.",
         "data": {
           "hide_demo": "Ocultar la demo"
         }

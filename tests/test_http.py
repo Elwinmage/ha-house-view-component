@@ -271,10 +271,17 @@ async def test_demo_home(hass, hass_client, hass_admin_user, hass_read_only_acce
     assert entry.data["location"] == {"latitude": 45.0, "longitude": 2.0}
     info = await (await client.get(f"/api/house_view/info?home={home}")).json()
     assert info["demo"] is True
-    assert info["hide_demo"] is False
     assert (info["has_scene"], info["has_terrain"], info["has_edits"]) == (False, False, True)  # flat, no plan
     assert (info["latitude"], info["longitude"]) == (45.0, 2.0)
-    assert (await (await client.get("/api/house_view/info")).json())["demo"] is False  # the first home
+    first = await (await client.get("/api/house_view/info")).json()  # the first home
+    assert first["demo"] is False
+
+    # the demo is hidden in the setup of a home until its option says to show it
+    assert first["hide_demo"] is True
+    mine = hass.config_entries.async_get_entry(first["home"])
+    hass.config_entries.async_update_entry(mine, options={"hide_demo": False})
+    await hass.async_block_till_done()
+    assert (await (await client.get("/api/house_view/info")).json())["hide_demo"] is False
 
     # the plan of the house, imported by the card
     house = await (await client.get("/api/house_view/demo")).read()

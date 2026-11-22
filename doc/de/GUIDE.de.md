@@ -323,7 +323,7 @@ Für jeden Roboter (Liste *Robot*):
 
 ### 6.10 Zäune
 
-*Fence from the cadastre* (die Flurstücke des Hauses sind vorausgewählt; **nur in Frankreich**, da das Kataster von den Diensten des IGN kommt: anderswo zeichnen Sie den Zaun von Hand) oder *Draw a fence* Punkt für Punkt. Jede Seite hat ihren Typ (Maschendraht, Holz, Mauer, Hecke oder offen für ein Tor) und ihre Höhe; *Edit the sides* ändert eine Seite, teilt sie oder entfernt einen Punkt.
+*Fence from the cadastre* (die Flurstücke des Hauses sind vorausgewählt; **nur in Frankreich**, da das Kataster von den Diensten des IGN kommt: anderswo zeichnen Sie den Zaun von Hand) oder *Draw a fence* Punkt für Punkt. Jede Seite hat ihren Typ (Maschendraht, Holz, Mauer, Hecke oder offen, wo kein Zaun steht; ein Tor wird unter *Gates* hinzugefügt und öffnet den Zaun von selbst) und ihre Höhe; *Edit the sides* ändert eine Seite, teilt sie oder entfernt einen Punkt.
 
 ![Zäune](../images/27-clotures.jpg)
 
@@ -366,6 +366,8 @@ Das Löschen eines Eintrags löscht seine Dokumente; die anderen Wohnorte bleibe
 ## 9. Der Demo-Modus
 
 Um die Ansicht zu filmen oder vorzuführen, **ohne Ihr Haus oder Ihren Standort zu zeigen**.
+
+Die Demo ist **standardmäßig ausgeblendet**. Schalten Sie sie zuerst ein: *Einstellungen → Geräte & Dienste → House View → Konfigurieren → Demo*, Haken bei *Demo ausblenden* entfernen; der Abschnitt **Demo** erscheint dann in ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: ein Zuhause „Démo“ wird hinzugefügt, mit einem erfundenen Standort (45° N); Ihre Wohnorte bleiben unberührt. Es beginnt **leer und flach**, damit es von Anfang an gefilmt werden kann.
 

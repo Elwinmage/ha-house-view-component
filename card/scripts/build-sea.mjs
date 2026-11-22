@@ -1,5 +1,5 @@
-// Builds sea/sea.html: ONE self-contained page (engine, demo house, demo terrain and built-in trees inlined)
-// where the demo house falls on the terrain, bounces and settles. Usage: `npm run drop` in card/.
+// Builds sea/sea.html: ONE self-contained page (engine, demo house and built-in catalog inlined) where the demo
+// house stands by the water, on one of three synthetic sites (see sea/main.js). Usage: `npm run sea` in card/.
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { build } from 'esbuild';
 
@@ -18,7 +18,7 @@ function builtinCatalog() {
   return {
     trees: read('catalog_builtin', 'tree.json'),
     objects: read('catalog_builtin_objects', 'object.json'),
-    fish: read('catalog_builtin_fish', 'fish.json'),
+    pond_fish: read('catalog_builtin_pond_fish', 'pond_fish.json'),
   };
 }
 

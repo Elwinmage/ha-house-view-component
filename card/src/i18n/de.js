@@ -143,7 +143,7 @@ export default {
   name: 'Name',
   undo_point: 'Letzten Punkt zurücknehmen',
   fence_hedge: 'Hecke',
-  fence_none: 'Offen (Tor)',
+  fence_none: 'Offen (kein Zaun)',
   gate: 'Tor',
   gates: 'Tore',
   gate_add: 'Tor hinzufügen',
@@ -192,7 +192,8 @@ export default {
   fence_tool_paint: 'Typ ändern',
   fence_tool_cut: 'Seite teilen',
   fence_tool_unpoint: 'Punkt entfernen',
-  fence_hint_paint: 'Wählen Sie einen Typ und tippen Sie auf die zu ändernden Seiten („Offen“ für ein Tor oder eine Seite ohne Zaun).',
+  fence_hint_paint:
+    'Wählen Sie einen Typ und tippen Sie auf die zu ändernden Seiten („Offen“ für eine Seite ohne Zaun; ein Tor wird im Abschnitt Tore hinzugefügt und öffnet den Zaun von selbst).',
   fence_hint_cut: 'Tippen Sie auf eine Seite, wo geteilt werden soll: Jedes Stück kann danach einen eigenen Typ haben.',
   fence_hint_unpoint: 'Tippen Sie nahe an einen Punkt, um ihn zu entfernen: Seine zwei Seiten werden zu einer.',
   irrigation: 'Bewässerung',

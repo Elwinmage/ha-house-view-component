@@ -323,7 +323,7 @@ Para cada robô (lista *Robot*):
 
 ### 6.10 Vedações
 
-*Fence from the cadastre* (os lotes da casa vêm pré-selecionados; **só em França**, pois o cadastro vem dos serviços do IGN: noutros locais, trace a vedação à mão) ou *Draw a fence* ponto a ponto. Cada lado tem o seu tipo (rede, madeira, muro, sebe, ou aberto para um portão) e a sua altura; *Edit the sides* muda um lado, corta-o em dois ou remove um ponto.
+*Fence from the cadastre* (os lotes da casa vêm pré-selecionados; **só em França**, pois o cadastro vem dos serviços do IGN: noutros locais, trace a vedação à mão) ou *Draw a fence* ponto a ponto. Cada lado tem o seu tipo (rede, madeira, muro, sebe, ou aberto onde não há vedação; um portão acrescenta-se em *Gates* e abre a vedação sozinho) e a sua altura; *Edit the sides* muda um lado, corta-o em dois ou remove um ponto.
 
 ![Vedações](../images/27-clotures.jpg)
 
@@ -366,6 +366,8 @@ Apagar uma entrada apaga os seus documentos; as outras habitações não são to
 ## 9. O modo demo
 
 Para filmar ou apresentar a vista **sem mostrar a sua casa nem a sua localização**.
+
+A demo está **oculta por predefinição**. Ative-a primeiro: *Definições → Dispositivos e Serviços → House View → Configurar → Demo*, desmarque *Ocultar a demo*; a secção **Demo** aparece então em ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: é adicionada uma habitação «Démo», com uma localização fictícia (45° N); as suas habitações não são tocadas. Começa **vazia e plana**, para ser filmada desde o início.
 

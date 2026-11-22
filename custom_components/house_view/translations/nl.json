@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Demowoning",
-        "description": "Verberg de demowoning: de instellingen van de kaart bieden niet langer aan om ze te starten. Huidige status: {status}. Een reeds geladen demowoning blijft beschikbaar.",
+        "description": "De demowoning is standaard verborgen: vink het vakje uit zodat de instellingen van de kaart aanbieden om ze te starten. Huidige status: {status}. Een reeds geladen demowoning blijft beschikbaar.",
         "data": {
           "hide_demo": "De demo verbergen"
         }

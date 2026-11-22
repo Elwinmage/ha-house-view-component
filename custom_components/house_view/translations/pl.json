@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Dom demonstracyjny",
-        "description": "Ukryj demo: ustawienia karty nie proponują już jego uruchomienia. Stan obecny: {status}. Wczytane już demo pozostaje dostępne.",
+        "description": "Demo jest domyślnie ukryte: odznacz pole, aby ustawienia karty proponowały jego uruchomienie. Stan obecny: {status}. Wczytane już demo pozostaje dostępne.",
         "data": {
           "hide_demo": "Ukryj demo"
         }

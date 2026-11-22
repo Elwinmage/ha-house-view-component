@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Casa de demonstração",
-        "description": "Ocultar a demo: as definições do cartão deixam de propor iniciá-la. Estado atual: {status}. Uma demo já carregada continua disponível.",
+        "description": "A demo está oculta por predefinição: desmarque a caixa para que as definições do cartão proponham iniciá-la. Estado atual: {status}. Uma demo já carregada continua disponível.",
         "data": {
           "hide_demo": "Ocultar a demo"
         }

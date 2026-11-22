@@ -323,7 +323,7 @@ For each robot (*Robot* list):
 
 ### 6.10 Fences
 
-*Fence from the cadastre* (the parcels of the house are preselected; **in France only**, as the cadastre comes from the services of the IGN: elsewhere, draw the fence by hand) or *Draw a fence* point by point. Each side has its type (wire mesh, wood, wall, hedge, or open for a gate) and its height; *Edit the sides* changes a side, cuts it in two or removes a point.
+*Fence from the cadastre* (the parcels of the house are preselected; **in France only**, as the cadastre comes from the services of the IGN: elsewhere, draw the fence by hand) or *Draw a fence* point by point. Each side has its type (wire mesh, wood, wall, hedge, or open where there is no fence; a gate is added in *Gates* and opens the fence by itself) and its height; *Edit the sides* changes a side, cuts it in two or removes a point.
 
 ![Fences](../images/27-clotures.jpg)
 
@@ -360,10 +360,10 @@ The settings are saved in the `sea` key of the edits. Known limits: a single wat
 
 ![The setup](../images/33-configuration.jpg)
 
-- **Demo**: see [Demo mode](#9-demo-mode).
+- **Demo** (hidden by default, to switch on in the integration options): see [Demo mode](#9-demo-mode).
 - **Plan** and **Terrain**: see [the first setup](#4-first-setup-the-plan-and-the-terrain).
 - **GitHub backup**: set a **private** repository in the integration options (*Settings → Devices & services → House View → Configure → GitHub backup*: repository `owner/name`, *fine-grained* token with *Contents: read and write*, branch, folder), then *Back up to GitHub* / *Restore from GitHub*. A public repository is refused: it would hold the plan of your house.
-- **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free. - **Hide the demo**: integration options → *Demo* → *Hide the demo* removes the demo section from the setup of the card (a demo home already loaded keeps its own buttons).
+- **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free.
 - **Edits file**: export or import all your edits (entities, watering, fences…) as a JSON file.
 
 ## 8. Several homes
@@ -380,6 +380,8 @@ Deleting an entry deletes its documents; the other homes are not touched.
 ## 9. Demo mode
 
 To film or present the view **without showing your house or where it is**.
+
+The demo is **hidden by default**. Switch it on first: *Settings → Devices & services → House View → Configure → Demo*, uncheck *Hide the demo*; the **Demo** section then shows in ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: a "Démo" home is added, with a fictitious location (45° N); your homes are left alone. It starts **empty and flat**, to be filmed from the start.
 

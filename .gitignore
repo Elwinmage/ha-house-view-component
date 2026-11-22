@@ -6,4 +6,6 @@ custom_components/house_view/frontend/*.js
 custom_components/house_view/frontend/*.map
 reports/
 .coverage
+# pages built by `npm run drop` / `npm run sea` in card/
+card/drop/house-drop.html
 card/sea/sea.html

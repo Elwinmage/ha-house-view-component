@@ -1,8 +1,6 @@
 // Reading of the house catalog (trees, objects: https://github.com/Elwinmage/house-catalog, doc/format.md): pure
 // helpers shared by the engine (geometry, seasons) and the card (names, lists). No DOM, no three.js: unit-tested.
 
-export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
-
 /** Clumps of a round crown, in a box from -1 to 1: centre (x, y, z) and radius. Same as the catalog's own previews. */
 export const CLUMPS = [
   [0.0, -0.15, 0.0, 0.8],

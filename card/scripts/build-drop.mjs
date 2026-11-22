@@ -15,7 +15,7 @@ function builtinCatalog() {
     for (const id of readdirSync(base).sort()) out[id] = JSON.parse(readFileSync(new URL(`${id}/${descriptor}`, base), 'utf8'));
     return out;
   };
-  return { trees: read('catalog_builtin', 'tree.json'), objects: read('catalog_builtin_objects', 'object.json'), fish: read('catalog_builtin_fish', 'fish.json') };
+  return { trees: read('catalog_builtin', 'tree.json'), objects: read('catalog_builtin_objects', 'object.json'), pond_fish: read('catalog_builtin_pond_fish', 'pond_fish.json') };
 }
 
 const catalogPlugin = {

@@ -139,7 +139,7 @@ export default {
   name: 'Naam',
   undo_point: 'Het laatste punt ongedaan maken',
   fence_hedge: 'Haag',
-  fence_none: 'Open (poort)',
+  fence_none: 'Open (geen hek)',
   gate: 'Poort',
   gates: 'Poorten',
   gate_add: 'Een poort toevoegen',
@@ -188,7 +188,8 @@ export default {
   fence_tool_paint: 'Het type wijzigen',
   fence_tool_cut: 'Een zijde doorknippen',
   fence_tool_unpoint: 'Een punt verwijderen',
-  fence_hint_paint: 'Kies een type en tik dan op de zijden die je wilt wijzigen (“Open” voor een poort of een zijde zonder hek).',
+  fence_hint_paint:
+    'Kies een type en tik dan op de zijden die je wilt wijzigen (“Open” voor een zijde zonder hek; een poort voeg je toe in de sectie Poorten, die het hek vanzelf opent).',
   fence_hint_cut: 'Tik op een zijde waar ze doorgeknipt moet worden: elk stuk kan dan een eigen type krijgen.',
   fence_hint_unpoint: 'Tik bij een punt om het te verwijderen: de twee zijden worden één.',
   irrigation: 'Besproeiing',

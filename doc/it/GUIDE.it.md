@@ -323,7 +323,7 @@ Per ogni robot (elenco *Robot*):
 
 ### 6.10 Recinzioni
 
-*Fence from the cadastre* (le particelle della casa sono preselezionate; **solo in Francia**, poiché il catasto viene dai servizi dell'IGN: altrove, tracciate la recinzione a mano) o *Draw a fence* punto per punto. Ogni lato ha il suo tipo (rete, legno, muro, siepe, o aperto per un cancello) e la sua altezza; *Edit the sides* cambia un lato, lo divide in due o rimuove un punto.
+*Fence from the cadastre* (le particelle della casa sono preselezionate; **solo in Francia**, poiché il catasto viene dai servizi dell'IGN: altrove, tracciate la recinzione a mano) o *Draw a fence* punto per punto. Ogni lato ha il suo tipo (rete, legno, muro, siepe, o aperto dove non c'è recinzione; un cancello si aggiunge in *Gates* e apre la recinzione da solo) e la sua altezza; *Edit the sides* cambia un lato, lo divide in due o rimuove un punto.
 
 ![Recinzioni](../images/27-clotures.jpg)
 
@@ -366,6 +366,8 @@ Eliminare una voce elimina i suoi documenti; le altre abitazioni non vengono toc
 ## 9. La modalità demo
 
 Per filmare o presentare la vista **senza mostrare la vostra casa né la vostra posizione**.
+
+La demo è **nascosta per impostazione predefinita**. Attivatela prima: *Impostazioni → Dispositivi e servizi → House View → Configura → Demo*, deselezionate *Nascondi la demo*; la sezione **Demo** compare allora in ⚙.
 
 1. ⚙ → **Demo** → *Load the demo*: viene aggiunta un'abitazione «Démo», con una posizione fittizia (45° N); le vostre abitazioni non vengono toccate. Parte **vuota e piatta**, per essere filmata dall'inizio.
 

@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Casa dimostrativa",
-        "description": "Nascondi la demo: le impostazioni della scheda non propongono più di avviarla. Stato attuale: {status}. Una demo già caricata resta disponibile.",
+        "description": "La demo è nascosta per impostazione predefinita: deselezionate la casella perché le impostazioni della scheda propongano di avviarla. Stato attuale: {status}. Una demo già caricata resta disponibile.",
         "data": {
           "hide_demo": "Nascondi la demo"
         }

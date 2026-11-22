@@ -48,7 +48,7 @@
       },
       "demo": {
         "title": "Maison de démonstration",
-        "description": "Masquer la démo : le réglage de la carte ne propose plus de la démarrer. État actuel : {status}. Une démo déjà chargée reste disponible.",
+        "description": "La démo est masquée par défaut : décochez la case pour que la configuration de la carte propose de la démarrer. État actuel : {status}. Une démo déjà chargée reste disponible.",
         "data": {
           "hide_demo": "Masquer la démo"
         }

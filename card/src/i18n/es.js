@@ -139,7 +139,7 @@ export default {
   name: 'Nombre',
   undo_point: 'Deshacer el último punto',
   fence_hedge: 'Seto',
-  fence_none: 'Abierto (portón)',
+  fence_none: 'Abierto (sin valla)',
   gate: 'Portón',
   gates: 'Portones',
   gate_add: 'Añadir un portón',
@@ -188,7 +188,8 @@ export default {
   fence_tool_paint: 'Cambiar el tipo',
   fence_tool_cut: 'Cortar un lado',
   fence_tool_unpoint: 'Quitar un punto',
-  fence_hint_paint: 'Elija un tipo y toque los lados que cambiar («Abierto» para un portón o un lado sin valla).',
+  fence_hint_paint:
+    'Elija un tipo y toque los lados que cambiar («Abierto» para un lado sin valla; un portón se añade en la sección Portones, que abre la valla por sí sola).',
   fence_hint_cut: 'Toque un lado donde debe cortarse: cada trozo puede tener después su propio tipo.',
   fence_hint_unpoint: 'Toque cerca de un punto para quitarlo: sus dos lados pasan a ser uno.',
   irrigation: 'Riego',

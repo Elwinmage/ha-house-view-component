@@ -138,7 +138,7 @@ export default {
   name: 'Nazwa',
   undo_point: 'Cofnij ostatni punkt',
   fence_hedge: 'Żywopłot',
-  fence_none: 'Otwarte (brama)',
+  fence_none: 'Otwarte (bez ogrodzenia)',
   gate: 'Brama',
   gates: 'Bramy',
   gate_add: 'Dodaj bramę',
@@ -187,7 +187,8 @@ export default {
   fence_tool_paint: 'Zmień typ',
   fence_tool_cut: 'Podziel bok',
   fence_tool_unpoint: 'Usuń punkt',
-  fence_hint_paint: 'Wybierz typ i dotknij boków do zmiany („Otwarte” dla bramy lub boku bez ogrodzenia).',
+  fence_hint_paint:
+    'Wybierz typ i dotknij boków do zmiany („Otwarte” dla boku bez ogrodzenia; bramę dodaje się w sekcji Bramy, która sama otwiera ogrodzenie).',
   fence_hint_cut: 'Dotknij boku w miejscu podziału: każdy kawałek może potem mieć własny typ.',
   fence_hint_unpoint: 'Dotknij blisko punktu, aby go usunąć: jego dwa boki stają się jednym.',
   irrigation: 'Nawadnianie',

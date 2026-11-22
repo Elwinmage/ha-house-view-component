@@ -138,7 +138,7 @@ export default {
   name: 'Nome',
   undo_point: 'Annulla l’ultimo punto',
   fence_hedge: 'Siepe',
-  fence_none: 'Aperto (cancello)',
+  fence_none: 'Aperto (senza recinzione)',
   gate: 'Cancello',
   gates: 'Cancelli',
   gate_add: 'Aggiungi un cancello',
@@ -187,7 +187,8 @@ export default {
   fence_tool_paint: 'Cambia il tipo',
   fence_tool_cut: 'Taglia un lato',
   fence_tool_unpoint: 'Rimuovi un punto',
-  fence_hint_paint: 'Scelga un tipo e tocchi i lati da cambiare («Aperto» per un cancello o un lato senza recinzione).',
+  fence_hint_paint:
+    'Scelga un tipo e tocchi i lati da cambiare («Aperto» per un lato senza recinzione; un cancello si aggiunge nella sezione Cancelli, che apre la recinzione da sola).',
   fence_hint_cut: 'Tocchi un lato dove tagliare: ogni pezzo potrà poi avere il suo tipo.',
   fence_hint_unpoint: 'Tocchi vicino a un punto per rimuoverlo: i suoi due lati ne formano uno solo.',
   irrigation: 'Irrigazione',

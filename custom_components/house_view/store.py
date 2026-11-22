@@ -17,7 +17,6 @@ class HouseViewStore:
     """One JSON document per key in `.storage`, with a cached serialized form for the HTTP API."""
 
     def __init__(self, hass: HomeAssistant, prefix: str = DOMAIN) -> None:
-        self._hass = hass
         self.prefix = prefix
         self._stores = {k: Store[Any](hass, STORAGE_VERSION, f"{prefix}.{k}") for k in KEYS}
         self.title = ""  # name of the home (config entry title)
