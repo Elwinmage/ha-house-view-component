@@ -36,6 +36,9 @@
           "token": "Jeton (fine-grained, Contents : lecture et écriture)",
           "branch": "Branche",
           "path": "Dossier dans le dépôt"
+        },
+        "data_description": {
+          "token": "Laissez vide pour garder le jeton actuel."
         }
       },
       "lock": {

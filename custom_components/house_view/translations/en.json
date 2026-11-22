@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: read and write)",
           "branch": "Branch",
           "path": "Folder in the repository"
+        },
+        "data_description": {
+          "token": "Leave empty to keep the current token."
         }
       },
       "lock": {

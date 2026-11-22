@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: lettura e scrittura)",
           "branch": "Branch",
           "path": "Cartella nel repository"
+        },
+        "data_description": {
+          "token": "Lasciate vuoto per mantenere il token attuale."
         }
       },
       "lock": {

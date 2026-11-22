@@ -6,6 +6,7 @@ import json
 
 import aiohttp
 import pytest
+import voluptuous as vol
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -234,3 +235,13 @@ async def test_options_flow(hass, aioclient_mock):
     r = await step({**OPTIONS, "repo": f" {REPO} "})
     assert r["type"] == "create_entry"
     assert r["data"] == {**lock, **OPTIONS}
+
+    # the stored token is a secret: the form does not carry it, and an empty field keeps it
+    r = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "github"})
+    schema = r["data_schema"].schema
+    assert OPTIONS["token"] not in str(schema)
+    assert next(key for key in schema if key == "token").default is vol.UNDEFINED
+    r = await step({"repo": REPO, "branch": "backup"})
+    assert r["type"] == "create_entry"
+    assert r["data"] == {**lock, **OPTIONS, "branch": "backup"}

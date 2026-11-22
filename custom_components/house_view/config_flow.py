@@ -136,9 +136,14 @@ class HouseViewOptionsFlow(OptionsFlow):
         )
 
     async def async_step_github(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """GitHub backup settings. An empty repository disables the backup."""
+        """GitHub backup settings. An empty repository disables the backup.
+
+        The token is a secret: the form never shows the stored one (a password field, sent empty), and an empty
+        field keeps it.
+        """
         errors: dict[str, str] = {}
         current = {**self.config_entry.options, **(user_input or {})}
+        token = (user_input or {}).get(CONF_TOKEN) or self.config_entry.options.get(CONF_TOKEN, "")
         keep = {k: v for k, v in self.config_entry.options.items() if k in (CONF_LOCK, CONF_HIDE_DEMO)}
         if user_input is not None:
             repo = user_input.get(CONF_REPO, "").strip()
@@ -146,13 +151,13 @@ class HouseViewOptionsFlow(OptionsFlow):
                 return self.async_create_entry(data=keep)
             if repo.count("/") != 1:
                 errors[CONF_REPO] = "bad_repo"
-            elif not user_input.get(CONF_TOKEN):
+            elif not token:
                 errors[CONF_TOKEN] = "token_required"
             else:
                 gh = GitHubBackup(
                     async_get_clientsession(self.hass),
                     repo,
-                    user_input[CONF_TOKEN],
+                    token,
                     user_input.get(CONF_BRANCH, "main"),
                     user_input.get(CONF_PATH, self._folder),
                 )
@@ -161,11 +166,11 @@ class HouseViewOptionsFlow(OptionsFlow):
                 except GitHubError as err:
                     errors["base"] = "repo_public" if "public" in str(err) else "cannot_connect"
                 else:
-                    return self.async_create_entry(data={**keep, **user_input, CONF_REPO: repo})
+                    return self.async_create_entry(data={**keep, **user_input, CONF_REPO: repo, CONF_TOKEN: token})
         schema = vol.Schema(
             {
                 vol.Optional(CONF_REPO, default=current.get(CONF_REPO, "")): str,
-                vol.Optional(CONF_TOKEN, default=current.get(CONF_TOKEN, "")): str,
+                vol.Optional(CONF_TOKEN): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
                 vol.Optional(CONF_BRANCH, default=current.get(CONF_BRANCH, "main")): str,
                 vol.Optional(CONF_PATH, default=current.get(CONF_PATH, self._folder)): str,
             }

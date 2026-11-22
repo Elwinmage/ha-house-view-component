@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: Lesen und Schreiben)",
           "branch": "Branch",
           "path": "Ordner im Repository"
+        },
+        "data_description": {
+          "token": "Leer lassen, um das aktuelle Token zu behalten."
         }
       },
       "lock": {

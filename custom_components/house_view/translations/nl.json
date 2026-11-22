@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: lezen en schrijven)",
           "branch": "Branch",
           "path": "Map in de repository"
+        },
+        "data_description": {
+          "token": "Laat leeg om het huidige token te behouden."
         }
       },
       "lock": {

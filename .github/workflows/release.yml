@@ -56,7 +56,7 @@ jobs:
         run: npm --prefix card run build
       - name: Zip the integration (with the built card)
         working-directory: custom_components/house_view
-        run: zip -r ../../house_view.zip . -x "*/__pycache__/*" "frontend/.gitkeep"
+        run: zip -r ../../house_view.zip . -x "*__pycache__*" "frontend/.gitkeep"
       - name: Commit the version and tag
         run: |
           git config user.name "github-actions[bot]"

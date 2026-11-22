@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: odczyt i zapis)",
           "branch": "Gałąź",
           "path": "Folder w repozytorium"
+        },
+        "data_description": {
+          "token": "Pozostaw puste, aby zachować obecny token."
         }
       },
       "lock": {

@@ -1,6 +1,6 @@
 {
   "name": "House View",
-  "homeassistant": "2024.8.0",
+  "homeassistant": "2024.12.0",
   "zip_release": true,
   "filename": "house_view.zip",
   "render_readme": true

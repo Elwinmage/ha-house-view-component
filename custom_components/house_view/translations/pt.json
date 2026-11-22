@@ -36,6 +36,9 @@
           "token": "Token (fine-grained, Contents: leitura e escrita)",
           "branch": "Ramo",
           "path": "Pasta no repositório"
+        },
+        "data_description": {
+          "token": "Deixe vazio para manter o token atual."
         }
       },
       "lock": {
