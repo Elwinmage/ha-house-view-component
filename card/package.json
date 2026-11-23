@@ -1,6 +1,6 @@
 {
   "name": "house-view-card",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Home Assistant Lovelace card: dynamic pseudo-3D view of the house (three.js)",
   "license": "MIT",
   "type": "module",
