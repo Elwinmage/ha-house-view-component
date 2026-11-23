@@ -15,14 +15,14 @@
 [![Active Installs](https://img.shields.io/badge/dynamic/json?label=Active%20Installs&query=estimated&cacheSeconds=3600&url=https%3A%2F%2Fraw.githubusercontent.com%2FElwinmage%2Fha-house-view-component%2Fmain%2Fbadges%2Fstats.json&color=CE1126&logo=home-assistant)](https://analytics.home-assistant.io/custom_integrations)
 
 **Idiomas disponibles:**
-[<img src="https://flagicons.lipis.dev/flags/4x3/fr.svg" style="width: 5%;"/>](../fr/README.fr.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/gb.svg" style="width: 5%;"/>](../../README.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/es.svg" style="width: 5%;"/>](README.es.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/de.svg" style="width: 5%;"/>](../de/README.de.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/pl.svg" style="width: 5%;"/>](../pl/README.pl.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/pt.svg" style="width: 5%;"/>](../pt/README.pt.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/it.svg" style="width: 5%;"/>](../it/README.it.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/nl.svg" style="width: 5%;"/>](../nl/README.nl.md)
+[<img src="https://flagcdn.com/48x36/fr.png" width="24" height="18" alt="Français" />](../fr/README.fr.md)
+[<img src="https://flagcdn.com/48x36/gb.png" width="24" height="18" alt="English" />](../../README.md)
+[<img src="https://flagcdn.com/48x36/es.png" width="24" height="18" alt="Español" />](README.es.md)
+[<img src="https://flagcdn.com/48x36/de.png" width="24" height="18" alt="Deutsch" />](../de/README.de.md)
+[<img src="https://flagcdn.com/48x36/pl.png" width="24" height="18" alt="Polski" />](../pl/README.pl.md)
+[<img src="https://flagcdn.com/48x36/pt.png" width="24" height="18" alt="Português" />](../pt/README.pt.md)
+[<img src="https://flagcdn.com/48x36/it.png" width="24" height="18" alt="Italiano" />](../it/README.it.md)
+[<img src="https://flagcdn.com/48x36/nl.png" width="24" height="18" alt="Nederlands" />](../nl/README.nl.md)
 
 📘 **Guía completa** (instalación, configuración, uso, con imágenes): [GUIDE.es.md](GUIDE.es.md)
 

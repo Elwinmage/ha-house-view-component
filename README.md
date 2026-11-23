@@ -15,14 +15,14 @@
 [![Active Installs](https://img.shields.io/badge/dynamic/json?label=Active%20Installs&query=estimated&cacheSeconds=3600&url=https%3A%2F%2Fraw.githubusercontent.com%2FElwinmage%2Fha-house-view-component%2Fmain%2Fbadges%2Fstats.json&color=CE1126&logo=home-assistant)](https://analytics.home-assistant.io/custom_integrations)
 
 **Supported languages:**
-[<img src="https://flagicons.lipis.dev/flags/4x3/fr.svg" style="width: 5%;"/>](doc/fr/README.fr.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/gb.svg" style="width: 5%;"/>](README.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/es.svg" style="width: 5%;"/>](doc/es/README.es.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/de.svg" style="width: 5%;"/>](doc/de/README.de.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/pl.svg" style="width: 5%;"/>](doc/pl/README.pl.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/pt.svg" style="width: 5%;"/>](doc/pt/README.pt.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/it.svg" style="width: 5%;"/>](doc/it/README.it.md)
-[<img src="https://flagicons.lipis.dev/flags/4x3/nl.svg" style="width: 5%;"/>](doc/nl/README.nl.md)
+[<img src="https://flagcdn.com/48x36/fr.png" width="24" height="18" alt="Français" />](doc/fr/README.fr.md)
+[<img src="https://flagcdn.com/48x36/gb.png" width="24" height="18" alt="English" />](README.md)
+[<img src="https://flagcdn.com/48x36/es.png" width="24" height="18" alt="Español" />](doc/es/README.es.md)
+[<img src="https://flagcdn.com/48x36/de.png" width="24" height="18" alt="Deutsch" />](doc/de/README.de.md)
+[<img src="https://flagcdn.com/48x36/pl.png" width="24" height="18" alt="Polski" />](doc/pl/README.pl.md)
+[<img src="https://flagcdn.com/48x36/pt.png" width="24" height="18" alt="Português" />](doc/pt/README.pt.md)
+[<img src="https://flagcdn.com/48x36/it.png" width="24" height="18" alt="Italiano" />](doc/it/README.it.md)
+[<img src="https://flagcdn.com/48x36/nl.png" width="24" height="18" alt="Nederlands" />](doc/nl/README.nl.md)
 
 📘 **Full user guide** (installation, configuration, usage, with pictures): [GUIDE.en.md](doc/en/GUIDE.en.md)
 
