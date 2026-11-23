@@ -1780,6 +1780,7 @@ class HouseViewCard extends LitElement {
         this._dirty = false; // only once the integration holds them: a refused save stays pending
       } else if (what === 'terrain') await (this._data.terrain ? this._api.setTerrain(this._data.terrain) : this._api.clearTerrain());
       if (Date.now() - (this._saidAt || 0) > 3000) this._msg = this._t('saved'); // keep the message of the action just done
+      await this._refreshInfo();
     } catch (e) {
       // a save that did not go through stays pending (it is tried again on the next change and before a GitHub
       // backup) and says so: what the integration never stored cannot be saved anywhere else
@@ -1788,6 +1789,16 @@ class HouseViewCard extends LitElement {
       if (what === 'edits') this._dirty = true;
       this.requestUpdate();
     }
+  }
+
+  /** What the integration holds (listed in the setup, saved by a backup), read again after a write. */
+  async _refreshInfo() {
+    try {
+      this._info = (await this._api.info()) || this._info;
+    } catch {
+      // the list stays as it was: it is read again on the next write
+    }
+    this.requestUpdate();
   }
 
   /** First plan of the home: the documents already stored (edits restored, demo edits, terrain) are kept. */
@@ -2037,6 +2048,7 @@ class HouseViewCard extends LitElement {
         this._apply(true);
         if (terrain && !terrain.registration && (terrain.s || terrain.buildings)) await this._calibrate();
         else await this._save('edits');
+        await this._refreshInfo(); // the terrain and the photo are now stored: the setup lists them
       }
     } catch (e) {
       this._fetch = { state: 'error', message: e.message };

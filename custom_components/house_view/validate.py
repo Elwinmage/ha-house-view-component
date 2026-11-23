@@ -72,9 +72,12 @@ def validate_edits(doc: Any) -> None:
     for key in ("fences", "entities", "sensors", "panel", "zones", "vacuums", "pools"):
         if key in doc and not isinstance(doc[key], list):
             raise ValueError(f"edits.{key} must be a list")
-    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings", "sea"):
+    for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings"):
         if key in doc and not isinstance(doc[key], dict):
             raise ValueError(f"edits.{key} must be an object")
+    # No sea yet: the card saves it as null
+    if doc.get("sea") is not None and not isinstance(doc["sea"], dict):
+        raise ValueError("edits.sea must be an object or null")
 
 
 def validate_ortho(doc: Any) -> None:

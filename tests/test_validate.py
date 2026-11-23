@@ -104,3 +104,5 @@ def test_ortho_and_new_edit_lists():
     for key in ("irrigation", "vacuum", "room_areas", "room_views", "alarms", "room_entities", "openings", "sea"):
         with pytest.raises(ValueError):
             validate.validate_edits({key: []})
+    # no sea yet (as saved by the card)
+    validate.validate_edits({"sea": None})
