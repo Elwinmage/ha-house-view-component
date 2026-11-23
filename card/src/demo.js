@@ -11,6 +11,7 @@ const pretty = (id) => {
 };
 const inRange = (h, a, b) => (a <= b ? h >= a && h < b : h >= a || h < b);
 const TOGGLE = ['light', 'switch', 'binary_sensor', 'media_player'];
+const POOL_COVER = 'cover.volet_piscine'; // its own hours: it is not a shutter of a window
 
 /** States the scenario wants at hour `h` (0..24): { entity_id: { state, attributes? } } for the entities it drives. */
 export function scenarioAt(h) {
@@ -24,8 +25,9 @@ export function scenarioAt(h) {
   on('light.bureau', inRange(h, 18, 20));
   on('light.entree', inRange(h, 18, 18.25));
   on('light.terrasse', inRange(h, 20, 23));
+  on('light.piscine', inRange(h, 19.5, 23.5)); // the lamps of the pool, once the sun is down
   // shutters: open in the morning, the bedrooms close in the evening, everything at night; the bay half closed at noon
-  const shutters = DEMO_ENTITIES.filter(([id]) => id.startsWith('cover.')).map(([id]) => id);
+  const shutters = DEMO_ENTITIES.filter(([id]) => id.startsWith('cover.') && id !== POOL_COVER).map(([id]) => id);
   for (const id of shutters) {
     let pos = inRange(h, 7, 21.5) ? 100 : 0;
     if (/chambre/.test(id) && inRange(h, 20.5, 21.5)) pos = 0;
@@ -50,6 +52,8 @@ export function scenarioAt(h) {
   out['vacuum.robot'] = { state: inRange(h, 10, 11.5) ? 'cleaning' : inRange(h, 11.5, 11.75) ? 'returning' : 'docked' };
   on('switch.pompe_piscine', inRange(h, 9, 18));
   on('binary_sensor.robot_piscine', inRange(h, 14, 16));
+  // the roller cover of the pool: rolled back for the day, over the water for the night
+  out[POOL_COVER] = { position: inRange(h, 10, 19.5) ? 100 : 0 };
   out['media_player.salon'] = { state: inRange(h, 20, 22) ? 'playing' : 'off' };
   // temperatures: the day outside, a little heating inside
   const day = Math.sin(((h - 9) / 24) * 2 * Math.PI);

@@ -215,7 +215,7 @@ Um toque no botão do robô abre a seleção das divisões: escolha-as na planta
 
 ### 5.9 Rega, piscina e lago
 
-Quando uma válvula abre, os **gotejadores** acendem-se a azul e cresce uma mancha húmida; os **aspersores** mostram o jato e o setor. O robô da piscina percorre o fundo enquanto a sua entidade está ativa; a água mexe-se.
+Quando uma válvula abre, os **gotejadores** acendem-se a azul e cresce uma mancha húmida; os **aspersores** mostram o jato e o setor. O robô da piscina percorre o fundo enquanto a sua entidade está ativa; a água mexe-se. As lâmpadas da piscina colorem a água ao anoitecer e a cobertura de lâminas desenrola-se sobre a água; um clique abre-a ou fecha-a.
 
 | Aspersores ao amanhecer | Piscina e lago |
 |---|---|
@@ -288,7 +288,13 @@ Uma divisão que **só tem uma janela** liga-se sozinha ao sensor de janela, ao 
 
 ### 6.7 Piscinas e lagos
 
-*＋ Pool* ou *＋ Pond*, e depois desenhe o contorno visto de cima: **Rectangle** (dois cantos opostos) ou **Free shape** (ponto a ponto, e depois *Finish*). Ajuste o nome, a cor da água, a profundidade (0,2 a 6 m) e, se tiver um, o **robô de limpeza** (`binary_sensor`, `switch`, `input_boolean` ou `vacuum`). O terreno é escavado: paredes verticais, fundo plano e bordadura para uma piscina; fundo inclinado e margem de seixos para um lago.
+*＋ Pool* ou *＋ Pond*, e depois desenhe o contorno visto de cima: **Rectangle** (dois cantos opostos) ou **Free shape** (ponto a ponto, e depois *Finish*). Ajuste o nome, a cor da água, a profundidade (0,2 a 6 m) e, se tiver um, o **robô de limpeza** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` ou `sensor` — e qualquer outra entidade escrevendo o seu id no seletor; um valor acima de zero conta como ativo). O terreno é escavado: paredes verticais, fundo plano e bordadura para uma piscina; fundo inclinado e margem de seixos para um lago.
+
+**Lâmpadas na água**: *＋ Lamp* acrescenta um projetor encastrado na parede do lado escolhido (posição ao longo do lado e profundidade ajustáveis), ligado a uma luz ou a uma tomada. Uma luz de cor dá a sua, caso contrário é usada a cor escolhida no editor; as lâmpadas acesas tingem a água e o tanque, tanto mais de noite.
+
+**Cobertura de lâminas**: *＋ Roller cover* acrescenta uma cobertura de lâminas que se desenrola sobre a água a partir do lado escolhido, com o enrolador na borda ou submerso. Uma entidade `cover` dá a sua posição (0 a 100 %), uma entidade `switch`, `input_boolean` ou `binary_sensor` diz apenas aberto ou fechado (ativo = fechado, *Swap* inverte a leitura). Um clique na cobertura na vista abre-a ou fecha-a. Um clique numa lâmpada acende-a ou apaga-a do mesmo modo. No editor estes cliques não comandam nada: abrem a piscina em questão e emolduram no painel a lâmpada ou a cobertura visada. Com a cobertura enrolada, é o enrolador que responde ao clique.
+
+Para ambos, o botão 🎯 ao lado da lista de lados acende-os no chão: o lado em uso fica a amarelo, e o clique seguinte na vista toma o mais próximo. *Testar* (💡 para uma lâmpada, ▶ para a cobertura) mostra o resultado sem tocar nas entidades: a lâmpada acende sozinha, seja qual for a hora, e a cobertura fecha-se e volta a abrir-se, à sua velocidade real. Um segundo clique no botão termina a pré-visualização, que termina também ao fechar a janela da piscina.
 
 ![Uma piscina desenhada](../images/25-piscines-editeur.jpg)
 
@@ -348,7 +354,7 @@ Para criar **a sua própria árvore ou objeto**, use o [editor de catálogo](htt
 
 - **Demo**: ver [O modo demo](#9-o-modo-demo).
 - **Planta** e **terreno**: ver [a primeira configuração](#4-primeira-configuração-a-planta-e-o-terreno).
-- **GitHub backup**: configure um repositório **privado** nas opções da integração (*Definições → Dispositivos e Serviços → House View → Configurar → cópia de segurança no GitHub*: repositório `dono/nome`, token *fine-grained* com *Contents: read and write*, ramo, pasta), e depois *Back up to GitHub* / *Restore from GitHub*. Um repositório público é recusado: conteria a planta da sua casa.
+- **GitHub backup**: configure um repositório **privado** nas opções da integração (*Definições → Dispositivos e Serviços → House View → Configurar → cópia de segurança no GitHub*: repositório `dono/nome`, token *fine-grained* com *Contents: read and write*, ramo, pasta), e depois *Back up to GitHub* / *Restore from GitHub*. Um repositório público é recusado: conteria a planta da sua casa. Acima dos dois botões, **Guardado no Home Assistant** lista o que a integração detém (planta, terreno, alterações, foto aérea) com a data da última escrita: a cópia só pode enviar o que está listado ali, e a sua mensagem diz o que foi escrito, o que já estava atualizado, o que não está guardado aqui e o que o GitHub recusou. As alterações ainda pendentes são guardadas antes da cópia.
 - **Edit protection**: pode ser pedida uma palavra-passe antes de abrir o editor e a configuração (opções da integração → proteção da edição). O cartão volta a pedi-la após 10 minutos sem alterações; o botão 🔒 bloqueia de imediato. Ver a vista, fazer zoom, comandar as luzes ou o aspirador continuam livres.
 - **Edits file**: exportar ou importar todas as suas edições (entidades, rega, vedações…) num ficheiro JSON.
 

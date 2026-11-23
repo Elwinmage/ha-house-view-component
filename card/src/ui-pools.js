@@ -1,12 +1,25 @@
 // Editor of the pools and ponds drawn from the top: outline (rectangle from two corners, or free), kind, colour,
-// depth, the binary_sensor of the cleaning robot and, for a pond, its islands. The ground is dug when the world is
-// rebuilt (an island keeps its ground, a little above the water).
+// depth, the entity of the cleaning robot, the lamps of the water, the roller cover and, for a pond, its islands.
+// The ground is dug when the world is rebuilt (an island keeps its ground, a little above the water).
 import { html, nothing } from 'lit';
-import { POOL_KINDS, newPool, rectFromCorners, poolValid } from './pools.js';
+import {
+  POOL_KINDS,
+  ROBOT_DOMAINS,
+  LAMP_DOMAINS,
+  COVER_DOMAINS,
+  newPool,
+  newLamp,
+  newCover,
+  rectFromCorners,
+  poolValid,
+  sideFrame,
+  nearestSide,
+} from './pools.js';
 import { CUSTOM_PATTERNS, MAX_GROUP } from './fish.js';
 import { localName } from './catalog-lib.js';
 
 const uid = () => `pool${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+const lampId = () => `lamp${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 
 /**
  * Draw state of the card: { id, shape, pts (store frame), hover (plan point), island } while drawing an outline.
@@ -69,14 +82,38 @@ function outlineTool(card, pool) {
   if (!pool || card._poolDraw || !poolValid(pool)) return;
   if (ed.clickTool && ed.clickTool.key !== 'pool-sel') return;
   if (ed.clickTool && ed.clickTool.pool === pool) return;
+  const picking = () => (card._poolSide && card._poolSide.pool === pool.id ? card._poolSide : null);
   ed.setClickTool({
     key: 'pool-sel',
     pool,
-    click: () => {},
+    click: (hit, ev) => {
+      const S = picking();
+      if (S && hit && hit.point) {
+        const toPlan = ed.toPlan(pool);
+        S.set(nearestSide(pool.pts.map(([x, z]) => toPlan(x, z)), hit.point.x, hit.point.z)); // prettier-ignore
+        card._poolSide = null;
+        ed.drawDraft();
+        card.requestUpdate();
+        return;
+      }
+      // while a pool is open its editor takes every click of the view: a lamp, a cover or another pool clicked
+      // there opens the matching part of the editor
+      const part = card._engine ? card._engine.pickPoolPart(ev) : null;
+      if (part) card._poolPick(part.pool, part.lamp ? `lamp:${part.lamp}` : part.cover ? 'cover' : null);
+    },
     draft: (d) => {
       const toPlan = ed.toPlan(pool);
       const P = pool.pts.map(([x, z]) => toPlan(x, z));
-      d.ribbon([...P, P[0]], pool.color || '#29d3e8', 0.15);
+      const S = picking();
+      if (!S) return d.ribbon([...P, P[0]], pool.color || '#29d3e8', 0.15);
+      // choosing a side: each one drawn on its own, the one in use lit up, a dot in its middle
+      for (let i = 0; i < P.length; i++) {
+        const a = P[i];
+        const b = P[(i + 1) % P.length];
+        const on = i === (S.side || 0);
+        d.ribbon([a, b], on ? '#ffe14d' : '#7b8a95', on ? 0.3 : 0.12);
+        d.dot((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, on ? '#ffe14d' : '#ffffff');
+      }
     },
   });
 }
@@ -120,6 +157,9 @@ export function renderPools(card) {
       sel
         ? card._asWindow(sel.name || t(`pool_${sel.kind}`), renderPoolEditor(card, sel), () => {
             card._poolSel = null;
+            card._poolSide = null;
+            card._poolPart = null;
+            card._poolDemoStop();
             if (ed.clickTool && (ed.clickTool.key === 'pool-sel' || ed.clickTool.key === 'pool-draw')) ed.setClickTool(null);
             card._poolDraw = null;
           })
@@ -263,10 +303,11 @@ function renderPoolEditor(card, p) {
         p.robot = v;
         commit();
       },
-      ['binary_sensor', 'switch', 'input_boolean', 'vacuum'],
+      ROBOT_DOMAINS,
       '',
     )}
     <div class="hint">${t('pool_robot_hint')}</div>
+    ${renderLamps(card, p, commit)} ${p.kind === 'pond' ? nothing : renderCover(card, p, commit)}
     <button
       class="danger"
       @click=${() => {
@@ -279,6 +320,185 @@ function renderPoolEditor(card, p) {
     >
       ${t('delete')}
     </button>`;
+}
+
+/** Sides of the outline, to choose where a lamp or the cover sits: [{ i, label }] (nothing without an outline). */
+function sideOptions(p, t) {
+  const pts = poolValid(p) ? p.pts : [];
+  return pts.map((_, i) => ({
+    i,
+    label: t('pool_side_n')
+      .replace('{n}', String(i + 1))
+      .replace('{len}', sideFrame(pts, i).len.toFixed(1)),
+  }));
+}
+
+/**
+ * A side of the outline, chosen in a list — the sides are numbered as they were drawn, with their length — or
+ * pointed at in the view: 🎯 lights the sides on the ground, and the next click takes the nearest one.
+ */
+function sideSelect(card, pool, key, sides, value, onPick) {
+  const t = card._t;
+  const S = card._poolSide && card._poolSide.pool === pool.id && card._poolSide.key === key ? card._poolSide : null;
+  if (S) {
+    S.set = onPick; // the list is rebuilt at each render: the view answers to the latest one
+    S.side = value || 0;
+  }
+  return html`<div class="row">
+    <label class="grow"
+      >${t('pool_side')}
+      <select @change=${(e) => onPick(Number(e.target.value))}>
+        ${sides.map((s) => html`<option value=${s.i} ?selected=${(value || 0) === s.i}>${s.label}</option>`)}
+      </select></label
+    >
+    <button
+      class=${S ? 'on' : ''}
+      title=${t('pool_side_pick')}
+      ?disabled=${!sides.length}
+      @click=${() => {
+        card._poolSide = S ? null : { pool: pool.id, key, set: onPick, side: value || 0 };
+        if (card._editors) card._editors.drawDraft();
+        card.requestUpdate();
+      }}
+    >
+      🎯
+    </button>
+  </div>`;
+}
+
+/**
+ * Lamps of the water: each one is a projector sunk in the wall of a side of the outline, linked to a `light` (its
+ * colour is taken from the entity) or to anything that switches on (the colour chosen here is then used). The
+ * colour of the lamps that are on tints the water and the basin.
+ */
+function renderLamps(card, p, commit) {
+  const t = card._t;
+  const sides = sideOptions(p, t);
+  const list = (p.lights = p.lights || []);
+  const maxDepth = Math.max(0.2, (p.depth || 1.5) - 0.15);
+  return html`<div class="sub">${t('pool_lamps')}</div>
+    ${list.map((l, i) => {
+      const set = (patch) => {
+        Object.assign(l, patch);
+        commit();
+      };
+      const seen = card._poolPart === `lamp:${l.id}`;
+      return html`<div class="bbox" style=${seen ? 'outline:2px solid var(--primary-color);outline-offset:2px' : ''}>
+        <div class="row">
+          <span class="grow">${t('pool_lamp')} ${i + 1}</span>
+          <label class="bnum"
+            >${t('pool_lamp_color')}<input type="color" .value=${l.color || '#49e0ff'} @change=${(e) => set({ color: e.target.value })}
+          /></label>
+          <button
+            class=${card._poolTest && card._poolTest.id === p.id && card._poolTest.lamps.has(l.id) ? 'on' : ''}
+            title=${t('pool_test')}
+            @click=${() => card._poolDemo(p.id, 'lamp', l.id)}
+          >
+            💡
+          </button>
+          <button
+            title=${t('delete')}
+            @click=${() => {
+              list.splice(i, 1);
+              card._poolDemoStop();
+              commit();
+            }}
+          >
+            🗑
+          </button>
+        </div>
+        ${card._entityInput(l.entity || '', (v) => set({ entity: v }), LAMP_DOMAINS, '')}
+        ${sideSelect(card, p, `lamp:${l.id}`, sides, l.side, (v) => set({ side: v }))}
+        ${card._range(
+          t('pool_lamp_pos'),
+          l.t ?? 0.5,
+          0,
+          1,
+          0.02,
+          (v) => set({ t: v }),
+          (v) => `${Math.round(v * 100)} %`,
+        )}
+        ${card._range(
+          t('pool_lamp_depth'),
+          Math.min(l.depth ?? 0.6, maxDepth),
+          0.1,
+          maxDepth,
+          0.05,
+          (v) => set({ depth: v }),
+          (v) => `${v.toFixed(2)} m`,
+        )}
+      </div>`;
+    })}
+    <button
+      ?disabled=${!poolValid(p)}
+      @click=${() => {
+        list.push(newLamp(lampId()));
+        commit();
+      }}
+    >
+      ＋ ${t('pool_lamp')}
+    </button>
+    <div class="hint">${t('pool_lamps_hint')}</div>`;
+}
+
+/**
+ * Roller cover: a sheet of slats that unrolls over the water from one side of the outline. A `cover` entity gives
+ * its position, any other entity only says open or closed (`on` taken as closed, which *Swap* turns around). A
+ * click on the sheet in the view opens or closes it.
+ */
+function renderCover(card, p, commit) {
+  const t = card._t;
+  const sides = sideOptions(p, t);
+  const c = p.cover || null;
+  const set = (patch) => {
+    p.cover = { ...newCover(), ...c, ...patch };
+    commit();
+  };
+  return html`<div class="sub" style=${card._poolPart === 'cover' ? 'outline:2px solid var(--primary-color)' : ''}>${t('pool_cover')}</div>
+    ${
+      c
+        ? html`${card._entityInput(c.entity || '', (v) => set({ entity: v }), COVER_DOMAINS, '')}
+            ${sideSelect(card, p, 'cover', sides, c.side, (v) => set({ side: v }))}
+            <div class="row">
+              <label class="bnum"
+                >${t('pool_cover_color')}<input
+                  type="color"
+                  .value=${c.color || '#dfe4e8'}
+                  @change=${(e) => set({ color: e.target.value })}
+              /></label>
+              <label class="chk"
+                ><input type="checkbox" .checked=${!!c.invert} @change=${(e) => set({ invert: e.target.checked })} />
+                ${t('pool_cover_invert')}</label
+              >
+            </div>
+            <label
+              >${t('pool_cover_roller')}
+              <select @change=${(e) => set({ roller: e.target.value })}>
+                ${['deck', 'water'].map(
+                  (k) => html`<option value=${k} ?selected=${(c.roller || 'deck') === k}>${t(`pool_cover_roller_${k}`)}</option>`,
+                )}
+              </select></label
+            >
+            <div class="row">
+              <button
+                class=${card._poolTest && card._poolTest.id === p.id && card._poolTest.cover !== null ? 'on' : ''}
+                @click=${() => card._poolDemo(p.id, 'cover')}
+              >
+                ▶ ${t('pool_test')}
+              </button>
+              <button
+                @click=${() => {
+                  card._poolDemoStop();
+                  p.cover = undefined;
+                  commit();
+                }}
+              >
+                ${t('delete')}
+              </button>
+            </div>`
+        : html`<button ?disabled=${!poolValid(p)} @click=${() => set({})}>＋ ${t('pool_cover')}</button>`
+    }
+    <div class="hint">${t('pool_cover_hint')}</div>`;
 }
 
 /**

@@ -104,5 +104,7 @@ export const DEMO_ENTITIES = [
   ['switch.arrosage_haie', 'jardin', 'off', {}],
   ['switch.pompe_piscine', 'jardin', 'off', { icon: 'mdi:pump' }],
   ['binary_sensor.robot_piscine', 'jardin', 'off', { icon: 'mdi:robot-vacuum-variant' }],
+  ['light.piscine', 'jardin', 'off', { rgb_color: [40, 190, 255], brightness: 220, supported_color_modes: ['rgb'] }],
+  ['cover.volet_piscine', 'jardin', 'open', { current_position: 100, device_class: 'shutter' }],
   ['media_player.salon', 'sejour', 'off', { volume_level: 0.3, supported_features: 152463 }],
 ];

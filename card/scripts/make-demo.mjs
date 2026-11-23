@@ -558,6 +558,12 @@ const edits = {
       color: '#2a9fd6',
       depth: 1.6,
       robot: ent('binary_sensor.robot_piscine'),
+      // two projectors in the long wall, and the roller cover on the deck at the west end
+      lights: [
+        { id: 'lamp1', entity: ent('light.piscine'), color: '#49e0ff', side: 0, t: 0.3, depth: 0.6 },
+        { id: 'lamp2', entity: ent('light.piscine'), color: '#49e0ff', side: 0, t: 0.7, depth: 0.6 },
+      ],
+      cover: { entity: ent('cover.volet_piscine'), side: 3, color: '#dfe4e8', roller: 'deck', invert: false },
     },
     {
       id: 'pond1',

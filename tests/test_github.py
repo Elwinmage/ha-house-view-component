@@ -7,17 +7,24 @@ import json
 import aiohttp
 import pytest
 import voluptuous as vol
+from homeassistant.helpers.json import json_bytes
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.house_view import _async_options_updated, ign
 from custom_components.house_view.const import DOMAIN
 from custom_components.house_view.github import API, GitHubBackup, GitHubError, blob_sha
+from custom_components.house_view.http import _backup_message
 
 REPO = "me/house"
 CONTENTS = f"{API}/repos/{REPO}/contents/house_view"
 SCENE = {"levels": [{"id": "l0", "elevation": 0, "rooms": []}]}
 OPTIONS = {"repo": REPO, "token": "t0k", "branch": "main", "path": "house_view"}
+
+
+def test_backup_message_says_only_what_there_is():
+    """Everything stored and written: the message says that and nothing else."""
+    assert _backup_message({"written": ["scene"], "unchanged": [], "failed": {}}, []) == "1 file(s) updated"
 
 
 def test_blob_sha_is_git_compatible():
@@ -33,14 +40,51 @@ async def test_backup_writes_only_changed_files(hass, aioclient_mock):
     aioclient_mock.put(f"{CONTENTS}/terrain.json", json={})
     session = aioclient_mock.create_session(hass.loop)
     gh = GitHubBackup(session, f" {REPO}/ ", "t0k", "", "/house_view/")
-    written = await gh.backup({"edits": same, "scene": b"{}", "terrain": b"[]"})
-    assert written == ["scene", "terrain"]
+    res = await gh.backup({"edits": same, "scene": b"{}", "terrain": b"[]"})
+    assert res == {"written": ["scene", "terrain"], "unchanged": ["edits"], "failed": {}}
     puts = [c for c in aioclient_mock.mock_calls if c[0] == "PUT"]
     scene_put = puts[0][2]
     assert scene_put["sha"] == "old"
     assert scene_put["branch"] == "main"
     assert base64.b64decode(scene_put["content"]) == b"{}"
     assert "sha" not in puts[1][2]
+    await session.close()
+
+
+async def test_backup_retries_a_conflict(hass, aioclient_mock):
+    """Two commits in a row can collide: the sha is read again and the file written once more."""
+    session = aioclient_mock.create_session(hass.loop)
+    gh = GitHubBackup(session, REPO, "t0k", path="house_view")
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": "old"})
+    aioclient_mock.put(f"{CONTENTS}/scene.json", json={})
+    real_put = gh._put
+    tries = []
+
+    async def flaky(key, content, sha):
+        tries.append(sha)
+        if len(tries) == 1:
+            raise GitHubError("GitHub 409: is at 1234 but expected 5678", 409)
+        await real_put(key, content, sha)
+
+    gh._put = flaky
+    assert await gh.backup({"scene": b"{}"}) == {"written": ["scene"], "unchanged": [], "failed": {}}
+    assert tries == ["old", "old"]  # the sha was read again before writing once more
+    await session.close()
+
+
+async def test_backup_keeps_going_after_a_refused_file(hass, aioclient_mock):
+    """A file GitHub refuses is reported, the following ones are saved all the same."""
+    session = aioclient_mock.create_session(hass.loop)
+    gh = GitHubBackup(session, REPO, "t0k", path="house_view")
+    for key in ("scene", "terrain", "edits"):
+        aioclient_mock.get(f"{CONTENTS}/{key}.json", json={"sha": "old"})
+    aioclient_mock.put(f"{CONTENTS}/scene.json", status=403, json={"message": "Resource not accessible"})
+    aioclient_mock.put(f"{CONTENTS}/terrain.json", status=422, json={"message": "is at 1234 but expected 5678"})
+    aioclient_mock.put(f"{CONTENTS}/edits.json", json={})
+    res = await gh.backup({"scene": b"{}", "terrain": b"[]", "edits": b"{}"})
+    assert res["written"] == ["edits"]
+    assert "Resource not accessible" in res["failed"]["scene"]
+    assert "expected" in res["failed"]["terrain"]  # a conflict written again, refused again
     await session.close()
 
 
@@ -109,7 +153,31 @@ async def test_github_view(hass, hass_client, hass_admin_user, aioclient_mock):
     aioclient_mock.get(f"{CONTENTS}/scene.json", status=404)
     aioclient_mock.put(f"{CONTENTS}/scene.json", json={})
     r = await client.post("/api/house_view/github", json={"action": "backup"})
-    assert (await r.json())["written"] == ["scene"]
+    body = await r.json()
+    assert body["written"] == ["scene"]
+    assert body["missing"] == ["terrain", "edits", "ortho"]  # nothing else is stored for this home
+    assert "nothing stored: terrain, edits, ortho" in body["message"]
+
+    # the same backup again: the file is already up to date, and a refused one is reported without stopping the rest
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": blob_sha(json_bytes(SCENE))})
+    r = await client.post("/api/house_view/github", json={"action": "backup"})
+    body = await r.json()
+    assert body == {
+        "ok": True,
+        "missing": ["terrain", "edits", "ortho"],
+        "written": [],
+        "unchanged": ["scene"],
+        "failed": {},
+        "message": "0 file(s) updated — already up to date: scene — nothing stored: terrain, edits, ortho",
+    }
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": "old"})
+    aioclient_mock.put(f"{CONTENTS}/scene.json", status=403, json={"message": "Resource not accessible"})
+    body = await (await client.post("/api/house_view/github", json={"action": "backup"})).json()
+    assert body["ok"] is False
+    assert "failed: scene (GitHub 403: Resource not accessible)" in body["message"]
 
     aioclient_mock.clear_requests()
     edits = {"version": 1, "views": []}

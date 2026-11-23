@@ -2,6 +2,11 @@
 
 Each document is one file `<path>/<key>.json` on the configured branch. A backup only commits the files whose content
 changed (same git blob sha = nothing to do); a restore reads the raw files back and validates them before storing.
+
+A backup writes one commit per file: each one is written on its own, so that a file GitHub refuses does not keep the
+following ones from being saved, and the result says what was written, what was already up to date and what failed.
+Two commits in a row on the same branch can collide (GitHub 409 / 422): the sha is read again and the file written
+once more.
 """
 
 from __future__ import annotations
@@ -18,7 +23,16 @@ TIMEOUT = aiohttp.ClientTimeout(total=120)
 
 
 class GitHubError(Exception):
-    """GitHub answered with an error (message shown to the user)."""
+    """GitHub answered with an error (message shown to the user); `status` is its HTTP status when there was one."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+    @property
+    def conflict(self) -> bool:
+        """The commit collided with another one: writing the file again, on the sha read anew, usually goes through."""
+        return self.status in (409, 422)
 
 
 def blob_sha(content: bytes) -> str:
@@ -62,7 +76,7 @@ class GitHubBackup:
             data = None
         if status >= 400 and status != 404:
             msg = data.get("message") if isinstance(data, dict) else body[:200].decode("utf8", "replace")
-            raise GitHubError(f"GitHub {status}: {msg}")
+            raise GitHubError(f"GitHub {status}: {msg}", status)
         return status, data
 
     async def check(self) -> None:
@@ -79,23 +93,40 @@ class GitHubBackup:
         )
         return data.get("sha") if status == 200 and isinstance(data, dict) else None
 
-    async def backup(self, docs: dict[str, bytes]) -> list[str]:
-        """Commit every changed document; returns the keys that were written."""
-        written = []
+    async def _put(self, key: str, content: bytes, sha: str | None) -> None:
+        body: dict[str, Any] = {
+            "message": f"House View: update {key}",
+            "content": base64.b64encode(content).decode("ascii"),
+            "branch": self.branch,
+        }
+        if sha:
+            body["sha"] = sha
+        await self._call("PUT", f"{API}/repos/{self.repo}/contents/{self._file(key)}", json=body)
+
+    async def backup(self, docs: dict[str, bytes]) -> dict[str, Any]:
+        """
+        Commit every changed document, one by one and each on its own:
+        { written: keys committed, unchanged: keys already up to date, failed: { key: why } }.
+        """
+        written: list[str] = []
+        unchanged: list[str] = []
+        failed: dict[str, str] = {}
         for key, content in docs.items():
-            sha = await self._remote_sha(key)
-            if sha == blob_sha(content):
-                continue
-            body: dict[str, Any] = {
-                "message": f"House View: update {key}",
-                "content": base64.b64encode(content).decode("ascii"),
-                "branch": self.branch,
-            }
-            if sha:
-                body["sha"] = sha
-            await self._call("PUT", f"{API}/repos/{self.repo}/contents/{self._file(key)}", json=body)
-            written.append(key)
-        return written
+            try:
+                sha = await self._remote_sha(key)
+                if sha == blob_sha(content):
+                    unchanged.append(key)
+                    continue
+                try:
+                    await self._put(key, content, sha)
+                except GitHubError as err:
+                    if not err.conflict:
+                        raise
+                    await self._put(key, content, await self._remote_sha(key))
+                written.append(key)
+            except GitHubError as err:
+                failed[key] = str(err)
+        return {"written": written, "unchanged": unchanged, "failed": failed}
 
     async def restore(self, keys: tuple[str, ...]) -> dict[str, Any]:
         """Documents found in the repository (missing files are skipped)."""

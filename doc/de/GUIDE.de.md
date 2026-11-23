@@ -215,7 +215,7 @@ Ein Tippen auf die Schaltfläche des Roboters öffnet die Raumauswahl: Räume au
 
 ### 5.9 Bewässerung, Pool und Teich
 
-Öffnet ein Ventil, leuchten die **Tropfleitungen** blau auf und ein nasser Fleck wächst; die **Regner** zeigen ihren Strahl und ihren Sektor. Der Poolroboter fährt über den Boden, solange seine Entität aktiv ist; das Wasser bewegt sich.
+Öffnet ein Ventil, leuchten die **Tropfleitungen** blau auf und ein nasser Fleck wächst; die **Regner** zeigen ihren Strahl und ihren Sektor. Der Poolroboter fährt über den Boden, solange seine Entität aktiv ist; das Wasser bewegt sich. Die Lampen des Pools färben abends das Wasser, und die Rollabdeckung rollt über das Wasser; ein Klick öffnet oder schließt sie.
 
 | Regner im Morgengrauen | Pool und Teich |
 |---|---|
@@ -288,7 +288,13 @@ Ein Raum mit **nur einem Fenster** wird von selbst mit dem Fenstersensor, dem Ö
 
 ### 6.7 Pools und Teiche
 
-*＋ Pool* oder *＋ Pond*, dann den Umriss von oben gesehen zeichnen: **Rectangle** (zwei gegenüberliegende Ecken) oder **Free shape** (Punkt für Punkt, dann *Finish*). Stellen Sie Namen, Wasserfarbe, Tiefe (0,2 bis 6 m) und, falls vorhanden, den **Reinigungsroboter** ein (`binary_sensor`, `switch`, `input_boolean` oder `vacuum`). Das Gelände wird ausgehoben: senkrechte Wände, flacher Boden und Beckenrand beim Pool; abfallender Boden und Kieselufer beim Teich.
+*＋ Pool* oder *＋ Pond*, dann den Umriss von oben gesehen zeichnen: **Rectangle** (zwei gegenüberliegende Ecken) oder **Free shape** (Punkt für Punkt, dann *Finish*). Stellen Sie Namen, Wasserfarbe, Tiefe (0,2 bis 6 m) und, falls vorhanden, den **Reinigungsroboter** ein (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` oder `sensor` — und jede andere Entität, indem Sie ihre ID in die Auswahl eintippen; ein Wert über null zählt als aktiv). Das Gelände wird ausgehoben: senkrechte Wände, flacher Boden und Beckenrand beim Pool; abfallender Boden und Kieselufer beim Teich.
+
+**Lampen im Wasser**: *＋ Lamp* fügt einen Scheinwerfer in der Wand der gewählten Seite hinzu (Stelle entlang der Seite und Tiefe einstellbar), verbunden mit einem Licht oder einer Steckdose. Ein farbiges Licht gibt seine eigene Farbe, sonst wird die im Editor gewählte Farbe genommen; eingeschaltete Lampen färben Wasser und Becken, nachts umso mehr.
+
+**Rollabdeckung**: *＋ Roller cover* fügt eine Lamellenabdeckung hinzu, die von der gewählten Seite über das Wasser rollt, mit der Wickelwelle auf dem Beckenrand oder im Wasser versenkt. Eine `cover`-Entität gibt ihre Position (0 bis 100 %), eine `switch`-, `input_boolean`- oder `binary_sensor`-Entität sagt nur offen oder geschlossen (aktiv = geschlossen, *Swap* dreht die Lesart um). Ein Klick auf die Abdeckung in der Ansicht öffnet oder schließt sie. Ein Klick auf eine Lampe schaltet sie ebenso. Im Editor schalten diese Klicks nichts: sie öffnen den betreffenden Pool und umrahmen im Panel die angezielte Lampe oder Abdeckung. Bei aufgerollter Abdeckung antwortet die Wickelwelle auf den Klick.
+
+Für beide zeigt die Schaltfläche 🎯 neben der Seitenliste die Seiten auf dem Boden: die benutzte Seite ist gelb, und der nächste Klick in der Ansicht nimmt die nächstgelegene. *Testen* (💡 für eine Lampe, ▶ für die Abdeckung) zeigt das Ergebnis, ohne die Entitäten anzurühren: die Lampe leuchtet allein, zu jeder Stunde, und die Abdeckung schließt und öffnet sich wieder, in ihrem wirklichen Tempo. Ein zweiter Klick beendet die Vorschau, die auch endet, wenn das Fenster des Pools geschlossen wird.
 
 ![Ein gezeichneter Pool](../images/25-piscines-editeur.jpg)
 
@@ -348,7 +354,7 @@ Um **einen eigenen Baum oder ein eigenes Objekt** zu erstellen, benutzen Sie den
 
 - **Demo**: siehe [Der Demo-Modus](#9-der-demo-modus).
 - **Plan** und **Gelände**: siehe [die erste Einrichtung](#4-erste-einrichtung-plan-und-gelände).
-- **GitHub backup**: richten Sie in den Optionen der Integration ein **privates** Repository ein (*Einstellungen → Geräte & Dienste → House View → Konfigurieren → GitHub-Sicherung*: Repository `besitzer/name`, *fine-grained* Token mit *Contents: read and write*, Branch, Ordner), dann *Back up to GitHub* / *Restore from GitHub*. Ein öffentliches Repository wird abgelehnt: es enthielte den Plan Ihres Hauses.
+- **GitHub backup**: richten Sie in den Optionen der Integration ein **privates** Repository ein (*Einstellungen → Geräte & Dienste → House View → Konfigurieren → GitHub-Sicherung*: Repository `besitzer/name`, *fine-grained* Token mit *Contents: read and write*, Branch, Ordner), dann *Back up to GitHub* / *Restore from GitHub*. Ein öffentliches Repository wird abgelehnt: es enthielte den Plan Ihres Hauses. Über den beiden Schaltflächen listet **In Home Assistant gespeichert** auf, was die Integration hält (Plan, Gelände, Änderungen, Luftbild), mit dem Datum des letzten Schreibens: eine Sicherung kann nur senden, was dort steht, und ihre Meldung sagt, was geschrieben wurde, was schon aktuell war, was hier nicht gespeichert ist und was GitHub abgelehnt hat. Noch offene Änderungen werden vor der Sicherung gespeichert.
 - **Edit protection**: vor dem Öffnen von Editor und Einrichtung kann ein Passwort verlangt werden (Optionen der Integration → Bearbeitungsschutz). Die Karte fragt nach 10 Minuten ohne Änderung erneut; die Schaltfläche 🔒 sperrt sofort. Ansehen, Zoomen, Lichter oder Sauger steuern bleiben frei.
 - **Edits file**: alle Ihre Bearbeitungen (Entitäten, Bewässerung, Zäune…) als JSON-Datei exportieren oder importieren.
 

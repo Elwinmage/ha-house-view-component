@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   inPolygon,
+  robotRunning,
+  newLamp,
+  newCover,
+  lampsOf,
+  poolLight,
+  coverClosed,
+  sideFrame,
+  sideExtent,
+  sidePoint,
+  nearestSide,
   nearestOnOutline,
   polygonArea,
   centroidOf,
@@ -200,5 +210,157 @@ describe('pools as rooms', () => {
   it('copes with no drawn pools', () => {
     expect(poolRoomsOf([], undefined, 'L0', () => '')).toEqual([]);
     expect(poolRoomsOf([items[0]], undefined, 'L0', (k) => k)[0].name).toBe('pool');
+  });
+});
+
+describe('entities of a pool', () => {
+  it('runs the robot on an on-like state or a reading above zero', () => {
+    expect(robotRunning({ state: 'on' })).toBe(true);
+    expect(robotRunning({ state: 'cleaning' })).toBe(true);
+    expect(robotRunning({ state: 'off' })).toBe(false);
+    expect(robotRunning({ state: '12.5' })).toBe(true); // the power its plug draws
+    expect(robotRunning({ state: '0' })).toBe(false);
+    expect(robotRunning({ state: 'unavailable' })).toBe(false);
+    expect(robotRunning(null)).toBe(false);
+  });
+
+  it('keeps only the lamps linked to an entity', () => {
+    const lamp = newLamp('l1', 2);
+    expect(lamp).toMatchObject({ id: 'l1', side: 2, t: 0.5, entity: '' });
+    expect(lampsOf({ lights: [{ ...lamp, entity: 'light.a' }, lamp, null] })).toHaveLength(1);
+    expect(lampsOf({})).toEqual([]);
+    expect(lampsOf(null)).toEqual([]);
+  });
+
+  it('mixes the colours of the lamps that are on', () => {
+    const lamps = [
+      { id: 'a', entity: 'light.a', color: '#ff0000' },
+      { id: 'b', entity: 'switch.b', color: '#0000ff' },
+      { id: 'c', entity: 'light.c', color: '#00ff00' },
+    ];
+    const states = {
+      'light.a': { on: true, color: '#ff0000', brightness: 1 },
+      'switch.b': { on: true, brightness: 0.5 }, // a plug: it keeps the colour chosen in the editor
+      'light.c': { on: false },
+    };
+    const lit = poolLight(lamps, (id) => states[id]);
+    expect(lit.on).toBe(true);
+    expect(lit.color).toBe('#800080'); // red and blue, half each
+    expect(lit.level).toBeCloseTo(0.75);
+    expect(lit.lamps.b).toMatchObject({ on: true, color: '#0000ff' });
+    expect(lit.lamps.c.on).toBe(false);
+    const off = poolLight(lamps, () => ({ on: false }));
+    expect(off).toMatchObject({ on: false, level: 0 });
+    expect(poolLight([], () => null).on).toBe(false);
+  });
+
+  it('reads the cover from a position, a state, or nothing at all', () => {
+    const cov = { ...newCover(1), entity: 'cover.volet' };
+    expect(newCover()).toMatchObject({ side: 0, roller: 'deck', invert: false });
+    expect(coverClosed(cov, { state: 'open', attributes: { current_position: 100 } })).toEqual({ closed: 0, moving: false });
+    expect(coverClosed(cov, { state: 'closed', attributes: { current_position: 0 } })).toEqual({ closed: 1, moving: false });
+    expect(coverClosed(cov, { state: 'open', attributes: { current_position: 30 } }).closed).toBeCloseTo(0.7);
+    expect(coverClosed(cov, { state: 'closing', attributes: {} })).toEqual({ closed: 1, moving: true });
+    expect(coverClosed(cov, { state: 'closed', attributes: {} }).closed).toBe(1);
+    // a plug or a contact: on is taken as closed, `invert` turns it around
+    const sw = { ...cov, entity: 'switch.volet' };
+    expect(coverClosed(sw, { state: 'on' }).closed).toBe(1);
+    expect(coverClosed({ ...sw, invert: true }, { state: 'on' }).closed).toBe(0);
+    expect(coverClosed(sw, { state: 'unavailable' })).toBe(null);
+    expect(coverClosed({ ...cov, entity: '' }, { state: 'on' })).toBe(null);
+    expect(coverClosed(cov, null)).toBe(null);
+  });
+});
+
+describe('frame of a side of an outline', () => {
+  it('runs along the side, with its normal toward the water', () => {
+    const f = sideFrame(square, 0); // [0, 0] -> [4, 0], the water on the +z side
+    expect(f).toMatchObject({ x: 0, z: 0, len: 4 });
+    expect(f.ux).toBe(1);
+    expect(f.uz).toBe(0);
+    expect(f.nx).toBeCloseTo(0);
+    expect(f.nz).toBe(1);
+    const back = sideFrame([...square].reverse(), 0); // drawn the other way round: the normal still looks inward
+    expect(back.z + back.nz).toBeLessThan(back.z);
+    expect(sideFrame(square, 5).x).toBe(sideFrame(square, 1).x); // the index runs around the outline
+    expect(sideFrame([[1, 1], [1, 1], [3, 1]], 0).len).toBe(1); // prettier-ignore
+  });
+
+  it('takes the side nearest to a click', () => {
+    expect(nearestSide(square, 2, -1)).toBe(0); // in front of [0, 0] -> [4, 0]
+    expect(nearestSide(square, 5, 1.5)).toBe(1);
+    expect(nearestSide(square, 2, 4)).toBe(2);
+    expect(nearestSide(square, -1, 1.5)).toBe(3);
+    expect(nearestSide([], 0, 0)).toBe(0);
+  });
+
+  it('measures the outline in that frame and places a point on the wall', () => {
+    const f = sideFrame(square, 0);
+    expect(sideExtent(square, f)).toEqual({ u0: 0, u1: 4, v0: 0, v1: 3 });
+    const [x, z] = sidePoint(square, 0, 0.25, 0.1);
+    expect(x).toBeCloseTo(1);
+    expect(z).toBeCloseTo(0.1);
+    expect(sidePoint(square, 0, 5)[0]).toBe(4); // t is kept between 0 and 1
+  });
+});
+
+describe('lamps and cover of a pool in 3D', () => {
+  const lamps = [
+    { id: 'a', entity: 'light.a', color: '#49e0ff', side: 0, t: 0.5, depth: 0.5 },
+    { id: 'b', entity: 'switch.b', color: '#ff8800', side: 2, t: 0.2, depth: 0.5 },
+  ];
+  const make = (over = {}) =>
+    buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0.2, depth: 1.4, color: '#2a9fd6', lights: lamps, ...over }]);
+
+  it('sinks a projector in the wall of its side and tints the water', () => {
+    const p = make();
+    const it = p.items[0];
+    expect(it.lamps).toHaveLength(2);
+    expect(it.lamps[0].group.position.y).toBeCloseTo(0.2 - 0.5);
+    expect(it.lamps[0].group.position.x).toBeCloseTo(2);
+    p.setLights({ p: { on: true, color: '#ff0000', level: 1, lamps: { a: { on: true, color: '#ff0000', level: 1 } } } }, 1);
+    expect(it.lit).toBe(true);
+    expect(it.wm.emissive.r).toBeGreaterThan(0);
+    expect(it.wm.emissive.b).toBe(0);
+    expect(it.linerMat.emissive.r).toBeGreaterThan(0);
+    expect(it.lamps[0].haloMat.visible).toBe(true);
+    expect(it.lamps[1].haloMat.visible).toBe(false);
+    p.tick(0.1, 1); // the glow breathes
+    expect(it.wm.emissiveIntensity).toBeGreaterThan(0.8);
+    expect(p.lampMeshes().map((l) => l.lamp)).toEqual(['a', 'b']); // what a click can take hold of
+    expect(p.lampMeshes()[0].mesh).toBe(it.lamps[0].pick);
+    p.setLights(null);
+    expect(it.lit).toBe(false);
+    expect(it.wm.emissive.r).toBe(0);
+    expect(it.lamps[0].haloMat.opacity).toBe(0);
+  });
+
+  it('unrolls the cover over the water and offers its sheet to a click', () => {
+    const p = make({ cover: { entity: 'cover.v', side: 0, color: '#dfe4e8', roller: 'deck' } });
+    const C = p.items[0].cover;
+    expect(C.reach).toBeCloseTo(3); // the pool is 4 by 3, the cover comes from the 4 m side
+    expect(C.deck.visible).toBe(false);
+    expect(p.coverMeshes()).toEqual([{ pool: 'p', mesh: C.roller }]); // rolled up: only the roller answers a click
+    p.setCovers({ p: { closed: 1, moving: true } });
+    for (let i = 0; i < 12; i++) p.tick(1, i); // 0.3 m/s over 3 m
+    expect(C.cur).toBeCloseTo(1);
+    expect(C.deck.scale.z).toBeCloseTo(3);
+    expect(C.spin.rotation.y).not.toBe(0); // the roller turned with it
+    expect(p.coverMeshes()).toEqual([
+      { pool: 'p', mesh: C.roller },
+      { pool: 'p', mesh: C.deck },
+    ]);
+    expect(C.deck.userData.pool).toBe('p');
+    expect(C.roller.userData.pool).toBe('p');
+    // a cover already closed when the world is built shows closed at once
+    const snap = buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0, depth: 1.4, cover: { entity: 'cover.v', roller: 'water' } }]);
+    snap.setCovers({ p: { closed: 1 } }, true);
+    expect(snap.items[0].cover.cur).toBe(1);
+    expect(snap.items[0].cover.deck.visible).toBe(true);
+    // a cover not linked yet is drawn all the same (it is placed and tried in the editor before being linked)
+    expect(buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0, depth: 1, cover: { entity: '' } }]).items[0].cover).not.toBe(null);
+    expect(buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0, depth: 1 }]).items[0].cover).toBe(null);
+    expect(p.coverAt('p')).toBeCloseTo(1); // what the editor watches while it runs a cycle
+    expect(p.coverAt('nope')).toBe(null);
   });
 });

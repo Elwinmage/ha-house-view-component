@@ -91,3 +91,30 @@ export function entityTree(hass, { area = null, all = false, domains = null, que
     }))
     .sort((x, y) => (x.area.id === null) - (y.area.id === null) || byName(x.area, y.area));
 }
+
+/**
+ * Entities matching `query` whose domain is left out by `domains`: [{ id, name, area }], best first by name. The
+ * picker offers them apart, so that an entity of an unexpected domain (a pool robot seen as a `light`, a plug read
+ * as a `sensor`…) can still be chosen by typing its id or its name. Without a query, or without a domain filter,
+ * nothing is offered. Hidden entities are left out, as in `entityTree`.
+ */
+export function otherDomains(hass, { query = '', domains = null, limit = 20 } = {}) {
+  if (!domains || !domains.length) return [];
+  const words = String(query || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [];
+  const out = [];
+  for (const [id, st] of Object.entries(hass.states || {})) {
+    if (domains.includes(id.split('.')[0])) continue;
+    const reg = hass.entities && hass.entities[id];
+    if (reg && (reg.hidden || reg.hidden_by)) continue;
+    const a = areaOf(hass, id);
+    const areaName = (a && hass.areas && hass.areas[a] && hass.areas[a].name) || '';
+    const full = (st.attributes && st.attributes.friendly_name) || id;
+    if (!words.every((w) => `${id} ${full} ${areaName}`.toLowerCase().includes(w))) continue;
+    out.push({ id, name: full, area: areaName });
+  }
+  return out.sort((x, y) => (x.name || '').localeCompare(y.name || '', undefined, { numeric: true })).slice(0, limit);
+}

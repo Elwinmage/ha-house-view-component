@@ -2,7 +2,7 @@
 // picker that lists the entities of the current room grouped by device (like the aquarium editor of ha-reef-card),
 // the rest of the house one tap away. Both send `value-changed` with { value }, like the pickers of Home Assistant.
 import { LitElement, html, css, nothing } from 'lit';
-import { searchIcons, entityTree } from './picker-lib.js';
+import { searchIcons, entityTree, otherDomains } from './picker-lib.js';
 import { makeT } from './i18n.js';
 
 // ---------------------------------------------------------------- icons
@@ -217,8 +217,10 @@ class EntityPicker extends LitElement {
             })}
           </div>`,
       );
+    // an entity of another domain, typed by its id or its name: offered apart, never hidden by the domain filter
+    const others = this.domains ? otherDomains(hass, { query: this._q, domains: this.domains }) : [];
     const body = !tree.length
-      ? html`<div class="none">${t('picker_none')}</div>`
+      ? html`<div class="none">${others.length ? t('picker_other_only') : t('picker_none')}</div>`
       : all || this._q
         ? tree.map(
             (g) =>
@@ -242,7 +244,17 @@ class EntityPicker extends LitElement {
         : devices(tree[0]);
     return html`${head}
       <div class="pop">
-        <input type="search" placeholder=${t('picker_search')} .value=${this._q} @input=${(e) => (this._q = e.target.value)} />
+        <input
+          type="search"
+          placeholder=${t('picker_search')}
+          .value=${this._q}
+          @input=${(e) => (this._q = e.target.value)}
+          @keydown=${(e) => {
+            // a whole entity id typed in: taken as it is, whatever its domain
+            const id = String(this._q || '').trim();
+            if (e.key === 'Enter' && hass.states[id]) this._pick(id);
+          }}
+        />
         ${
           this.area
             ? html`<label class="chk"
@@ -252,7 +264,25 @@ class EntityPicker extends LitElement {
                 ${all ? nothing : html`<div class="room">${t('picker_room')} : <b>${areaName}</b></div>`}`
             : nothing
         }
-        <div class="list">${body}</div>
+        <div class="list">
+          ${body}
+          ${
+            others.length
+              ? html`<details open>
+                  <summary>${t('picker_other_domains')} <small>(${others.length})</small></summary>
+                  <div class="dev">
+                    ${others.map(
+                      (e) =>
+                        html`<button class=${`ent ${e.id === this.value ? 'sel' : ''}`} title=${e.id} @click=${() => this._pick(e.id)}>
+                          <ha-state-icon .hass=${hass} .stateObj=${hass.states[e.id]}></ha-state-icon>
+                          <span class="txt"><span>${e.name}</span><small>${e.id}</small></span>
+                        </button>`,
+                    )}
+                  </div>
+                </details>`
+              : nothing
+          }
+        </div>
         ${count > MAX_LISTED ? html`<div class="none">${t('picker_more')}</div>` : nothing}
         ${this.value ? html`<button class="clear" @click=${() => this._pick('')}>${t('picker_clear')}</button>` : nothing}
       </div>`;

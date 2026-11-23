@@ -325,6 +325,8 @@ export class HouseEngine {
       }),
     );
     w.pools.setRobots(this._poolRobots);
+    w.pools.setLights(this._poolLights, this._poolGlow());
+    w.pools.setCovers(this._poolCovers, true); // a cover already closed shows closed, it does not travel on loading
     root.add(w.pools.group);
     // the sea: a water plane at its level around the terrain
     const seaCfg = activeSea(edits.sea);
@@ -516,6 +518,7 @@ export class HouseEngine {
         pool && pool.on ? new THREE.Color(pool.color).multiplyScalar(0.5 * pool.brightness * (0.3 + 0.7 * env.night)) : black,
       );
     }
+    if (w.pools) w.pools.setLights(this._poolLights, this._poolGlow());
     this._applyVisibility();
   }
 
@@ -1430,6 +1433,84 @@ export class HouseEngine {
     if (this.world) this.world.pools.setRobots(this._poolRobots);
   }
 
+  /**
+   * How much a lamp of the water shows: nothing in full daylight, all of it at night (as the lights of the house).
+   * A preview of the editor shows them whole, whatever the hour: it is there to be looked at.
+   */
+  _poolGlow() {
+    return this._poolPreview ? 1 : 0.3 + 0.7 * (this.env ? this.env.night : 1);
+  }
+
+  /**
+   * Lamps of the drawn pools: { poolId: { on, color, level, lamps } } (see poolLight in pools.js). With `preview`,
+   * they shine as at night (the editor lights them to show where they are).
+   */
+  setPoolLights(map, preview = false) {
+    this._poolLights = map || null;
+    this._poolPreview = preview;
+    if (this.world) this.world.pools.setLights(this._poolLights, this._poolGlow());
+  }
+
+  /** Roller covers of the drawn pools: { poolId: { closed, moving } } (see coverClosed in pools.js). */
+  setPoolCovers(map) {
+    this._poolCovers = map || null;
+    if (this.world) this.world.pools.setCovers(this._poolCovers);
+  }
+
+  /** How far the cover of a pool is drawn over the water (0..1), or null: what the editor watches while it tests. */
+  poolCoverAt(id) {
+    return this.world && this.world.pools ? this.world.pools.coverAt(id) : null;
+  }
+
+  /** Lamp of a pool under the pointer: { pool, lamp } or null. */
+  pickPoolLamp(ev) {
+    const list = this._poolPickable();
+    if (!list) return null;
+    const lamps = list.lampMeshes();
+    if (!lamps.length) return null;
+    const hit = this.rayAt(ev).intersectObjects(
+      lamps.map((l) => l.mesh),
+      false,
+    )[0];
+    const found = hit && lamps.find((l) => l.mesh === hit.object);
+    return found ? { pool: found.pool, lamp: found.lamp } : null;
+  }
+
+  /** The drawn pools, when they can be clicked at all (ground level shown), or null. */
+  _poolPickable() {
+    const w = this.world;
+    if (!w || !w.pools) return null;
+    const ground = w.sd.levels[0];
+    return ground && this.visibility.levels[ground.id] !== false ? w.pools : null;
+  }
+
+  /**
+   * What a click points at in the drawn pools: { pool, lamp } for a lamp, { pool, cover: true } for a cover, or
+   * { pool } for the water. The editor uses it to open what was clicked.
+   */
+  pickPoolPart(ev) {
+    const lamp = this.pickPoolLamp(ev);
+    if (lamp) return lamp;
+    const cover = this.pickPoolCover(ev);
+    if (cover) return { pool: cover, cover: true };
+    const f = this._pickRoom(ev);
+    const id = f && typeof f.room.id === 'string' && f.room.id.startsWith('pool:') ? f.room.id.slice(5) : null;
+    return id ? { pool: id } : null;
+  }
+
+  /** Pool whose roller cover lies under the pointer, or null (the sheet of the cover, on the ground level). */
+  pickPoolCover(ev) {
+    const pools = this._poolPickable();
+    if (!pools) return null;
+    const covers = pools.coverMeshes();
+    if (!covers.length) return null;
+    const hit = this.rayAt(ev).intersectObjects(
+      covers.map((c) => c.mesh),
+      false,
+    )[0];
+    return hit ? hit.object.userData.pool : null;
+  }
+
   /** Key of the door or window under the pointer (not behind a wall), or null. */
   pickOpening(ev) {
     if (!this.world) return null;
@@ -1570,7 +1651,15 @@ export class HouseEngine {
   _hover(ev, leave = false) {
     if (!this.world) return;
     if (this.picker && this.pickerMove) this.pickerMove(leave ? null : ev); // the tool of the editor shows its target
-    if (!this.picker) this.renderer.domElement.style.cursor = !leave && !ev.buttons && this.pickZone(ev) ? 'pointer' : '';
+    if (!this.picker)
+      this.renderer.domElement.style.cursor =
+        !leave &&
+        !ev.buttons &&
+        (this.pickZone(ev) ||
+          (this.opts.onPoolLampClick && this.pickPoolLamp(ev)) ||
+          (this.opts.onPoolCoverClick && this.pickPoolCover(ev)))
+          ? 'pointer'
+          : '';
     const f = leave || ev.buttons || this.picker ? null : this._pickRoom(ev);
     if (this._hovered && (!f || f.mesh !== this._hovered.mesh)) this._hovered.mesh.material.emissive.setScalar(0);
     if (f === this._hovered) return;
@@ -1586,6 +1675,11 @@ export class HouseEngine {
     if (this.picker) return this.picker(ev, this);
     const zone = this.opts.onZoneClick ? this.pickZone(ev) : null;
     if (zone) return this.opts.onZoneClick(zone, ev);
+    // a lamp of a pool, or the sheet of a roller cover: clicked, each one switches what it is linked to
+    const lamp = this.opts.onPoolLampClick ? this.pickPoolLamp(ev) : null;
+    if (lamp) return this.opts.onPoolLampClick(lamp.pool, lamp.lamp, ev);
+    const covered = this.opts.onPoolCoverClick ? this.pickPoolCover(ev) : null;
+    if (covered) return this.opts.onPoolCoverClick(covered, ev);
     if (!this.opts.onRoomClick) return;
     const f = this._pickRoom(ev);
     if (f) this.opts.onRoomClick(f.room.id, ev);

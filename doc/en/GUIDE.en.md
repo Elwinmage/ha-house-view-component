@@ -215,7 +215,7 @@ A tap on the button of the robot opens the room selection: choose the rooms on t
 
 ### 5.9 Watering, pool and pond
 
-When a valve opens, the **drip lines** light up in blue and a wet patch grows; the **sprinklers** show their jet and their sector. The pool robot travels the bottom while its entity is on; the water moves.
+When a valve opens, the **drip lines** light up in blue and a wet patch grows; the **sprinklers** show their jet and their sector. The pool robot travels the bottom while its entity is on; the water moves. The lamps of the pool colour the water in the evening and the roller cover unrolls over the water, which a tap opens or closes.
 
 | Sprinklers at dawn | Pool and pond |
 |---|---|
@@ -288,7 +288,13 @@ A room with **only one window** is linked on its own to the window sensor, the o
 
 ### 6.7 Pools and ponds
 
-*＋ Pool* or *＋ Pond*, then draw the outline seen from above: **Rectangle** (two opposite corners) or **Free shape** (point by point, then *Finish*). Set the name, the water colour, the depth (0.2 to 6 m) and, if you have one, the **cleaning robot** (`binary_sensor`, `switch`, `input_boolean` or `vacuum`). The terrain is dug: vertical walls, flat bottom and coping for a pool; sloping bottom and a pebble bank for a pond. A pool or a pond counts as a **room**: a tap zooms the camera on it (the view can be saved like that of a room), entities and links can be placed in it, and it can be linked to a Home Assistant area like a room of the plan.
+*＋ Pool* or *＋ Pond*, then draw the outline seen from above: **Rectangle** (two opposite corners) or **Free shape** (point by point, then *Finish*). Set the name, the water colour, the depth (0.2 to 6 m) and, if you have one, the **cleaning robot** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` or `sensor` — and any other entity by typing its id in the picker; a reading above zero counts as on). The terrain is dug: vertical walls, flat bottom and coping for a pool; sloping bottom and a pebble bank for a pond. A pool or a pond counts as a **room**: a tap zooms the camera on it (the view can be saved like that of a room), entities and links can be placed in it, and it can be linked to a Home Assistant area like a room of the plan.
+
+**Lamps in the water**: *＋ Lamp* adds a projector sunk in the wall of the chosen side (its place along the side and its depth can be set), linked to a light or to a plug. A coloured light gives its own colour, otherwise the colour chosen in the editor is used; the lamps that are on tint the water and the basin, all the more at night.
+
+**Roller cover**: *＋ Roller cover* adds a sheet of slats unrolling over the water from the chosen side, its roller on the deck or sunk in the water. A `cover` entity gives its position (0 to 100 %), a `switch`, `input_boolean` or `binary_sensor` entity only says open or closed (on = closed, *Swap* turns the reading around). A tap on the sheet in the view opens or closes the cover. A tap on a lamp switches it the same way. In the editor these taps command nothing: they open the pool concerned and frame the lamp or the cover aimed at in the panel. With the cover rolled up, the roller answers the tap.
+
+For both of them, the 🎯 button beside the list of sides lights them up on the ground: the side in use is yellow, and the next click in the view takes the nearest one. *Test* (💡 for a lamp, ▶ for the cover) shows the result without touching the entities: the lamp lights on its own, whatever the hour, and the cover closes then opens again, at its real speed. A second click on the button ends the preview, which also ends when the window of the pool is closed.
 
 ![A drawn pool](../images/25-piscines-editeur.jpg)
 
@@ -362,7 +368,7 @@ The settings are saved in the `sea` key of the edits. Known limits: a single wat
 
 - **Demo** (hidden by default, to switch on in the integration options): see [Demo mode](#9-demo-mode).
 - **Plan** and **Terrain**: see [the first setup](#4-first-setup-the-plan-and-the-terrain).
-- **GitHub backup**: set a **private** repository in the integration options (*Settings → Devices & services → House View → Configure → GitHub backup*: repository `owner/name`, *fine-grained* token with *Contents: read and write*, branch, folder), then *Back up to GitHub* / *Restore from GitHub*. A public repository is refused: it would hold the plan of your house.
+- **GitHub backup**: set a **private** repository in the integration options (*Settings → Devices & services → House View → Configure → GitHub backup*: repository `owner/name`, *fine-grained* token with *Contents: read and write*, branch, folder), then *Back up to GitHub* / *Restore from GitHub*. A public repository is refused: it would hold the plan of your house. Above the two buttons, **Stored in Home Assistant** lists what the integration holds (plan, terrain, edits, aerial photo) with the date of the last write: a backup can only send what is listed there, and its message says what was written, what was already up to date, what is not stored here and what GitHub refused. Edits still pending are saved before the backup.
 - **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free.
 - **Edits file**: export or import all your edits (entities, watering, fences…) as a JSON file.
 

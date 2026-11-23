@@ -215,7 +215,7 @@ Un clic sur le bouton du robot ouvre la sélection des pièces : choisissez-les 
 
 ### 5.9 Arrosage, piscine et étang
 
-Quand une vanne s'ouvre, les **goutte-à-goutte** s'allument en bleu et une tache humide grandit ; les **arroseurs** montrent leur jet et leur secteur. Le robot de piscine parcourt le fond tant que son entité est active ; l'eau bouge.
+Quand une vanne s'ouvre, les **goutte-à-goutte** s'allument en bleu et une tache humide grandit ; les **arroseurs** montrent leur jet et leur secteur. Le robot de piscine parcourt le fond tant que son entité est active ; l'eau bouge. Les lampes de la piscine colorent l'eau le soir et le volet roulant se déroule sur l'eau, qu'un clic ouvre ou ferme.
 
 | Arroseurs à l'aube | Piscine et étang |
 |---|---|
@@ -288,7 +288,13 @@ Une pièce qui n'a **qu'une fenêtre** est liée toute seule au capteur de fenê
 
 ### 6.7 Piscines et étangs
 
-*＋ Piscine* ou *＋ Étang*, puis dessinez le contour vu de dessus : **Rectangle** (deux coins opposés) ou **Forme libre** (point par point, puis *Terminer*). Réglez le nom, la couleur de l'eau, la profondeur (0,2 à 6 m) et, si vous en avez un, le **robot nettoyeur** (`binary_sensor`, `switch`, `input_boolean` ou `vacuum`). Le terrain est creusé : parois verticales, fond plat et margelle pour une piscine ; fond en pente et berge de galets pour un étang. Une piscine ou un étang compte comme une **pièce** : un clic zoome la caméra dessus (la vue peut être enregistrée comme celle d'une pièce), on peut y placer des entités et des liens, et le relier à une zone Home Assistant comme une pièce du plan.
+*＋ Piscine* ou *＋ Étang*, puis dessinez le contour vu de dessus : **Rectangle** (deux coins opposés) ou **Forme libre** (point par point, puis *Terminer*). Réglez le nom, la couleur de l'eau, la profondeur (0,2 à 6 m) et, si vous en avez un, le **robot nettoyeur** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` ou `sensor` — et n'importe quelle autre entité en tapant son identifiant dans le sélecteur ; une valeur supérieure à zéro compte comme actif). Le terrain est creusé : parois verticales, fond plat et margelle pour une piscine ; fond en pente et berge de galets pour un étang. Une piscine ou un étang compte comme une **pièce** : un clic zoome la caméra dessus (la vue peut être enregistrée comme celle d'une pièce), on peut y placer des entités et des liens, et le relier à une zone Home Assistant comme une pièce du plan.
+
+**Lampes dans l'eau** : *＋ Lampe* ajoute un projecteur encastré dans la paroi du côté choisi (position le long du côté et profondeur réglables), lié à une lumière ou à une prise. Une lumière de couleur donne la sienne, sinon la couleur choisie dans l'éditeur est utilisée ; les lampes allumées teintent l'eau et le bassin, d'autant plus la nuit.
+
+**Volet roulant** : *＋ Volet roulant* ajoute un tablier de lames qui se déroule sur l'eau depuis le côté choisi, avec son enrouleur sur la plage ou immergé. Une entité `cover` donne sa position (0 à 100 %), une entité `switch`, `input_boolean` ou `binary_sensor` dit seulement ouvert ou fermé (actif = fermé, *Inverser* retourne la lecture). Un clic sur le tablier dans la vue ouvre ou ferme le volet. Un clic sur une lampe l'allume ou l'éteint de la même façon. Dans l'éditeur, ces clics ne commandent rien : ils ouvrent la piscine concernée et encadrent la lampe ou le volet visé dans le panneau. Volet ouvert, c'est l'enrouleur qui répond au clic.
+
+Pour l'une comme pour l'autre, le bouton 🎯 à côté de la liste des côtés les allume sur le sol : le côté en service est en jaune, et le clic suivant dans la vue prend le plus proche. *Tester* (💡 pour une lampe, ▶ pour le volet) montre le résultat sans toucher aux entités : la lampe s'allume seule, quelle que soit l'heure, et le volet se ferme puis se rouvre, à sa vraie vitesse. Un deuxième clic sur le bouton arrête l'aperçu, qui s'arrête aussi en fermant la fenêtre de la piscine.
 
 ![Une piscine dessinée](../images/25-piscines-editeur.jpg)
 
@@ -362,7 +368,7 @@ Les réglages sont enregistrés dans la clé `sea` des modifications. Limites co
 
 - **Démo** (masquée par défaut, à activer dans les options de l'intégration) : voir [Le mode démo](#9-le-mode-démo).
 - **Plan** et **Terrain** : voir [la mise en place](#4-première-mise-en-place--le-plan-et-le-terrain).
-- **Sauvegarde GitHub** : réglez un dépôt **privé** dans les options de l'intégration (*Paramètres → Appareils et services → House View → Configurer → Sauvegarde GitHub* : dépôt `propriétaire/nom`, jeton *fine-grained* avec *Contents : read and write*, branche, dossier), puis *Sauvegarder sur GitHub* / *Restaurer depuis GitHub*. Un dépôt public est refusé : il contiendrait le plan de votre maison.
+- **Sauvegarde GitHub** : réglez un dépôt **privé** dans les options de l'intégration (*Paramètres → Appareils et services → House View → Configurer → Sauvegarde GitHub* : dépôt `propriétaire/nom`, jeton *fine-grained* avec *Contents : read and write*, branche, dossier), puis *Sauvegarder sur GitHub* / *Restaurer depuis GitHub*. Un dépôt public est refusé : il contiendrait le plan de votre maison. Au-dessus des deux boutons, **Enregistré dans Home Assistant** liste ce que l'intégration détient (plan, terrain, modifications, photo aérienne) avec la date du dernier enregistrement : la sauvegarde ne peut envoyer que ce qui est listé là, et son message dit ce qui a été écrit, ce qui était déjà à jour, ce qui n'est pas enregistré ici et ce que GitHub a refusé. Les modifications encore en attente sont enregistrées avant la sauvegarde.
 - **Protection de l'édition** : un mot de passe peut être demandé avant d'ouvrir l'éditeur et la configuration (options de l'intégration → *Protection de l'édition*). La carte le redemande après 10 minutes sans modification ; le bouton 🔒 reverrouille tout de suite. Regarder la vue, zoomer, commander les lumières ou l'aspirateur restent libres.
 - **Fichier d'éditions** : exporter ou importer toutes vos éditions (entités, arrosage, clôtures…) dans un fichier JSON.
 

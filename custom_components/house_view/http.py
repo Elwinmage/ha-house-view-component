@@ -258,6 +258,18 @@ class HouseViewFetchView(HomeAssistantView):
         return self.json(store.job, HTTPStatus.ACCEPTED)
 
 
+def _backup_message(res: dict[str, Any], missing: list[str]) -> str:
+    """What a backup did, for the message the card shows: written, already up to date, not stored here, failed."""
+    parts = [f"{len(res['written'])} file(s) updated"]
+    if res["unchanged"]:
+        parts.append(f"already up to date: {', '.join(res['unchanged'])}")
+    if missing:
+        parts.append(f"nothing stored: {', '.join(missing)}")
+    if res["failed"]:
+        parts.append("failed: " + "; ".join(f"{k} ({why})" for k, why in res["failed"].items()))
+    return " — ".join(parts)
+
+
 class HouseViewGitHubView(HomeAssistantView):
     """POST (admin, unlocked) {"action": "backup" | "restore"}: manual backup to / restore from the private repo."""
 
@@ -282,8 +294,12 @@ class HouseViewGitHubView(HomeAssistantView):
         try:
             if action == "backup":
                 docs = {k: b for k in KEYS if (b := store.get_bytes(k)) is not None}
-                written = await gh.backup(docs)
-                return self.json({"ok": True, "written": written, "message": f"{len(written)} file(s) updated"})
+                # a document that is not stored here cannot be saved: said plainly, it is the usual reason a file
+                # is missing from the repository
+                missing = [k for k in KEYS if k not in docs]
+                res = await gh.backup(docs)
+                msg = _backup_message(res, missing)
+                return self.json({"ok": not res["failed"], "missing": missing, **res, "message": msg})
             if action == "restore":
                 docs = await gh.restore(KEYS)
                 for key, doc in docs.items():

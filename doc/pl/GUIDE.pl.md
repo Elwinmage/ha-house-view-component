@@ -215,7 +215,7 @@ Dotknięcie przycisku robota otwiera wybór pomieszczeń: wybierz je na planie, 
 
 ### 5.9 Nawadnianie, basen i oczko wodne
 
-Gdy zawór się otwiera, **linie kroplujące** świecą na niebiesko i rośnie mokra plama; **zraszacze** pokazują strumień i sektor. Robot basenowy jeździ po dnie, dopóki jego encja jest aktywna; woda się porusza.
+Gdy zawór się otwiera, **linie kroplujące** świecą na niebiesko i rośnie mokra plama; **zraszacze** pokazują strumień i sektor. Robot basenowy jeździ po dnie, dopóki jego encja jest aktywna; woda się porusza. Lampy basenu barwią wieczorem wodę, a roleta rozwija się nad wodą; klik ją otwiera lub zamyka.
 
 | Zraszacze o świcie | Basen i oczko wodne |
 |---|---|
@@ -288,7 +288,13 @@ Pomieszczenie, które ma **tylko jedno okno**, samo łączy się z czujnikiem ok
 
 ### 6.7 Baseny i oczka wodne
 
-*＋ Pool* lub *＋ Pond*, potem narysuj obrys widziany z góry: **Rectangle** (dwa przeciwległe narożniki) lub **Free shape** (punkt po punkcie, potem *Finish*). Ustaw nazwę, kolor wody, głębokość (0,2 do 6 m) i, jeśli masz, **robota czyszczącego** (`binary_sensor`, `switch`, `input_boolean` lub `vacuum`). Teren zostaje wykopany: pionowe ściany, płaskie dno i obrzeże dla basenu; opadające dno i brzeg z kamyków dla oczka.
+*＋ Pool* lub *＋ Pond*, potem narysuj obrys widziany z góry: **Rectangle** (dwa przeciwległe narożniki) lub **Free shape** (punkt po punkcie, potem *Finish*). Ustaw nazwę, kolor wody, głębokość (0,2 do 6 m) i, jeśli masz, **robota czyszczącego** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` lub `sensor` — a także dowolną inną encję, wpisując jej identyfikator w selektorze; wartość powyżej zera liczy się jako aktywna). Teren zostaje wykopany: pionowe ściany, płaskie dno i obrzeże dla basenu; opadające dno i brzeg z kamyków dla oczka.
+
+**Lampy w wodzie**: *＋ Lamp* dodaje reflektor wpuszczony w ścianę wybranego boku (położenie wzdłuż boku i głębokość są regulowane), powiązany ze światłem albo z gniazdkiem. Kolorowe światło daje własny kolor, w przeciwnym razie używany jest kolor wybrany w edytorze; zapalone lampy barwią wodę i nieckę, tym bardziej nocą.
+
+**Roleta basenowa**: *＋ Roller cover* dodaje pokrywę z lameli, która rozwija się nad wodą od wybranego boku, ze zwijaczem na obrzeżu albo zanurzonym. Encja `cover` podaje swoje położenie (0 do 100 %), encja `switch`, `input_boolean` lub `binary_sensor` mówi tylko otwarte albo zamknięte (aktywne = zamknięte, *Swap* odwraca odczyt). Klik na pokrywie w widoku otwiera ją lub zamyka. Klik na lampie włącza ją lub wyłącza tak samo. W edytorze te kliknięcia niczym nie sterują: otwierają dany basen i obramowują w panelu wskazaną lampę albo roletę. Gdy roleta jest zwinięta, na klik odpowiada zwijacz.
+
+Dla obu przycisk 🎯 obok listy boków podświetla je na ziemi: używany bok jest żółty, a następny klik w widoku bierze najbliższy. *Testuj* (💡 dla lampy, ▶ dla rolety) pokazuje wynik bez ruszania encji: lampa zapala się sama, o dowolnej porze, a roleta zamyka się i znów otwiera, w swoim prawdziwym tempie. Drugi klik kończy podgląd, który kończy się także po zamknięciu okna basenu.
 
 ![Narysowany basen](../images/25-piscines-editeur.jpg)
 
@@ -348,7 +354,7 @@ Aby stworzyć **własne drzewo lub obiekt**, użyj [edytora katalogu](https://gi
 
 - **Demo**: zob. [Tryb demo](#9-tryb-demo).
 - **Plan** i **teren**: zob. [pierwsze uruchomienie](#4-pierwsze-uruchomienie-plan-i-teren).
-- **GitHub backup**: ustaw **prywatne** repozytorium w opcjach integracji (*Ustawienia → Urządzenia oraz usługi → House View → Konfiguruj → kopia zapasowa GitHub*: repozytorium `właściciel/nazwa`, token *fine-grained* z *Contents: read and write*, gałąź, folder), potem *Back up to GitHub* / *Restore from GitHub*. Repozytorium publiczne jest odrzucane: zawierałoby plan Twojego domu.
+- **GitHub backup**: ustaw **prywatne** repozytorium w opcjach integracji (*Ustawienia → Urządzenia oraz usługi → House View → Konfiguruj → kopia zapasowa GitHub*: repozytorium `właściciel/nazwa`, token *fine-grained* z *Contents: read and write*, gałąź, folder), potem *Back up to GitHub* / *Restore from GitHub*. Repozytorium publiczne jest odrzucane: zawierałoby plan Twojego domu. Nad dwoma przyciskami **Zapisane w Home Assistant** wymienia to, co ma integracja (plan, teren, zmiany, zdjęcie lotnicze) z datą ostatniego zapisu: kopia może wysłać tylko to, co jest tam wymienione, a jej komunikat mówi, co zostało zapisane, co było już aktualne, czego tu nie ma i co odrzucił GitHub. Zmiany wciąż oczekujące są zapisywane przed kopią.
 - **Edit protection**: przed otwarciem edytora i konfiguracji może być wymagane hasło (opcje integracji → ochrona edycji). Karta prosi o nie ponownie po 10 minutach bez zmian; przycisk 🔒 blokuje od razu. Oglądanie, przybliżanie, sterowanie światłami czy odkurzaczem pozostają wolne.
 - **Edits file**: eksport lub import wszystkich edycji (encje, nawadnianie, ogrodzenia…) w pliku JSON.
 

@@ -54,7 +54,7 @@ import { normalizeFence } from './fences.js';
 import { renderOpenings } from './ui-openings.js';
 import { renderSea } from './ui-sea.js';
 import { renderPools } from './ui-pools.js';
-import { POOL_ROOM } from './pools.js';
+import { POOL_ROOM, robotRunning, poolLight, coverClosed } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
 import {
   addRoom,
@@ -385,6 +385,8 @@ class HouseViewCard extends LitElement {
       fpsCap: this._config.fps_cap,
       onRoomClick: (roomId) => this._roomClick(roomId),
       onZoneClick: (id) => openZone(this, id),
+      onPoolCoverClick: (id) => this._poolCoverClick(id),
+      onPoolLampClick: (pool, lamp) => this._poolLampClick(pool, lamp),
       poolName: (kind) => this._t(`pool_${kind}`),
       onHover: (info, ev) => this._hover(info, ev),
     });
@@ -516,20 +518,126 @@ class HouseViewCard extends LitElement {
     return this._opAuto.auto;
   }
 
-  /** Cleaning robots of the drawn pools run while their entity is on. */
+  /**
+   * Pools: the cleaning robot runs while its entity is on, the lamps light the water, the cover follows its entity
+   * — and, in the editor, whatever is being previewed takes over (a lamp lit on its own, a cover cycle).
+   */
   _pushPools() {
     const eng = this._engine;
     if (!eng || !eng.world || !this._data || !this._hass) return;
-    const map = {};
+    const states = this._hass.states;
+    const test = this._panel === 'edit' ? this._poolTest : null;
+    const robots = {};
+    const lights = {};
+    const covers = {};
     for (const p of this._data.edits.pools) {
-      const st = p.robot && this._hass.states[p.robot];
-      map[p.id] = !!st && ['on', 'cleaning', 'running'].includes(st.state);
+      robots[p.id] = robotRunning(p.robot ? states[p.robot] : null);
+      const mine = test && test.id === p.id ? test : null;
+      const lamps = (p.lights || []).filter(Boolean);
+      if (lamps.length)
+        lights[p.id] = poolLight(lamps, (entity, lamp) =>
+          mine && mine.lamps.has(lamp) ? { on: true, brightness: 1 } : entity ? entityLight(states[entity]) : null,
+        );
+      const cover = p.cover && p.cover.entity ? coverClosed(p.cover, states[p.cover.entity]) : null;
+      if (mine && mine.cover !== null) covers[p.id] = { closed: mine.cover, moving: true };
+      else if (cover) covers[p.id] = cover;
     }
-    const sig = JSON.stringify(map);
+    const sig = JSON.stringify([robots, lights, covers]);
     if (sig === this._poolSig && eng.world === this._poolWorld) return;
     this._poolSig = sig;
     this._poolWorld = eng.world;
-    eng.setPoolRobots(map);
+    eng.setPoolRobots(robots);
+    eng.setPoolLights(lights, !!(test && test.lamps.size));
+    eng.setPoolCovers(covers);
+  }
+
+  /**
+   * Previews of the pool editor, entities untouched: `lamp` lights one lamp on its own (whatever the hour), `cover`
+   * runs a cycle — the cover closes over the water, then opens again and the entity takes over. The same button
+   * pressed again stops the preview.
+   */
+  _poolDemo(poolId, what, lampId = null) {
+    if (this._poolTest && this._poolTest.id !== poolId) this._poolDemoStop(true);
+    const test = (this._poolTest = this._poolTest || { id: poolId, lamps: new Set(), cover: null });
+    if (what === 'lamp') {
+      if (!test.lamps.delete(lampId)) test.lamps.add(lampId);
+    } else {
+      clearInterval(this._poolTimer);
+      this._poolTimer = null;
+      if (test.cover !== null) test.cover = null;
+      else {
+        test.cover = 1;
+        let closed = false;
+        this._poolTimer = setInterval(() => {
+          const at = this._engine ? this._engine.poolCoverAt(poolId) : null;
+          if (at === null) return this._poolDemoStop();
+          if (!closed && at > 0.99) {
+            closed = true;
+            test.cover = 0;
+            this._pushPools();
+          } else if (closed && at < 0.01) this._poolDemoStop();
+        }, 250);
+      }
+    }
+    if (!test.lamps.size && test.cover === null) this._poolTest = null;
+    this._pushPools();
+    this.requestUpdate();
+  }
+
+  /** End every preview of the pool editor: what the entities say comes back. */
+  _poolDemoStop(quiet = false) {
+    clearInterval(this._poolTimer);
+    this._poolTimer = null;
+    if (!this._poolTest) return;
+    this._poolTest = null;
+    if (quiet) return;
+    this._pushPools();
+    this.requestUpdate();
+  }
+
+  /**
+   * A click on the sheet or the roller of a cover opens or closes it; a click on a lamp switches it. In the editor
+   * the part clicked is opened instead (see _poolPick), so that it can be moved and set from the view.
+   */
+  _poolCoverClick(poolId) {
+    if (!this._hass) return;
+    if (this._editing) return this._poolPick(poolId, 'cover');
+    if (this._vacMode) return this._roomClick(`${POOL_ROOM}${poolId}`);
+    const pool = this._poolOf(poolId);
+    const entity = pool && pool.cover && pool.cover.entity;
+    if (entity) this._toggleEntity(entity);
+  }
+
+  _poolLampClick(poolId, lampId) {
+    if (!this._hass) return;
+    if (this._editing) return this._poolPick(poolId, `lamp:${lampId}`);
+    if (this._vacMode) return this._roomClick(`${POOL_ROOM}${poolId}`);
+    const pool = this._poolOf(poolId);
+    const lamp = pool && (pool.lights || []).find((l) => l && l.id === lampId);
+    if (lamp && lamp.entity) this._toggleEntity(lamp.entity);
+  }
+
+  _poolOf(id) {
+    return (this._data && this._data.edits.pools ? this._data.edits.pools : []).find((p) => p.id === id) || null;
+  }
+
+  /** Switch an entity whatever its domain (a cover has a toggle of its own). */
+  _toggleEntity(entity) {
+    const domain = entity.split('.')[0];
+    this._hass.callService(domain === 'cover' ? 'cover' : 'homeassistant', 'toggle', { entity_id: entity });
+  }
+
+  /**
+   * A pool, one of its lamps or its cover clicked in the editor: the pool editor opens on it and the part is
+   * pointed out (`part` = 'cover', `lamp:<id>` or nothing for the water).
+   */
+  _poolPick(poolId, part = null) {
+    if (this._panel !== 'edit' || this._section !== 'pools') return this._roomClick(`${POOL_ROOM}${poolId}`);
+    if (this._poolSel !== poolId) this._poolDemoStop(true);
+    this._poolSel = poolId;
+    this._poolPart = part;
+    this._poolSide = null;
+    this.requestUpdate();
   }
 
   /** Doors, windows and shutters follow their entities. */
@@ -1667,13 +1775,18 @@ class HouseViewCard extends LitElement {
     try {
       if (what === 'scene') await this._api.setScene(this._data.scene);
       else if (what === 'edits') {
-        this._dirty = false;
         if (this._engine && this._engine.edits) this._data.edits = this._engine.edits;
         await this._api.setEdits(this._data.edits);
+        this._dirty = false; // only once the integration holds them: a refused save stays pending
       } else if (what === 'terrain') await (this._data.terrain ? this._api.setTerrain(this._data.terrain) : this._api.clearTerrain());
       if (Date.now() - (this._saidAt || 0) > 3000) this._msg = this._t('saved'); // keep the message of the action just done
     } catch (e) {
+      // a save that did not go through stays pending (it is tried again on the next change and before a GitHub
+      // backup) and says so: what the integration never stored cannot be saved anywhere else
       this._msg = `${this._t('error')}: ${e.message}`;
+      this._saidAt = Date.now();
+      if (what === 'edits') this._dirty = true;
+      this.requestUpdate();
     }
   }
 
@@ -1939,13 +2052,47 @@ class HouseViewCard extends LitElement {
     this._confirm = null;
     this._busy = true;
     try {
+      // a backup saves the documents stored by the integration: what is still pending goes there first
+      if (action === 'backup' && this._dirty) {
+        clearTimeout(this._saveTimer);
+        await this._save('edits');
+      }
       const r = await this._api.github(action);
       this._msg = `GitHub : ${r && r.message ? r.message : this._t('done')}`;
       if (action === 'restore') await this._reload();
+      else this._info = (await this._api.info()) || this._info;
     } catch (e) {
       this._msg = `${this._t('error')}: ${e.message}`;
     }
     this._busy = false;
+  }
+
+  /**
+   * What the integration holds for this home, document by document, with the day and hour of the last write. A
+   * backup can only save what is listed here: a document shown as absent is one the card never managed to save.
+   */
+  _renderStored() {
+    const t = this._t;
+    const info = this._info;
+    if (!info) return nothing;
+    const when = (stamp) => {
+      const d = stamp ? new Date(stamp) : null;
+      return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : '—';
+    };
+    const docs = [
+      ['scene', t('plan'), info.has_scene],
+      ['terrain', t('terrain'), info.has_terrain],
+      ['edits', t('edits'), info.has_edits],
+      ['ortho', t('photo_ortho'), info.has_ortho],
+    ];
+    return html`<div class="sub">${t('stored')}</div>
+      ${docs.map(
+        ([key, label, has]) =>
+          html`<div class="row">
+            <span class="grow">${label}</span>
+            <span class=${has ? '' : 'badge'}>${has ? when(info.updated && info.updated[key]) : t('stored_none')}</span>
+          </div>`,
+      )}`;
   }
 
   async _removeOrtho() {
@@ -2144,6 +2291,7 @@ class HouseViewCard extends LitElement {
               </details>
               <details>
                 <summary>${t('backup')}</summary>
+                ${this._renderStored()}
                 ${
                   this._info && this._info.github
                     ? html`<div class="hint">${t('github_hint')} ${this._info.github}</div>

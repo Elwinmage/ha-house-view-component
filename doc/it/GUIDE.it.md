@@ -215,7 +215,7 @@ Un tocco sul pulsante del robot apre la selezione delle stanze: sceglietele sull
 
 ### 5.9 Irrigazione, piscina e laghetto
 
-Quando una valvola si apre, le **linee a goccia** si accendono in blu e cresce una macchia bagnata; gli **irrigatori** mostrano il getto e il settore. Il robot della piscina percorre il fondo finché la sua entità è attiva; l'acqua si muove.
+Quando una valvola si apre, le **linee a goccia** si accendono in blu e cresce una macchia bagnata; gli **irrigatori** mostrano il getto e il settore. Il robot della piscina percorre il fondo finché la sua entità è attiva; l'acqua si muove. Le lampade della piscina colorano l'acqua la sera e la tapparella si srotola sull'acqua; un clic la apre o la chiude.
 
 | Irrigatori all'alba | Piscina e laghetto |
 |---|---|
@@ -288,7 +288,13 @@ Una stanza che ha **una sola finestra** viene collegata da sola al sensore della
 
 ### 6.7 Piscine e laghetti
 
-*＋ Pool* o *＋ Pond*, poi disegnate il contorno visto dall'alto: **Rectangle** (due angoli opposti) o **Free shape** (punto per punto, poi *Finish*). Regolate il nome, il colore dell'acqua, la profondità (da 0,2 a 6 m) e, se ne avete uno, il **robot pulitore** (`binary_sensor`, `switch`, `input_boolean` o `vacuum`). Il terreno viene scavato: pareti verticali, fondo piatto e bordo per una piscina; fondo in pendenza e sponda di ciottoli per un laghetto.
+*＋ Pool* o *＋ Pond*, poi disegnate il contorno visto dall'alto: **Rectangle** (due angoli opposti) o **Free shape** (punto per punto, poi *Finish*). Regolate il nome, il colore dell'acqua, la profondità (da 0,2 a 6 m) e, se ne avete uno, il **robot pulitore** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` o `sensor` — e qualunque altra entità digitando il suo id nel selettore; un valore maggiore di zero conta come attivo). Il terreno viene scavato: pareti verticali, fondo piatto e bordo per una piscina; fondo in pendenza e sponda di ciottoli per un laghetto.
+
+**Lampade nell'acqua** : *＋ Lamp* aggiunge un faro incassato nella parete del lato scelto (posizione lungo il lato e profondità regolabili), collegato a una luce o a una presa. Una luce colorata dà il proprio colore, altrimenti viene usato il colore scelto nell'editor; le lampade accese tingono l'acqua e la vasca, tanto più di notte.
+
+**Tapparella** : *＋ Roller cover* aggiunge un telo di lamelle che si srotola sull'acqua dal lato scelto, con l'avvolgitore sul bordo o immerso. Un'entità `cover` dà la sua posizione (da 0 a 100 %), un'entità `switch`, `input_boolean` o `binary_sensor` dice solo aperto o chiuso (attivo = chiuso, *Swap* rovescia la lettura). Un clic sul telo nella vista apre o chiude la tapparella. Un clic su una lampada la accende o la spegne allo stesso modo. Nell'editor questi clic non comandano nulla: aprono la piscina in questione e incorniciano nel pannello la lampada o la tapparella mirata. A tapparella arrotolata, risponde l'avvolgitore.
+
+Per entrambi, il pulsante 🎯 accanto all'elenco dei lati li accende sul terreno: il lato in uso è in giallo, e il clic successivo nella vista prende il più vicino. *Provare* (💡 per una lampada, ▶ per la tapparella) mostra il risultato senza toccare le entità: la lampada si accende da sola, a qualunque ora, e la tapparella si chiude e si riapre, alla sua vera velocità. Un secondo clic sul pulsante ferma l'anteprima, che si ferma anche chiudendo la finestra della piscina.
 
 ![Una piscina disegnata](../images/25-piscines-editeur.jpg)
 
@@ -348,7 +354,7 @@ Per creare **il vostro albero o oggetto**, usate l'[editor di catalogo](https://
 
 - **Demo**: vedi [La modalità demo](#9-la-modalità-demo).
 - **Pianta** e **terreno**: vedi [la prima messa in opera](#4-prima-messa-in-opera-la-pianta-e-il-terreno).
-- **GitHub backup**: impostate un repository **privato** nelle opzioni dell'integrazione (*Impostazioni → Dispositivi e servizi → House View → Configura → backup su GitHub*: repository `proprietario/nome`, token *fine-grained* con *Contents: read and write*, ramo, cartella), poi *Back up to GitHub* / *Restore from GitHub*. Un repository pubblico viene rifiutato: conterrebbe la pianta della vostra casa.
+- **GitHub backup**: impostate un repository **privato** nelle opzioni dell'integrazione (*Impostazioni → Dispositivi e servizi → House View → Configura → backup su GitHub*: repository `proprietario/nome`, token *fine-grained* con *Contents: read and write*, ramo, cartella), poi *Back up to GitHub* / *Restore from GitHub*. Un repository pubblico viene rifiutato: conterrebbe la pianta della vostra casa. Sopra i due pulsanti, **Salvato in Home Assistant** elenca ciò che l'integrazione detiene (pianta, terreno, modifiche, foto aerea) con la data dell'ultima scrittura: il backup può inviare solo ciò che è elencato lì, e il suo messaggio dice cosa è stato scritto, cosa era già aggiornato, cosa non è salvato qui e cosa GitHub ha rifiutato. Le modifiche ancora in sospeso vengono salvate prima del backup.
 - **Edit protection**: si può chiedere una password prima di aprire l'editor e la configurazione (opzioni dell'integrazione → protezione della modifica). La scheda la richiede dopo 10 minuti senza modifiche; il pulsante 🔒 blocca subito. Guardare la vista, zoomare, comandare le luci o l'aspirapolvere restano liberi.
 - **Edits file**: esportare o importare tutte le vostre modifiche (entità, irrigazione, recinzioni…) in un file JSON.
 

@@ -1,8 +1,13 @@
 // Pools and ponds drawn in the editor: basin dug in the ground (vertical walls and flat bottom for a pool, sloping
-// bottom for a pond), coping or pebble ring, moving water, and the cleaning robot wandering on the bottom.
+// bottom for a pond), coping or pebble ring, moving water, the cleaning robot wandering on the bottom, the lamps of
+// the water (their colour tints the water and the basin) and the roller cover sliding over the pool.
 import * as THREE from 'three';
-import { polygonArea, centroidOf, robotStep, inPolygon } from '../pools.js';
+import { polygonArea, centroidOf, robotStep, inPolygon, sideFrame, sideExtent, sidePoint } from '../pools.js';
 import { buildPondFish } from './fish-3d.js';
+
+const BLACK = new THREE.Color('#000000');
+const COVER_SPEED = 0.3; // travel of the cover over the water, in metres per second
+const ROLLER_R = 0.17; // radius of the roller the cover winds on
 
 let waterNormals = null;
 /** Small tiling normal map of ripples (shared; none outside a browser). */
@@ -122,6 +127,149 @@ function pondBasin(poly, rim, depth) {
   return g;
 }
 
+const slatTextures = new Map();
+/** Tiling canvas of the slats of a cover, one per colour (shared; cloned by each cover for its own repeat). */
+function slatTexture(color) {
+  if (typeof document === 'undefined') return null;
+  if (!slatTextures.has(color)) {
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 16;
+    const g = c.getContext('2d');
+    g.fillStyle = color;
+    g.fillRect(0, 0, 4, 16);
+    g.fillStyle = shade(color, -0.4).getStyle(); // the groove between two slats
+    g.fillRect(0, 14, 4, 2);
+    g.fillStyle = shade(color, 0.25).getStyle(); // light caught by the top of a slat
+    g.fillRect(0, 1, 4, 3);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    slatTextures.set(color, tex);
+  }
+  return slatTextures.get(color);
+}
+
+/**
+ * Lamps of the water: a projector sunk in the wall of a side of the outline, looking at the water, with a halo
+ * around it. `list` = the lamps of the pool (see newLamp in pools.js).
+ */
+function buildLamps(list, poly, rim, depth) {
+  const out = [];
+  for (const cfg of list) {
+    const inward = 0.04;
+    const [x, z, f] = sidePoint(poly, cfg.side || 0, cfg.t ?? 0.5, inward);
+    const under = Math.min(Math.max(cfg.depth ?? 0.6, 0.1), Math.max(depth - 0.15, 0.15));
+    const color = cfg.color || '#49e0ff';
+    const g = new THREE.Group();
+    g.position.set(x, rim - under, z);
+    g.rotation.y = Math.atan2(f.nx, f.nz); // the lens looks at the water
+    const lensMat = new THREE.MeshStandardMaterial({ color: '#eef4f7', roughness: 0.25, emissive: BLACK.clone() });
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.12, 20), lensMat);
+    const rim2 = new THREE.Mesh(
+      new THREE.RingGeometry(0.12, 0.16, 20),
+      new THREE.MeshStandardMaterial({ color: '#cfd6da', roughness: 0.5 }),
+    );
+    rim2.position.z = -0.005;
+    const haloMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const halo = new THREE.Mesh(new THREE.CircleGeometry(0.95, 24), haloMat);
+    halo.position.z = 0.08;
+    halo.renderOrder = 6;
+    halo.visible = false;
+    // a lens is small to aim at: an invisible disc around it takes the clicks
+    const pick = new THREE.Mesh(
+      new THREE.CircleGeometry(0.4, 12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    pick.position.z = 0.02;
+    g.add(rim2, lens, halo, pick);
+    out.push({ cfg, group: g, lensMat, haloMat, color, pick });
+  }
+  return out;
+}
+
+/**
+ * Roller cover of a pool: a sheet of slats growing over the water from one side of the outline, and the roller it
+ * winds on (on the deck at the end of the pool, or sunk in the water). `cfg`: see newCover in pools.js.
+ */
+function buildCover(poly, cfg, rim) {
+  const f = sideFrame(poly, cfg.side || 0);
+  const e = sideExtent(poly, f);
+  const width = Math.max(e.u1 - e.u0, 0.5);
+  const reach = Math.max(e.v1, 0.5);
+  const color = cfg.color || '#dfe4e8';
+  const mid = e.u0 + width / 2;
+  const g = new THREE.Group();
+  g.name = 'pool-cover';
+  g.position.set(f.x + f.ux * mid, rim, f.z + f.uz * mid);
+  g.rotation.y = Math.atan2(f.nx, f.nz); // local +z goes toward the water, +x runs along the side
+  // the sheet: a plane lying flat, growing from the side (local z from 0 to `reach`), just over the water
+  const geo = new THREE.PlaneGeometry(width, 1);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, 0, 0.5);
+  const tex = slatTexture(color);
+  const map = tex ? tex.clone() : null;
+  if (map) map.needsUpdate = true;
+  const mat = new THREE.MeshStandardMaterial({ color: map ? '#ffffff' : color, map, roughness: 0.65, side: THREE.DoubleSide });
+  const deck = new THREE.Mesh(geo, mat);
+  deck.position.y = -0.06;
+  deck.castShadow = true;
+  deck.renderOrder = 6;
+  g.add(deck);
+  // the roller, with the wound edge of the sheet on it: turning while the cover travels
+  const spin = new THREE.Group();
+  const cyl = new THREE.Mesh(
+    new THREE.CylinderGeometry(ROLLER_R, ROLLER_R, width * 0.98, 16),
+    new THREE.MeshStandardMaterial({ color: shade(color, -0.1), roughness: 0.6 }),
+  );
+  const seam = new THREE.Mesh(
+    new THREE.BoxGeometry(0.03, width * 0.98, 0.07),
+    new THREE.MeshStandardMaterial({ color: shade(color, -0.45), roughness: 0.8 }),
+  );
+  seam.position.z = ROLLER_R;
+  spin.add(cyl, seam);
+  const pivot = new THREE.Group();
+  pivot.rotation.z = Math.PI / 2; // the axis of the roller runs along the side
+  pivot.add(spin);
+  const sunk = cfg.roller === 'water';
+  pivot.position.set(0, sunk ? -0.32 : ROLLER_R + 0.06, sunk ? 0.45 : -0.38);
+  pivot.castShadow = true;
+  g.add(pivot);
+  return { cfg, group: g, deck, mat, spin, roller: cyl, reach, cur: 0, to: 0 };
+}
+
+/** The sheet of a cover over `cur` (0..1) of the pool: its length, the size of its slats and whether it shows. */
+function applyCover(C) {
+  const len = Math.max(C.cur * C.reach, 0.001);
+  C.deck.scale.z = len;
+  C.deck.visible = C.cur > 0.004;
+  if (C.mat.map) C.mat.map.repeat.set(1, Math.max(1, len / 0.09));
+}
+
+/** Lamps and water of a pool lit by `s` = { on, color, level, lamps } (see poolLight in pools.js). */
+function applyPoolLight(it, s, glow) {
+  const on = !!(s && s.on);
+  const k = on ? Math.min(s.level, 1) * (0.3 + 0.7 * glow) : 0;
+  it.lit = on;
+  it.wm.emissive.copy(on ? new THREE.Color(s.color).multiplyScalar(0.45 * k) : BLACK);
+  it.wm.emissiveIntensity = 1;
+  if (it.linerMat) it.linerMat.emissive.copy(on ? new THREE.Color(s.color).multiplyScalar(0.3 * k) : BLACK);
+  for (const lamp of it.lamps) {
+    const st = (s && s.lamps && s.lamps[lamp.cfg.id]) || { on: false };
+    lamp.lensMat.emissive.copy(st.on ? new THREE.Color(st.color || lamp.color) : BLACK);
+    lamp.lensMat.emissiveIntensity = st.on ? 0.8 + (st.level || 0) : 0;
+    lamp.haloMat.color.set(st.color || lamp.color);
+    lamp.haloMat.opacity = st.on ? Math.min(0.5, 0.18 + 0.28 * (st.level || 0)) * (0.45 + 0.55 * glow) : 0;
+    lamp.haloMat.visible = !!st.on;
+  }
+}
+
 /** Cleaning robot: white body, coloured top, dark tracks. Front is +x. */
 function buildCleaner(color) {
   const g = new THREE.Group();
@@ -213,8 +361,38 @@ export function buildPools(list) {
       g.add(r);
       robot = { g: r, s: { ...park }, on: false, poly: p.poly, floor: bottom };
     }
+    // lamps of the water: their colour tints the water and the basin (see applyPoolLight). A lamp with no entity
+    // yet is drawn all the same, unlit: it is placed in the editor before it is linked.
+    const lamps = buildLamps((p.lights || []).filter(Boolean), p.poly, p.rim, depth);
+    for (const l of lamps) g.add(l.group);
+    // roller cover: drawn as soon as there is one, linked to an entity or not (it is placed before it is linked)
+    const cover = p.cover ? buildCover(p.poly, p.cover, p.rim) : null;
+    if (cover) {
+      // the view toggles the cover when its sheet or its roller is clicked
+      cover.deck.userData.pool = p.id;
+      cover.roller.userData.pool = p.id;
+      applyCover(cover);
+      g.add(cover.group);
+    }
     group.add(g);
-    items.push({ id: p.id, g, water, wm, robot, pond, rim: p.rim, depth, poly: p.poly, islands, color, fishList: p.fishList || [] });
+    items.push({
+      id: p.id,
+      g,
+      water,
+      wm,
+      linerMat: liner,
+      robot,
+      lamps,
+      cover,
+      lit: false,
+      pond,
+      rim: p.rim,
+      depth,
+      poly: p.poly,
+      islands,
+      color,
+      fishList: p.fishList || [],
+    });
   }
 
   const pondFloor = (it, x, z) => {
@@ -236,11 +414,59 @@ export function buildPools(list) {
     it.g.add(it.fish.group);
   }
 
+  let glow = 1;
   return {
     group,
     items,
     setRobots(map) {
       for (const it of items) if (it.robot) it.robot.on = !!(map && map[it.id]);
+    },
+    /**
+     * Lamps of each pool: `map` = { poolId: { on, color, level, lamps } } (see poolLight in pools.js). `g` (0..1)
+     * is how much the night lets a light show, as for the lights of the house.
+     */
+    setLights(map, g = 1) {
+      glow = g;
+      for (const it of items) applyPoolLight(it, map && map[it.id], glow);
+    },
+    /**
+     * Covers of each pool: `map` = { poolId: { closed, moving } } (see coverClosed in pools.js). With `snap`, the
+     * cover jumps to its place instead of travelling (when the world has just been built).
+     */
+    setCovers(map, snap = false) {
+      for (const it of items) {
+        const s = map && map[it.id];
+        if (!it.cover || !s) continue;
+        it.cover.to = s.closed;
+        if (snap) {
+          it.cover.cur = s.closed;
+          applyCover(it.cover);
+        }
+      }
+    },
+    /** What a click can take hold of on a lamp: [{ pool, lamp, mesh }]. */
+    lampMeshes() {
+      const out = [];
+      for (const it of items) for (const l of it.lamps) out.push({ pool: it.id, lamp: l.cfg.id, mesh: l.pick });
+      return out;
+    },
+    /** How far the cover of a pool is drawn over the water (0..1), or null when it has none. */
+    coverAt(id) {
+      const it = items.find((o) => o.id === id);
+      return it && it.cover ? it.cover.cur : null;
+    },
+    /**
+     * What a click can toggle on a cover: [{ pool, mesh }] — its roller, always there, and its sheet while it shows
+     * (rolled up, the sheet is not drawn, so only the roller answers).
+     */
+    coverMeshes() {
+      const out = [];
+      for (const it of items) {
+        if (!it.cover) continue;
+        out.push({ pool: it.id, mesh: it.cover.roller });
+        if (it.cover.deck.visible) out.push({ pool: it.id, mesh: it.cover.deck });
+      }
+      return out;
     },
     /** `cold`: the water is cold, the fish stay down and move little. */
     tick(dt, t, cold = false) {
@@ -248,6 +474,22 @@ export function buildPools(list) {
         if (it.fish) it.fish.tick(dt, t, cold);
         if (it.wm.normalMap) it.wm.normalMap.offset.set((t * 0.02) % 1, (t * 0.013) % 1);
         it.water.position.y = Math.sin(t * 0.9 + it.rim) * 0.006;
+        // lit water: the glow breathes a little, as the ripples pass over the lamps
+        if (it.lit) {
+          it.wm.emissiveIntensity = 0.92 + 0.08 * Math.sin(t * 1.7 + it.rim);
+          for (const l of it.lamps) l.group.scale.setScalar(1 + 0.03 * Math.sin(t * 2.3 + l.cfg.t));
+        }
+        // the cover travels toward its place, the roller turning with it
+        const C = it.cover;
+        if (C) {
+          const d = C.to - C.cur;
+          if (Math.abs(d) > 1e-3) {
+            const step = Math.sign(d) * Math.min(Math.abs(d), (COVER_SPEED / C.reach) * dt);
+            C.cur = Math.min(Math.max(C.cur + step, 0), 1);
+            C.spin.rotation.y += (step * C.reach) / ROLLER_R;
+            applyCover(C);
+          }
+        }
         const R = it.robot;
         if (!R || !R.on) continue;
         const n = robotStep(R.poly, R.s, dt);

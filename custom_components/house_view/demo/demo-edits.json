@@ -321,7 +321,32 @@
    "frame": "plan",
    "color": "#2a9fd6",
    "depth": 1.6,
-   "robot": "binary_sensor.robot_piscine"
+   "robot": "binary_sensor.robot_piscine",
+   "lights": [
+    {
+     "id": "lamp1",
+     "entity": "light.piscine",
+     "color": "#49e0ff",
+     "side": 0,
+     "t": 0.3,
+     "depth": 0.6
+    },
+    {
+     "id": "lamp2",
+     "entity": "light.piscine",
+     "color": "#49e0ff",
+     "side": 0,
+     "t": 0.7,
+     "depth": 0.6
+    }
+   ],
+   "cover": {
+    "entity": "cover.volet_piscine",
+    "side": 3,
+    "color": "#dfe4e8",
+    "roller": "deck",
+    "invert": false
+   }
   },
   {
    "id": "pond1",

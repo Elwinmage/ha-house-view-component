@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { searchIcons, entityTree, shortName } from '../src/picker-lib.js';
+import { searchIcons, entityTree, shortName, otherDomains } from '../src/picker-lib.js';
 
 describe('icon search', () => {
   it('shows icons while one types, best first', () => {
@@ -80,6 +80,19 @@ describe('entities grouped by room and device', () => {
     const found = entityTree(hass, { all: true, query: 'cuisine temp' });
     expect(found.flatMap((g) => g.devices.flatMap((d) => d.entities.map((e) => e.id)))).toEqual(['sensor.frigo_temp']);
     expect(entityTree(hass, { all: true, query: 'caché' })).toEqual([]);
+  });
+
+  it('offers the entities of the other domains when one is searched for', () => {
+    // a pool robot seen as a light: it must be reachable although the picker asks for switches
+    const found = otherDomains(hass, { query: 'lampe', domains: ['switch', 'binary_sensor'] });
+    expect(found.map((e) => e.id)).toEqual(['light.salon_lamp']);
+    expect(found[0]).toMatchObject({ name: 'Lampe', area: 'Cuisine' });
+    expect(otherDomains(hass, { query: 'light.cuisine', domains: ['switch'] }).map((e) => e.id)).toEqual(['light.cuisine']);
+    expect(otherDomains(hass, { query: 'caché', domains: ['switch'] })).toEqual([]); // hidden entities stay hidden
+    expect(otherDomains(hass, { query: 'lampe', domains: ['light'] })).toEqual([]); // already listed by the picker
+    expect(otherDomains(hass, { query: '', domains: ['switch'] })).toEqual([]);
+    expect(otherDomains(hass, { query: 'lampe' })).toEqual([]); // no filter: nothing is left out
+    expect(otherDomains(hass, { query: 'télé', domains: ['light'], limit: 1 })).toHaveLength(1);
   });
 
   it('shortens a name under its device', () => {
