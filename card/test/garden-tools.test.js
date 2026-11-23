@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { IrrigationTools, VacuumTools, BedTools, FenceTools, GateTools } from '../src/garden-tools.js';
+import { IrrigationTools, VacuumTools, BedTools, FenceTools, GateTools, PathTools } from '../src/garden-tools.js';
 
 // minimal stand-in for WorldEditors: keeps the click tool, counts the rebuilds
 const fakeEd = (edits) => ({
@@ -225,5 +225,73 @@ describe('gate tools', () => {
     ed.edits.gates.push({ id: 'a', f: 0, at: [3, 0] }, { id: 'b', f: 1, at: [25, 0] });
     ft.remove(0);
     expect(ed.edits.gates).toEqual([{ id: 'b', f: 0, at: [25, 0] }]);
+  });
+});
+
+describe('drives and paths', () => {
+  const hit = (x, z) => ({ point: { x, z } });
+  it('draws a path, edits it, extends it, draws it again', () => {
+    const ed = fakeEd({ paths: [] });
+    ed.toStore = (x, z) => [x, z];
+    ed.toPlan = () => (x, z) => [x, z];
+    const pt = new PathTools(ed);
+    pt.startDraw();
+    expect(ed.clickTool.key).toBe('path-draw');
+    ed.clickTool.click(hit(0, 0));
+    expect(pt.finishDraw()).toBe(false); // one point
+    ed.clickTool.click(hit(5.123, 0));
+    ed.clickTool.click(hit(5, 5));
+    pt.undoPoint();
+    const ribbons = [];
+    ed.clickTool.draft({ ribbon: (pts, color, w) => ribbons.push(w), dot() {} });
+    expect(ribbons).toEqual([3]); // drawn at the width of a new path
+    expect(pt.finishDraw()).toBe(true);
+    expect(pt.paths).toHaveLength(1);
+    expect(pt.paths[0]).toMatchObject({
+      pts: [
+        [0, 0],
+        [5.12, 0],
+      ],
+      w: 3,
+      surface: 'gravel',
+      frame: 'plan',
+    });
+    expect(pt.paths[0].id).toMatch(/^p/);
+    expect(pt.sel).toBe(0);
+    pt.edit(0, { w: 4, surface: 'asphalt', edge: true });
+    expect(pt.paths[0]).toMatchObject({ w: 4, surface: 'asphalt', edge: true });
+    // extend from its last point (in its own frame)
+    pt.paths[0].frame = 'grid';
+    pt.startDraw(0, true);
+    expect(pt.draw.pts).toHaveLength(2);
+    ed.clickTool.click(hit(9, 9));
+    ed.clickTool.draft({ ribbon: (pts, color, w) => ribbons.push(w), dot() {} });
+    expect(ribbons[1]).toBe(4);
+    pt.finishDraw();
+    expect(pt.paths[0].pts).toHaveLength(3);
+    expect(pt.paths[0].w).toBe(4); // kept
+    // draw it again from scratch (plan frame points are rounded to the cm)
+    pt.startDraw(0);
+    expect(pt.draw.pts).toEqual([]);
+    pt.draw.frame = 'plan';
+    ed.clickTool.click(hit(1.234, 2.345));
+    ed.clickTool.click(hit(3, 4));
+    pt.finishDraw();
+    expect(pt.paths[0].pts).toEqual([
+      [1.23, 2.35],
+      [3, 4],
+    ]);
+    pt.undoPoint(); // not drawing: nothing
+    pt.select(0);
+    expect(pt.sel).toBeNull();
+    pt.select(0);
+    pt.toggleHidden(0);
+    expect(pt.paths[0].hidden).toBe(true);
+    pt.startDraw();
+    ed.clickTool.draft({ ribbon() {}, dot() {} }); // nothing drawn yet
+    pt.remove(0);
+    expect(pt.paths).toEqual([]);
+    expect(pt.draw).toBeNull();
+    expect(ed.clickTool).toBeNull();
   });
 });

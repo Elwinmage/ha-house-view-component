@@ -65,6 +65,19 @@ export function rectFromCorners(a, b) {
 /** Prefix of the id of the room that stands for a pool or a pond (see HouseEngine.poolRooms). */
 export const POOL_ROOM = 'pool:';
 
+/**
+ * Where the editor opens for what is zoomed on in the view (`focus`: the id of a room, of the room standing for a
+ * pool, or nothing): { section, pool? }, or null when nothing is selected. A pool or pond opens on its settings, a
+ * room on its layer of entities.
+ */
+export function editTarget(focus, pools) {
+  if (!focus) return null;
+  if (!focus.startsWith(POOL_ROOM)) return { section: 'entities' };
+  const id = focus.slice(POOL_ROOM.length);
+  // a pool that is not in the list (drawn by the plan): the list of the pools
+  return (pools || []).some((p) => p && p.id === id) ? { section: 'pools', pool: id } : { section: 'pools' };
+}
+
 /** Defaults of a pool or pond of kind `kind`. */
 export function newPool(kind, id) {
   const k = POOL_KINDS[kind] ? kind : 'pool';

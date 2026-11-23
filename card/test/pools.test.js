@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  editTarget,
   inPolygon,
   robotRunning,
   newLamp,
@@ -362,5 +363,17 @@ describe('lamps and cover of a pool in 3D', () => {
     expect(buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0, depth: 1 }]).items[0].cover).toBe(null);
     expect(p.coverAt('p')).toBeCloseTo(1); // what the editor watches while it runs a cycle
     expect(p.coverAt('nope')).toBe(null);
+  });
+});
+
+describe('where the editor opens', () => {
+  const pools = [{ id: 'p1' }, null, { id: 'p2' }];
+  it('goes to what is zoomed on', () => {
+    expect(editTarget(null, pools)).toBeNull(); // nothing selected: the editor as it was left
+    expect(editTarget('', pools)).toBeNull();
+    expect(editTarget('room-3', pools)).toEqual({ section: 'entities' }); // the layer of the room
+    expect(editTarget(`${POOL_ROOM}p2`, pools)).toEqual({ section: 'pools', pool: 'p2' }); // the settings of the pond
+    expect(editTarget(`${POOL_ROOM}gone`, pools)).toEqual({ section: 'pools' });
+    expect(editTarget(`${POOL_ROOM}p1`, undefined)).toEqual({ section: 'pools' });
   });
 });

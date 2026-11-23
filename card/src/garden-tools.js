@@ -4,6 +4,7 @@ import { FENCE_TYPES, normalizeFence, nearestSide, nearestPoint, splitSide, remo
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
 import { normalizeGate, placeGate } from './gates.js';
 import { smoothPath, headDefaults, sprinklerModel, bearing } from './irrigation.js';
+import { PATH_SURFACES, normalizePath } from './paths.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -358,6 +359,104 @@ export class BedTools {
         const P = b.pts.map(([x, z]) => toPlan(x, z));
         for (let k = 0; k < P.length; k++) d.ribbon([P[k], P[(k + 1) % P.length]], '#ff4fd8', 0.3);
       });
+  }
+}
+
+/**
+ * Drives and paths: draw a centre line (every click adds a point, the strip is rounded through them), then set its
+ * width and surface. A path can be drawn again or extended from its last point.
+ */
+export class PathTools {
+  constructor(ed) {
+    this.ed = ed;
+    this.sel = null; // index of the path unfolded in the panel
+    this.draw = null; // { i (null: a new path), pts, frame } of the line being drawn
+  }
+
+  get paths() {
+    return this.ed.edits.paths;
+  }
+
+  /** Draw a new path (i = null), draw path i again, or extend it (keep = true). */
+  startDraw(i = null, keep = false) {
+    const old = i === null ? null : this.paths[i];
+    this.draw = {
+      i,
+      pts: old && keep ? old.pts.map((q) => [...q]) : [],
+      frame: old && keep ? old.frame || 'grid' : this.ed.frame,
+    };
+    this.ed.setClickTool({ key: 'path-draw', click: (hit) => this._click(hit), draft: (d) => this._draft(d) });
+  }
+
+  _click(hit) {
+    const D = this.draw;
+    D.pts.push(
+      D.frame === 'plan'
+        ? [Math.round(hit.point.x * 100) / 100, Math.round(hit.point.z * 100) / 100]
+        : this.ed.toStore(hit.point.x, hit.point.z),
+    );
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  undoPoint() {
+    if (!this.draw || !this.draw.pts.length) return;
+    this.draw.pts.pop();
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  finishDraw() {
+    const D = this.draw;
+    if (!D || D.pts.length < 2) return false;
+    if (D.i === null) {
+      this.paths.push(normalizePath({ id: uid('p'), pts: D.pts, frame: D.frame }));
+      this.sel = this.paths.length - 1;
+    } else this.paths[D.i] = normalizePath({ ...this.paths[D.i], pts: D.pts, frame: D.frame });
+    this.draw = null;
+    this.ed.clickTool = null;
+    this.ed._syncPicker();
+    this.ed.commit();
+    return true;
+  }
+
+  cancel() {
+    this.draw = null;
+    this.ed.setClickTool(null);
+  }
+
+  select(i) {
+    this.sel = this.sel === i ? null : i;
+    this.ed.onChange(false);
+  }
+
+  /** Change width / surface / kerbs / name of path i. */
+  edit(i, patch) {
+    this.paths[i] = normalizePath({ ...this.paths[i], ...patch });
+    this.ed.commit();
+  }
+
+  toggleHidden(i) {
+    this.paths[i].hidden = !this.paths[i].hidden;
+    this.ed.commit();
+  }
+
+  remove(i) {
+    this.paths.splice(i, 1);
+    this.sel = null;
+    if (this.draw) this.cancel();
+    this.ed.commit();
+  }
+
+  /** Overlay: the line being drawn at its width (or the selected path), its points as dots. */
+  _draft(d) {
+    const D = this.draw;
+    const old = D && D.i !== null ? normalizePath(this.paths[D.i]) : null;
+    const brush = old || normalizePath({});
+    const toPlan = this.ed.toPlan({ frame: D ? D.frame : this.ed.frame });
+    const P = (D ? D.pts : []).map(([x, z]) => toPlan(x, z));
+    if (P.length > 1) d.ribbon(smoothPath(P, 0.5), PATH_SURFACES[brush.surface].draft, brush.w);
+    for (const [x, z] of P) d.dot(x, z, '#ffffff');
   }
 }
 

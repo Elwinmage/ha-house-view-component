@@ -23,6 +23,7 @@ import { buildTerrain, treesFromDsm, gridToPlan } from './engine/terrain.js';
 import { buildFence, normalizeFence } from './fences.js';
 import { buildIrrigation } from './irrigation.js';
 import { buildBeds } from './flowerbeds.js';
+import { buildPaths } from './paths.js';
 import { buildGates, gatesOf, cutFence } from './gates.js';
 import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
@@ -389,6 +390,10 @@ export class HouseEngine {
     root.add(w.gates.group);
     w.beds = buildBeds(edits.beds || [], w.anchor, w.groundAt);
     root.add(w.beds.group);
+    // drives and paths draped on the ground: snow and rain on them like on the roads
+    w.paths = buildPaths(edits.paths || [], w.anchor, w.groundAt);
+    root.add(w.paths.group);
+    for (const material of w.paths.materials) surfaces.push({ material, key: 'road', snow: 0.75, wet: 0.6 });
 
     // watering: drip lines and sprinklers (animated in _frame from the valve states)
     w.irrigation = buildIrrigation(edits.irrigation || {}, w.anchor, w.groundAt);

@@ -4,6 +4,7 @@ import { html, nothing } from 'lit';
 import { FENCE_TYPES, normalizeFence, sideCount } from './fences.js';
 import { SPRINKLERS, SOILS, LINE_COLORS, sprinklerModel, smoothPath, isOn } from './irrigation.js';
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
+import { PATH_SURFACES, PATH_W, normalizePath, pathLength } from './paths.js';
 import { GATE_OPEN, GATE_FILL, GATE_TOP, GATE_DOMAINS, normalizeGate } from './gates.js';
 import { mapRoomsToAreas } from './ha-bridge.js';
 
@@ -166,6 +167,77 @@ export function renderBeds(card) {
         <div class="row">
           <button @click=${() => bt.toggleHidden(i)}>${b.hidden ? t('show') : t('hide')}</button>
           <button @click=${() => bt.remove(i)}>${t('delete')}</button>
+        </div>
+      </div>`;
+    })}
+  `;
+}
+
+// ---------------------------------------------------------------------------- drives and paths
+
+export function renderPaths(card) {
+  const t = card._t;
+  const ed = card._editors;
+  const pt = card._pathTools;
+  const drawing = pt.draw && tool(ed, 'path-draw') ? pt.draw : null;
+  const draw = drawing
+    ? html`<div class="hint">${t('path_draw_hint')}</div>
+        <div class="row">
+          <button class="on" ?disabled=${drawing.pts.length < 2} @click=${() => pt.finishDraw()}>
+            ${t('finish')} (${drawing.pts.length})
+          </button>
+          <button ?disabled=${!drawing.pts.length} @click=${() => pt.undoPoint()}>${t('undo_point')}</button>
+          <button @click=${() => pt.cancel()}>${t('cancel')}</button>
+        </div>`
+    : nothing;
+  return html`
+    <div class="hint">${t('paths_hint')}</div>
+    <div class="row">
+      <button class=${drawing && drawing.i === null ? 'on' : ''} ?disabled=${!!drawing} @click=${() => pt.startDraw()}>
+        ${t('path_draw')}
+      </button>
+    </div>
+    ${drawing && drawing.i === null ? draw : nothing}
+    ${pt.paths.map((raw, i) => {
+      const p = normalizePath(raw);
+      const on = pt.sel === i;
+      return html`<div class=${`ent ${on ? 'open' : ''}`}>
+        <div @click=${() => pt.select(i)}>
+          <i class="sw" style=${`background:${PATH_SURFACES[p.surface].draft}`}></i>
+          <b>${p.name || `${t('path')} ${i + 1}`}</b>
+          <span class="hint">${t(`path_${p.surface}`)} · ${p.w} m · ${Math.round(pathLength(p.pts))} m</span>
+        </div>
+        ${
+          on
+            ? html`<div class="row">
+                  <span>${t('name')}</span
+                  ><input type="text" .value=${p.name || ''} @change=${(e) => pt.edit(i, { name: e.target.value.trim() })} />
+                </div>
+                <div class="chips">
+                  ${Object.keys(PATH_SURFACES).map(
+                    (k) =>
+                      html`<button class=${p.surface === k ? 'on' : ''} @click=${() => pt.edit(i, { surface: k })}>
+                        <i class="sw" style=${`background:${PATH_SURFACES[k].draft}`}></i>${t(`path_${k}`)}
+                      </button>`,
+                  )}
+                </div>
+                <div class="row">
+                  <span>${t('path_w')}</span>${num(p.w, (v) => pt.edit(i, { w: v }), 0.25, PATH_W[0], PATH_W[1])}
+                  <label class="chk"
+                    ><input type="checkbox" .checked=${p.edge} @change=${(e) => pt.edit(i, { edge: e.target.checked })} />
+                    ${t('path_edge')}</label
+                  >
+                </div>
+                ${drawing && drawing.i === i ? draw : nothing}
+                <div class="row">
+                  <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i, true)}>${t('path_extend')}</button>
+                  <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i)}>${t('path_redraw')}</button>
+                </div>`
+            : nothing
+        }
+        <div class="row">
+          <button @click=${() => pt.toggleHidden(i)}>${p.hidden ? t('show') : t('hide')}</button>
+          <button @click=${() => pt.remove(i)}>${t('delete')}</button>
         </div>
       </div>`;
     })}

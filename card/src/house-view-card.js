@@ -2,10 +2,10 @@ import { LitElement, html, css, nothing } from 'lit';
 import { HouseEngine } from './engine.js';
 import { HouseViewApi } from './api.js';
 import { WorldEditors, drawSection } from './editors.js';
-import { FenceTools, GateTools, BedTools, IrrigationTools, VacuumTools } from './garden-tools.js';
+import { FenceTools, GateTools, BedTools, PathTools, IrrigationTools, VacuumTools } from './garden-tools.js';
 import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
-import { renderFences, renderGates, renderBeds, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
+import { renderFences, renderGates, renderBeds, renderPaths, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
 import {
   renderGeneral,
   renderGeneralEditor,
@@ -54,7 +54,7 @@ import { normalizeFence } from './fences.js';
 import { renderOpenings } from './ui-openings.js';
 import { renderSea } from './ui-sea.js';
 import { renderPools } from './ui-pools.js';
-import { POOL_ROOM, robotRunning, poolLight, coverClosed } from './pools.js';
+import { POOL_ROOM, editTarget, robotRunning, poolLight, coverClosed } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
 import {
   addRoom,
@@ -107,6 +107,7 @@ const SECTION_ICONS = {
   fences: 'mdi:fence',
   gates: 'mdi:gate',
   beds: 'mdi:flower',
+  paths: 'mdi:road-variant',
   outdoor: 'mdi:home-group',
   trees: 'mdi:pine-tree',
   ground: 'mdi:terrain',
@@ -793,6 +794,7 @@ class HouseViewCard extends LitElement {
       html`<div class=${`win ${cls}`} @pointerdown=${(e) => e.stopPropagation()}>
         <div class="head">
           <button class="wback" title=${this._t('back')} @click=${close}><ha-icon icon="mdi:arrow-left"></ha-icon></button><b>${title}</b>
+          <button class="x" title=${this._t('close_editor')} @click=${() => this._togglePanel('edit')}>✕</button>
         </div>
         <div class="body">${content}</div>
       </div>`;
@@ -1430,6 +1432,7 @@ class HouseViewCard extends LitElement {
       this._fenceTools = new FenceTools(this._editors);
       this._gateTools = new GateTools(this._editors);
       this._bedTools = new BedTools(this._editors);
+      this._pathTools = new PathTools(this._editors);
       this._irrTools = new IrrigationTools(this._editors);
       this._vacTools = new VacuumTools(this._editors, () => this._vacCfg(this._vacuum, true));
     }
@@ -1440,7 +1443,25 @@ class HouseViewCard extends LitElement {
       }
     if (next !== 'edit') this._irrDemoStop();
     this._panel = next;
+    if (next === 'edit' && this._editors) this._editSelected();
+    if (next !== 'edit') this._poolDemoStop(); // a lamp or a cover being tried in the pool editor
     this._pushIrrigation();
+  }
+
+  /**
+   * The editor opens on what is selected in the view: the settings of the pool or pond zoomed on, the layer of
+   * entities of the room zoomed on. Nothing selected: the editor is found as it was left.
+   */
+  _editSelected() {
+    const target = editTarget(this._focus, this._data ? this._data.edits.pools : []);
+    if (!target) return;
+    this._onSection(target.section, true);
+    if (target.pool) {
+      if (this._poolSel !== target.pool) this._poolDemoStop(true);
+      this._poolSel = target.pool;
+      this._poolPart = null;
+      this._poolSide = null;
+    }
   }
 
   _toggleMovable() {
@@ -2774,6 +2795,7 @@ class HouseViewCard extends LitElement {
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
     ${this._sec('gates', `${t('gates')} (${this._data.edits.gates.length})`, () => renderGates(this))}
+    ${this._sec('paths', `${t('paths')} (${this._data.edits.paths.length})`, () => renderPaths(this))}
     ${this._sec('beds', `${t('beds')} (${this._data.edits.beds.length})`, () => renderBeds(this))}
     ${this._sec('outdoor', t('outdoor'), () => this._renderOutdoor())} ${this._sec('trees', t('trees'), () => this._renderTrees())}
     ${this._sec('ground', t('ground'), () => this._renderGround())} ${this._sec('views', t('views'), () => this._renderViewsEditor())}`;
@@ -2954,15 +2976,17 @@ class HouseViewCard extends LitElement {
               ? html`<button class="x" title=${t('lock_now')} @click=${() => this._lockNow()}>🔒</button>`
               : nothing
           }
-          <button class="x" @click=${() => this._togglePanel(this._panel)}>✕</button>
+          <button class="x" title=${t('close')} @click=${() => this._togglePanel(this._panel)}>✕</button>
         </span>
       </div>
-      ${body}
-      ${
-        this._msg && ['setup', 'edit', 'builder'].includes(this._panel)
-          ? html`<div class=${this._msg.startsWith(t('error')) ? 'msg bad' : 'msg'}>${this._msg}</div>`
-          : nothing
-      }
+      <div class="pbody">
+        ${body}
+        ${
+          this._msg && ['setup', 'edit', 'builder'].includes(this._panel)
+            ? html`<div class=${this._msg.startsWith(t('error')) ? 'msg bad' : 'msg'}>${this._msg}</div>`
+            : nothing
+        }
+      </div>
     </div>`;
   }
 
@@ -3311,7 +3335,13 @@ class HouseViewCard extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 4px;
+      position: sticky;
+      top: -8px;
+      z-index: 1;
+      margin: -8px -10px 4px;
+      padding: 8px 10px 4px;
+      background: #141a24;
+      border-radius: 10px 10px 0 0;
     }
     .alarm-list .al {
       display: flex;
@@ -3413,7 +3443,14 @@ class HouseViewCard extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 2px 4px 8px;
+      flex: none;
+      position: sticky;
+      top: -8px;
+      z-index: 1;
+      margin: -8px -8px 0;
+      padding: 10px 12px 8px;
+      background: var(--card-background-color, #1c1f26);
+      border-radius: 12px 12px 0 0;
     }
     .dialog .x {
       background: none;
@@ -3964,11 +4001,18 @@ class HouseViewCard extends LitElement {
       --mdc-icon-size: 20px;
     }
     .win .head b {
+      flex: 1;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .win .head {
+      flex: none;
+    }
     .win .body {
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 8px 12px 12px;
       display: flex;
@@ -3982,15 +4026,22 @@ class HouseViewCard extends LitElement {
       bottom: 8px;
       z-index: 3;
       width: min(340px, calc(100% - 16px));
-      overflow-y: auto;
       box-sizing: border-box;
-      padding: 8px 12px 12px;
       background: rgba(22, 28, 38, 0.93);
       color: #e6edf5;
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 10px;
       backdrop-filter: blur(6px);
       font-size: 13px;
+      display: flex;
+      flex-direction: column;
+    }
+    /* the body scrolls under the head: the title and the close cross stay in sight */
+    .panel .pbody {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px 12px 12px;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -4023,26 +4074,22 @@ class HouseViewCard extends LitElement {
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 6px;
     }
+    /* miniatures of the varieties of a fish: a grid of tiles (over the generic button rule of the panels) */
     .fishpick {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
       gap: 4px;
     }
-    .fishpick button {
+    :is(.panel, .win) .fishpick button:not(.x) {
       display: flex;
       flex-direction: column;
       align-items: center;
+      align-self: stretch;
       gap: 2px;
+      min-width: 0;
       padding: 4px 2px;
       font-size: 11px;
       line-height: 1.1;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid transparent;
-      border-radius: 6px;
-    }
-    .fishpick button.on {
-      border-color: var(--primary-color, #03a9f4);
-      background: rgba(3, 169, 244, 0.15);
     }
     .fishpick img {
       width: 64px;
@@ -4050,10 +4097,9 @@ class HouseViewCard extends LitElement {
       object-fit: contain;
     }
     .fishpick span {
-      max-width: 72px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      max-width: 100%;
+      text-align: center;
+      overflow-wrap: anywhere;
     }
     .bnum {
       display: flex;
@@ -4076,6 +4122,9 @@ class HouseViewCard extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex: none;
+      padding: 8px 12px 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
     :is(.panel, .win) .x {
       border: none;
