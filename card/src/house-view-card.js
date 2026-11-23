@@ -4023,6 +4023,38 @@ class HouseViewCard extends LitElement {
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 6px;
     }
+    .fishpick {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+      gap: 4px;
+    }
+    .fishpick button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 2px;
+      font-size: 11px;
+      line-height: 1.1;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .fishpick button.on {
+      border-color: var(--primary-color, #03a9f4);
+      background: rgba(3, 169, 244, 0.15);
+    }
+    .fishpick img {
+      width: 64px;
+      height: 22px;
+      object-fit: contain;
+    }
+    .fishpick span {
+      max-width: 72px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .bnum {
       display: flex;
       align-items: center;

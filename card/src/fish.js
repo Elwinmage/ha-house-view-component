@@ -69,6 +69,55 @@ export function fishPatches(variety, body, seed) {
   return out;
 }
 
+/**
+ * Miniature of a variety seen from above, snout to the right, as an SVG document: the robe of the 3D fish (same
+ * patches, back narrower than the flanks, metallic sheen), its tail and fins. For the lists of the editor.
+ */
+export function fishSvg(variety, body, seed = 1) {
+  const W = body.width;
+  const tail = body.tail ?? 0.2;
+  const start = -0.5 + tail;
+  const span = 1 - tail;
+  const n = (v) => +v.toFixed(4);
+  const outline = (k) => {
+    const pts = [];
+    for (let i = 0; i <= 32; i++) pts.push([start + (i / 32) * span, (-W / 2) * bodyHalfwidth(i / 32) * k]);
+    for (let i = 32; i >= 0; i--) pts.push([start + (i / 32) * span, (W / 2) * bodyHalfwidth(i / 32) * k]);
+    return pts.map(([x, y]) => `${n(x)},${n(y)}`).join(' ');
+  };
+  const fins = variety.fins || variety.base;
+  const root = (W / 2) * bodyHalfwidth(0);
+  const fan = W * 0.55;
+  const half = Math.max(fan / 2, W * 0.7) + 0.02; // the pectoral fins stick out of the body
+  const patches = fishPatches(variety, body, seed)
+    .map((p) => `<ellipse cx="${n(p.x)}" cy="${n(p.y)}" rx="${n(p.rx)}" ry="${n(p.ry)}" fill="${p.color}"/>`)
+    .join('');
+  const sheen = variety.metallic
+    ? `<rect x="-0.5" y="${n(-W * 0.08)}" width="1" height="${n(W * 0.16)}" fill="#fff" fill-opacity="0.35"/>`
+    : '';
+  const ex = n(start + span * 0.9);
+  const ey = n((W / 2) * bodyHalfwidth(0.9) * 0.75);
+  const pec = start + span * 0.7;
+  const side = (W / 2) * bodyHalfwidth(0.7);
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.52 ${n(-half)} 1.04 ${n(2 * half)}">` +
+    `<g fill="${fins}" fill-opacity="0.75">` +
+    `<polygon points="${n(start + 0.02)},${n(-root)} -0.5,${n(-fan / 2)} ${n(-0.5 + tail * 0.35)},0 -0.5,${n(fan / 2)} ${n(start + 0.02)},${n(root)}"/>` +
+    `<ellipse cx="${n(pec - 0.03)}" cy="${n(-side - W * 0.06)}" rx="${n(W * 0.28)}" ry="${n(W * 0.12)}" transform="rotate(-25 ${n(pec - 0.03)} ${n(-side - W * 0.06)})"/>` +
+    `<ellipse cx="${n(pec - 0.03)}" cy="${n(side + W * 0.06)}" rx="${n(W * 0.28)}" ry="${n(W * 0.12)}" transform="rotate(25 ${n(pec - 0.03)} ${n(side + W * 0.06)})"/>` +
+    `</g>` +
+    `<clipPath id="b"><polygon points="${outline(0.8)}"/></clipPath>` +
+    `<polygon points="${outline(1)}" fill="${variety.belly || variety.base}" stroke="#000" stroke-opacity="0.35" stroke-width="0.006"/>` +
+    `<polygon points="${outline(0.8)}" fill="${variety.base}"/>` +
+    `<g clip-path="url(#b)">${patches}${sheen}</g>` +
+    `<circle cx="${ex}" cy="${-ey}" r="0.012" fill="#141414"/><circle cx="${ex}" cy="${ey}" r="0.012" fill="#141414"/>` +
+    `</svg>`
+  );
+}
+
+/** The miniature of a variety as an image address (data URL), for an <img>. */
+export const fishThumb = (variety, body, seed) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fishSvg(variety, body, seed))}`;
+
 /** The variety of a group: one of the fish, or the colours chosen in the editor ("custom"). */
 export function groupVariety(group, fish) {
   const list = (fish && fish.varieties) || [];

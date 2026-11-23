@@ -15,7 +15,7 @@ import {
   sideFrame,
   nearestSide,
 } from './pools.js';
-import { CUSTOM_PATTERNS, MAX_GROUP } from './fish.js';
+import { CUSTOM_PATTERNS, MAX_GROUP, fishThumb, groupVariety } from './fish.js';
 import { localName } from './catalog-lib.js';
 
 const uid = () => `pool${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
@@ -552,12 +552,19 @@ function renderFishGroups(card, p, commit) {
         </div>
         ${
           fish
-            ? html`<select @change=${(e) => set({ variety: e.target.value })}>
-                ${fish.varieties.map(
-                  (v) => html`<option value=${v.id} ?selected=${v.id === g.variety}>${localName(v.name, lang, v.id)}</option>`,
-                )}
-                <option value="custom" ?selected=${g.variety === 'custom'}>${t('fish_custom')}</option>
-              </select>`
+            ? html`<div class="fishpick">
+                ${[...fish.varieties, groupVariety({ ...g, variety: 'custom', patch: g.patch || '#d3301f' }, fish)].map((v) => {
+                  const name = v.id === 'custom' ? t('fish_custom') : localName(v.name, lang, v.id);
+                  return html`<button
+                    class=${v.id === g.variety ? 'on' : ''}
+                    title=${name}
+                    @click=${() => set(v.id === 'custom' ? { variety: 'custom', patch: g.patch || '#d3301f' } : { variety: v.id })}
+                  >
+                    <img src=${fishThumb(v, fish.body)} alt="" />
+                    <span>${name.replace(/\s*\(.*\)\s*$/, '')}</span>
+                  </button>`;
+                })}
+              </div>`
             : nothing
         }
         ${

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   bodyHalfwidth,
   fishPatches,
+  fishSvg,
+  fishThumb,
   groupVariety,
   inWater,
   MAX_GROUP,
@@ -221,5 +223,24 @@ describe('fish of the catalog', () => {
     expect(Object.keys(catalogFish())).toEqual(['koi']);
     setCatalog({});
     expect(catalogFish()).toEqual({});
+  });
+});
+
+describe('miniatures', () => {
+  it('draw the robe of a variety seen from above', () => {
+    const svg = fishSvg(KOI.varieties[0], KOI.body);
+    expect(svg.startsWith('<svg')).toBe(true);
+    expect(svg).toContain('fill="#ff0000"'); // its patches
+    expect(svg).toContain('fill="#ffffff"'); // its base
+    expect(svg).not.toContain('fill-opacity="0.35"'); // no sheen
+    expect(fishSvg(KOI.varieties[0], KOI.body)).toBe(svg); // the same seed, the same robe
+    expect(fishSvg(KOI.varieties[0], KOI.body, 7)).not.toBe(svg);
+    // metallic, without patches, tail by default, fins and belly of their own
+    const ogon = fishSvg({ ...KOI.varieties[2], fins: '#123456', belly: '#654321' }, { width: 0.2 });
+    expect(ogon).toContain('fill-opacity="0.35"');
+    expect(ogon).toContain('<g clip-path="url(#b)"><rect');
+    expect(ogon).toContain('fill="#123456"');
+    expect(ogon).toContain('fill="#654321"');
+    expect(fishThumb(KOI.varieties[1], KOI.body)).toMatch(/^data:image\/svg\+xml;charset=utf-8,%3Csvg/);
   });
 });
