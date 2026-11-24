@@ -226,6 +226,68 @@ describe('SVG import', () => {
     expect(() => parseSvgRooms('<html/>')).toThrow(/SVG/);
   });
 
+  it('names the rooms with the texts of a drawing that carries none, and reads its millimetres', () => {
+    // floors on one layer with no name of their own, names on another, a viewBox in mm and no width at all:
+    // what a CAD tool exports (reported against ArchLang output). The page frame, the north arrow and the title
+    // block must not come out as rooms.
+    const svg = `<svg xmlns:inkscape="x" viewBox="-1324 -1324 9648 10213.6">
+      <rect x="-1324" y="-1324" width="9648" height="10213.6" fill="#fff"/>
+      <g id="A-FLOR" inkscape:groupmode="layer" inkscape:label="A-FLOR">
+        <polygon points="0,0 4000,0 4000,6000 0,6000"/>
+        <polygon points="4000,0 7000,0 7000,3000 4000,3000"/>
+        <polygon points="4000,3000 7000,3000 7000,4400 4000,4400"/>
+        <polygon points="4000,4400 7000,4400 7000,6000 4000,6000"/>
+      </g>
+      <g id="A-FURN" inkscape:groupmode="layer" inkscape:label="A-FURN"><polygon points="300,250 1100,250 1100,850 300,850"/></g>
+      <g id="A-ANNO-TEXT" inkscape:groupmode="layer" inkscape:label="A-ANNO-TEXT">
+        <text x="2000" y="2956.8">Living / Kitchen</text><text x="2000" y="3194.4">24.0 m²</text>
+        <text x="6400" y="556.8">Bedroom</text><text x="6400" y="794.4">9.0 m²</text>
+        <text x="5500" y="3656.8">Hall</text><text x="5500" y="3894.4">4.2 m²</text>
+        <text x="5500" y="5156.8"><tspan>Ba</tspan>th</text><text x="5500" y="5394.4">4.8 m²</text>
+      </g>
+      <g id="A-ANNO-DIMS" inkscape:groupmode="layer" inkscape:label="A-ANNO-DIMS"><text x="3500" y="6700.8">7000</text></g>
+      <g><text x="6776" y="-1246.96">N</text></g>
+      <g><rect x="4652" y="7204.8" width="2448" height="1324.8"/><text x="4774.4" y="7370.4">PROJECT</text></g>
+    </svg>`;
+    const p = parseSvgRooms(svg);
+    expect(p.unitsPerMeter).toBe(1000); // millimetres: a plan 96 m across would make no sense
+    expect(p.levels).toHaveLength(1);
+    const rooms = svgLevels(p)[0].rooms;
+    expect(rooms.map((r) => r.name)).toEqual(['Living / Kitchen', 'Bedroom', 'Hall', 'Bath']);
+    const size = (r) => {
+      const xs = r.poly.map((q) => q[0]);
+      const ys = r.poly.map((q) => q[1]);
+      const r3 = (v) => Math.round(v * 1000) / 1000;
+      return [r3(Math.max(...xs) - Math.min(...xs)), r3(Math.max(...ys) - Math.min(...ys))];
+    };
+    expect(rooms.map(size)).toEqual([
+      [4, 6],
+      [3, 3],
+      [3, 1.4],
+      [3, 1.6],
+    ]);
+  });
+
+  it('leaves a shape unnamed when all it holds is a measurement', () => {
+    const svg = `<svg xmlns:inkscape="x" viewBox="0 0 5000 5000">
+      <g inkscape:groupmode="layer" inkscape:label="A-FLOR"><polygon points="0,0 4000,0 4000,4000 0,4000"/></g>
+      <g inkscape:groupmode="layer" inkscape:label="A-ANNO"><text x="2000" y="2000">16.0 m²</text></g>
+    </svg>`;
+    expect(() => parseSvgRooms(svg)).toThrow(/room/);
+  });
+
+  it('guesses the units of a drawing that does not say, and keeps hundredths of a metre when they fit', () => {
+    const plan = (vb, w, h) => `<svg viewBox="${vb}"><rect id="r" x="0" y="0" width="${w}" height="${h}"/></svg>`;
+    expect(parseSvgRooms(plan('0 0 800 700', 700, 600)).unitsPerMeter).toBe(100); // 7 m: as it always was
+    expect(parseSvgRooms(plan('0 0 8000 7000', 7000, 6000)).unitsPerMeter).toBe(1000); // millimetres
+    expect(parseSvgRooms(plan('0 0 10 10', 7, 6)).unitsPerMeter).toBe(1); // metres
+    expect(parseSvgRooms(plan('0 0 1e9 1e9', 1e8, 1e8)).unitsPerMeter).toBe(100); // nothing fits: left as it was
+    // a width in a real unit still wins over the guess
+    expect(
+      parseSvgRooms('<svg width="210mm" viewBox="0 0 210 297"><rect id="r" x="0" y="0" width="100" height="90"/></svg>').unitsPerMeter,
+    ).toBe(1000);
+  });
+
   it('makes levels of Inkscape layers, bottom layer first', () => {
     const svg = `<svg xmlns:inkscape="x">
       <g inkscape:groupmode="layer" inkscape:label="RDC"><rect id="a" x="0" y="0" width="100" height="100"/></g>

@@ -1,7 +1,11 @@
-// SVG floor plan (the kind drawn for ha-floorplan, or with Inkscape) -> rooms of one or more levels.
-// A room is a closed shape (rect, polygon, closed path, ellipse) that has a name: its id, its Inkscape label, a
-// data-name attribute or a <title>. ha-floorplan ids such as "area.living_room" give "Living room". Shapes named
-// like an entity ("light.kitchen") are left out. Inkscape layers holding rooms become levels, bottom layer first.
+// SVG floor plan (the kind drawn for ha-floorplan, with Inkscape, or exported by a CAD tool) -> rooms of one or
+// more levels. A room is a closed shape (rect, polygon, closed path, ellipse) that has a name: its id, its
+// Inkscape label, a data-name attribute or a <title>. ha-floorplan ids such as "area.living_room" give "Living
+// room". Shapes named like an entity ("light.kitchen") are left out. Inkscape layers holding rooms become levels,
+// bottom layer first.
+// A drawing out of a CAD tool often carries no name on the shapes at all: the floors are on one layer and the
+// room names are <text> elements on another, each sitting in its room. Such a shape takes the name of the text
+// that falls inside it (see nameFromText).
 // No DOM here (the importer also runs in the tests): a small XML reader is enough for SVG.
 
 const ENTITY = /^(light|switch|sensor|binary_sensor|cover|climate|media_player|camera|vacuum|fan|lock|input_\w+|script|scene|automation)\./;
@@ -115,6 +119,55 @@ export function roomName(raw) {
 
 const shapeName = (t) => t.attrs['inkscape:label'] || t.attrs['data-name'] || t.attrs.id || '';
 
+/** Area of a polygon (any winding). */
+const polyArea = (p) => Math.abs(p.reduce((s, q, j) => s + q[0] * p[(j + 1) % p.length][1] - p[(j + 1) % p.length][0] * q[1], 0)) / 2;
+
+/** Point inside a polygon (even-odd rule). */
+function inPoly(poly, x, y) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+//: A measurement rather than a room name: "24.0 m²", "4000", "2 m", "3.20", "12'6\"".
+const MEASURE = /^[\s\d.,'"/x×-]*(m|m2|m²|mm|cm|ft|in|sq\s?ft|sq\s?m)?\s*$/i;
+
+/**
+ * Names given to the shapes that carry none, from the texts of the drawing: a text names the smallest shape it
+ * falls in, measurements left out. The page frame, the north arrow and the title block of a drawing would be
+ * named the same way, so two things keep them out: a drawing that has layers is read on its layers only, where
+ * its content sits, and a layer is kept only if it takes at least two names — the floors of a plan, not the
+ * frame around them. A single name is kept when that is all the drawing has, for a plan of one room.
+ */
+export function nameFromText(shapes, texts) {
+  const labels = texts.filter((t) => t.value.trim() && !MEASURE.test(t.value.trim()));
+  const layered = shapes.some((s) => s.layer);
+  const taken = [];
+  for (const label of labels) {
+    let best = null;
+    for (const s of shapes) {
+      if (s.name || (layered && !s.layer) || !inPoly(s.poly, label.x, label.y)) continue;
+      if (!best || polyArea(s.poly) < polyArea(best.poly)) best = s;
+    }
+    if (!best) continue;
+    best.name = label.value.trim().replace(/\s+/g, ' ');
+    taken.push(best);
+  }
+  const count = new Map();
+  for (const s of taken) count.set(s.layer, (count.get(s.layer) || 0) + 1);
+  const most = Math.max(0, ...count.values());
+  const keep = new Set([...count.keys()].filter((l) => count.get(l) >= Math.min(2, most)));
+  for (const s of taken) if (!keep.has(s.layer)) s.name = '';
+  return taken.filter((s) => s.name);
+}
+
+//: How wide a floor plan can plausibly be, in metres, when the drawing says nothing about its units.
+const SPAN_M = [2.5, 50];
+
 /**
  * Rooms of an SVG text, in SVG units: { levels: [{ name, rooms: [{ name, poly }] }], bbox: [x0, y0, x1, y1],
  * unitsPerMeter }. `unitsPerMeter` is guessed from the size of the drawing when it is given in mm, cm or m.
@@ -126,10 +179,18 @@ export function parseSvgRooms(text) {
   const stack = [{ m: ID, layer: null }];
   const layers = [];
   const shapes = [];
+  const texts = []; // { x, y, value }: where each text sits, to name the shapes that carry no name of their own
   let pendingTitle = null; // shape waiting for its <title>
+  let pendingText = null; // text being read (its content may be split over tspans)
   for (let k = 0; k < tags.length; k++) {
     const t = tags[k];
     const top = stack[stack.length - 1];
+    // inside a <text>: everything up to its closing tag is its content, and holds no shape
+    if (pendingText) {
+      if (t.close && t.name === 'text') pendingText = null;
+      else pendingText.value += t.text;
+      continue;
+    }
     if (t.close) {
       if (t.name === 'g' || t.name === 'svg' || t.name === 'a') stack.pop();
       if (pendingTitle && t.name === pendingTitle.tag) pendingTitle = null;
@@ -148,6 +209,13 @@ export function parseSvgRooms(text) {
     }
     let pts = null;
     const a = (n) => parseFloat(t.attrs[n]) || 0;
+    if (t.name === 'text') {
+      const [x, y] = tx(mul(top.m, parseTransform(t.attrs.transform)), [a('x'), a('y')]);
+      const item = { x, y, value: t.text };
+      texts.push(item);
+      if (!t.self) pendingText = item;
+      continue;
+    }
     if (t.name === 'rect') {
       const [x, y, w, h] = [a('x'), a('y'), a('width'), a('height')];
       if (w > 0 && h > 0)
@@ -176,6 +244,8 @@ export function parseSvgRooms(text) {
     shapes.push(shape);
     if (!t.self) pendingTitle = { tag: t.name, shape };
   }
+  // shapes with no name of their own: named by the text that sits in them (a plan out of a CAD tool)
+  if (!shapes.some((s) => s.name && !ENTITY.test(s.name))) nameFromText(shapes, texts);
   const named = shapes.filter((s) => s.name && !ENTITY.test(s.name));
   // a shape around every other one is the outline of the house, not a room
   const area = (p) => Math.abs(p.reduce((s, q, j) => s + q[0] * p[(j + 1) % p.length][1] - p[(j + 1) % p.length][0] * q[1], 0)) / 2;
@@ -193,6 +263,14 @@ export function parseSvgRooms(text) {
   const w = /^([\d.]+)\s*(mm|cm|m)$/.exec(root.attrs.width || '');
   const vb = (root.attrs.viewBox || '').split(/[\s,]+/).map(Number);
   if (w && vb.length === 4 && vb[2] > 0) unitsPerMeter = vb[2] / (parseFloat(w[1]) * { mm: 0.001, cm: 0.01, m: 1 }[w[2]]);
+  else {
+    // nothing says what a unit is (a CAD drawing often gives a viewBox in millimetres and no width at all): the
+    // hundredths of a metre assumed above are kept unless they make the plan an absurd size, and the drawing is
+    // then read in millimetres, or in metres, whichever gives a floor plan of a plausible width.
+    const span = Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1]);
+    const fits = (u) => span / u >= SPAN_M[0] && span / u <= SPAN_M[1];
+    if (!fits(unitsPerMeter)) unitsPerMeter = [1000, 1].find(fits) || unitsPerMeter;
+  }
   const used = layers.filter((l) => rooms.some((r) => r.layer === l));
   const levels = (used.length >= 2 ? [...used].reverse() : [null]).map((l, i) => ({
     name: l ? l.name : '',
