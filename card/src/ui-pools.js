@@ -1,4 +1,4 @@
-// Editor of the pools and ponds drawn from the top: outline (rectangle from two corners, or free), kind, colour,
+// Editor of the pools, spas and ponds drawn from the top: outline (rectangle from two corners, or free), kind, colour,
 // depth, the entity of the cleaning robot, the lamps of the water, the roller cover and, for a pond, its islands.
 // The ground is dug when the world is rebuilt (an island keeps its ground, a little above the water).
 import { html, nothing } from 'lit';
@@ -14,9 +14,19 @@ import {
   poolValid,
   sideFrame,
   nearestSide,
+  rectSize,
+  resizeRect,
+  MIN_SIDE,
+  MAX_UP,
+  standsUp,
+  shellOf,
 } from './pools.js';
+import { WHOLE, movedPts } from './move.js';
 import { CUSTOM_PATTERNS, MAX_GROUP, fishThumb, groupVariety } from './fish.js';
 import { localName } from './catalog-lib.js';
+
+/** Icon of each kind of basin, in the list of the panel. */
+const POOL_ICONS = { pool: 'mdi:pool', pond: 'mdi:fishbowl-outline', spa: 'mdi:hot-tub' };
 
 const uid = () => `pool${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 const lampId = () => `lamp${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
@@ -73,6 +83,45 @@ function drawTool(card, pool, island = null) {
     },
   });
   D.finish = finish;
+  card.requestUpdate();
+}
+
+/**
+ * Move the outline of a basin (or of one of its islands): each point has a handle, and one more in the middle
+ * takes the whole thing — the islands of a pond then follow it. Dragged in the view, or tapped and dropped.
+ */
+function moveTool(card, pool, island = null) {
+  const ed = card._editors;
+  const target = island || pool;
+  const pts = () => {
+    const toPlan = ed.toPlan(target);
+    return target.pts.map(([x, z]) => toPlan(x, z));
+  };
+  const shift = (o, dx, dz) => {
+    const toPlan = ed.toPlan(o);
+    const store = ed.fromPlan(o);
+    o.pts = o.pts.map(([x, z]) => {
+      const [a, b] = toPlan(x, z);
+      return store(a + dx, b + dz);
+    });
+  };
+  ed.setMoveTool({
+    key: `pool:${pool.id}${island ? `:${(pool.islands || []).indexOf(island)}` : ''}`,
+    closed: true,
+    points: pts,
+    move: (h, x, z, from) => {
+      const store = ed.fromPlan(target);
+      target.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
+      // the whole basin moves with its islands, which are drawn in its water
+      if (h.i === WHOLE && !island) for (const isl of pool.islands || []) shift(isl, x - from[0], z - from[1]);
+    },
+    commit: () => {
+      card._edited(true);
+      ed.commit();
+      card._pushPools();
+      card.requestUpdate();
+    },
+  });
   card.requestUpdate();
 }
 
@@ -133,10 +182,7 @@ export function renderPools(card) {
     drawTool(card, p);
   };
   return html`<div class="hint">${t('pools_hint')}</div>
-    <div class="row">
-      <button @click=${() => add('pool')}>＋ ${t('pool_pool')}</button>
-      <button @click=${() => add('pond')}>＋ ${t('pool_pond')}</button>
-    </div>
+    <div class="row">${Object.keys(POOL_KINDS).map((k) => html`<button @click=${() => add(k)}>＋ ${t(`pool_${k}`)}</button>`)}</div>
     ${list.map(
       (p) =>
         html`<button
@@ -147,7 +193,7 @@ export function renderPools(card) {
             card.requestUpdate();
           }}
         >
-          <ha-icon .icon=${p.kind === 'pond' ? 'mdi:fishbowl-outline' : 'mdi:pool'}></ha-icon>
+          <ha-icon .icon=${POOL_ICONS[p.kind] || POOL_ICONS.pool}></ha-icon>
           <span>${p.name || t(`pool_${p.kind}`)}</span>
           <span class="swatch" style=${`background:${p.color}`}></span>
           ${poolValid(p) ? nothing : html`<span class="badge">!</span>`}
@@ -238,6 +284,7 @@ function renderPoolEditor(card, p) {
           ? nothing
           : html`<div class="hint">${t('pool_no_outline')}</div>`
     }
+    ${poolValid(p) ? renderMove(card, `pool:${p.id}`, () => moveTool(card, p)) : nothing} ${renderSize(card, p, commit)}
     ${
       p.kind === 'pond'
         ? html`<div class="sub">${t('pool_islands')}</div>
@@ -257,6 +304,13 @@ function renderPoolEditor(card, p) {
               (isl, i) =>
                 html`<div class="row">
                   <span class="grow">${t('pool_island')} ${i + 1}</span>
+                  <button
+                    class=${card._editors.moving(`pool:${p.id}:${i}`) ? 'on' : ''}
+                    title=${t('move')}
+                    @click=${() => (card._editors.moving(`pool:${p.id}:${i}`) ? card._editors.setMoveTool(null) : moveTool(card, p, isl))}
+                  >
+                    ✥
+                  </button>
                   <button
                     title=${t('delete')}
                     @click=${() => {
@@ -296,6 +350,35 @@ function renderPoolEditor(card, p) {
           commit();
         }}
     /></label>
+    <label
+      >${t('pool_up')}
+      <input
+        type="number"
+        min="0"
+        max=${MAX_UP}
+        step="0.05"
+        .value=${String(standsUp(p))}
+        @change=${(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) p.up = Math.min(Math.max(v, 0), MAX_UP);
+          commit();
+        }}
+    /></label>
+    <div class="hint">${t('pool_up_hint')}</div>
+    ${
+      standsUp(p) > 0
+        ? html`<label
+            >${t('pool_shell')}
+            <input
+              type="color"
+              .value=${shellOf(p)}
+              @change=${(e) => {
+                p.shell = e.target.value;
+                commit();
+              }}
+          /></label>`
+        : nothing
+    }
     <div class="sub">${t('pool_robot')}</div>
     ${card._entityInput(
       p.robot || '',
@@ -320,6 +403,50 @@ function renderPoolEditor(card, p) {
     >
       ${t('delete')}
     </button>`;
+}
+
+/** Button that turns the move tool `key` on and off, with a word on how it is used. */
+export function renderMove(card, key, start) {
+  const t = card._t;
+  const ed = card._editors;
+  const on = ed.moving(key);
+  return html`<div class="row">
+      <button class=${on ? 'on' : ''} @click=${() => (on ? ed.setMoveTool(null) : start())}>✥ ${t('move')}</button>
+    </div>
+    ${on ? html`<div class="hint">${t('move_hint')}</div>` : nothing}`;
+}
+
+/**
+ * Length and width of a basin drawn as a rectangle, to the centimetre: a spa is given its size this way once it is
+ * drawn. The rectangle keeps its middle and its orientation, so the lamps and the cover stay on their side.
+ */
+function renderSize(card, p, commit) {
+  const t = card._t;
+  const ed = card._editors;
+  if (!poolValid(p) || p.pts.length !== 4) return nothing;
+  const toPlan = ed.toPlan(p);
+  const P = p.pts.map(([x, z]) => toPlan(x, z));
+  const sz = rectSize(P);
+  if (!sz) return nothing;
+  const set = (l, w) => {
+    const store = ed.fromPlan(p);
+    p.pts = resizeRect(P, l, w).map(([a, b]) => store(a, b));
+    commit();
+  };
+  const field = (label, value, apply) =>
+    html`<label class="bnum"
+      >${label}<input
+        type="number"
+        min=${MIN_SIDE}
+        step="0.05"
+        .value=${value.toFixed(2)}
+        @change=${(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) apply(v);
+        }}
+    /></label>`;
+  return html`<div class="sub">${t('pool_size')}</div>
+    <div class="row">${field(t('pool_len'), sz.l, (v) => set(v, sz.w))} ${field(t('pool_wid'), sz.w, (v) => set(sz.l, v))}</div>`;
 }
 
 /** Sides of the outline, to choose where a lamp or the cover sits: [{ i, label }] (nothing without an outline). */

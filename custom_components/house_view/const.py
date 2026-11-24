@@ -8,6 +8,10 @@ KEY_TERRAIN = "terrain"  # height grid (DTM, optional DSM and vector layers)
 KEY_EDITS = "edits"  # manual corrections: registration, outdoor objects, trees, ground edits, views
 KEY_ORTHO = "ortho"  # ground texture: aerial photo or IGN map (base64 image + Web Mercator window)
 KEYS = (KEY_SCENE, KEY_TERRAIN, KEY_EDITS, KEY_ORTHO)
+# Documents a home may legitimately not hold: the ground texture is optional (a terrain fetch can be asked
+# with "photo: none", and the texture can be removed from the card). A copy of one of these left in the
+# repository is not a difference with the backup, only something the backup still keeps.
+OPTIONAL_KEYS = (KEY_ORTHO,)
 
 STORAGE_VERSION = 1
 

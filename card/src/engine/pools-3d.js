@@ -1,8 +1,8 @@
-// Pools and ponds drawn in the editor: basin dug in the ground (vertical walls and flat bottom for a pool, sloping
-// bottom for a pond), coping or pebble ring, moving water, the cleaning robot wandering on the bottom, the lamps of
-// the water (their colour tints the water and the basin) and the roller cover sliding over the pool.
+// Pools, spas and ponds drawn in the editor: basin dug in the ground (vertical walls and flat bottom for a pool,
+// sloping bottom for a pond) or standing over it on its shell (a spa), coping or pebble ring, moving water, the
+// cleaning robot wandering on the bottom, the lamps of the water and the roller cover sliding over the pool.
 import * as THREE from 'three';
-import { polygonArea, centroidOf, robotStep, inPolygon, sideFrame, sideExtent, sidePoint } from '../pools.js';
+import { polygonArea, centroidOf, robotStep, inPolygon, sideFrame, sideExtent, sidePoint, standsUp, shellOf } from '../pools.js';
 import { buildPondFish } from './fish-3d.js';
 
 const BLACK = new THREE.Color('#000000');
@@ -299,22 +299,44 @@ export function buildPools(list) {
   for (const p of list) {
     const pond = p.kind === 'pond';
     const depth = Math.max(0.2, Math.min(p.depth || 1.5, 6));
-    const bottom = p.rim - depth;
+    // a basin standing over the ground (a spa, an above-ground pool): the ground is cut under it as for any
+    // basin, but its rim is raised and the shell that holds the water is seen all around, down to the ground
+    const up = standsUp(p);
+    const rim = p.rim + up;
+    const bottom = rim - depth;
     const color = p.color || (pond ? '#3d6b4a' : '#2a9fd6');
     const g = new THREE.Group();
     g.name = `pool-${p.id}`;
     g.userData.pool = p.id;
     // basin
     const liner = new THREE.MeshStandardMaterial({ color: pond ? shade('#5a4a35', 0) : shade(color, 0.55), roughness: pond ? 1 : 0.6, side: THREE.DoubleSide });
-    if (pond) g.add(new THREE.Mesh(pondBasin(p.poly, p.rim, depth), liner));
+    if (pond) g.add(new THREE.Mesh(pondBasin(p.poly, rim, depth), liner));
     else {
-      g.add(new THREE.Mesh(poolWalls(p.poly, p.rim, bottom), liner));
+      g.add(new THREE.Mesh(poolWalls(p.poly, rim, bottom), liner));
       g.add(new THREE.Mesh(flatShape(p.poly, bottom), liner));
     }
     // coping (pool) or pebble ring (pond), covering the cut edge of the ground
+    const edge = offsetOutline(p.poly, pond ? 0.45 : 0.32);
+    // shell of a basin that stands over the ground: it rises right under the coping, which would otherwise hang
+    // in the air, and is sunk a little in the ground so that no gap shows where the ground was cut. Outside it
+    // wears its own colour, the water and the liner keeping the one of the basin.
+    const shell = shellOf(p);
+    if (up > 0.01)
+      g.add(
+        new THREE.Mesh(
+          poolWalls(edge, rim + 0.015, p.rim - 0.15),
+          new THREE.MeshStandardMaterial({ color: shell, roughness: 0.85, side: THREE.DoubleSide }),
+        ),
+      );
     const band = new THREE.Mesh(
-      flatShape(offsetOutline(p.poly, pond ? 0.45 : 0.32), p.rim + 0.015, [p.poly]),
-      new THREE.MeshStandardMaterial({ color: pond ? '#7a7264' : '#ddd6c6', roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 }),
+      flatShape(edge, rim + 0.015, [p.poly]),
+      new THREE.MeshStandardMaterial({
+        // the coping is the top of the shell when there is one, and the edge of the ground otherwise
+        color: up > 0.01 ? shell : pond ? '#7a7264' : '#ddd6c6',
+        roughness: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
     );
     band.receiveShadow = true;
     g.add(band);
@@ -322,14 +344,14 @@ export function buildPools(list) {
     // when there is no terrain (with a terrain, the ground of the island is part of it)
     const islands = (p.islands || []).filter((i) => i.length >= 3);
     for (const isl of islands) {
-      g.add(new THREE.Mesh(poolWalls(isl, p.rim + 0.02, bottom), liner));
+      g.add(new THREE.Mesh(poolWalls(isl, rim + 0.02, bottom), liner));
       const ring = new THREE.Mesh(
-        flatShape(offsetOutline(isl, 0.3), p.rim - 0.03, [isl]),
+        flatShape(offsetOutline(isl, 0.3), rim - 0.03, [isl]),
         new THREE.MeshStandardMaterial({ color: '#7a7264', roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 }),
       );
       ring.renderOrder = 5;
       g.add(ring);
-      if (p.flat) g.add(new THREE.Mesh(flatShape(isl, p.rim + 0.02), new THREE.MeshStandardMaterial({ color: '#6aa84f', roughness: 1 })));
+      if (p.flat) g.add(new THREE.Mesh(flatShape(isl, rim + 0.02), new THREE.MeshStandardMaterial({ color: '#6aa84f', roughness: 1 })));
     }
     // water
     const wm = new THREE.MeshStandardMaterial({
@@ -346,7 +368,7 @@ export function buildPools(list) {
       wm.normalMap.repeat.set(0.45, 0.45);
       wm.normalScale.set(0.6, 0.6);
     }
-    const water = new THREE.Mesh(flatShape(p.poly, p.rim - (pond ? 0.08 : 0.12), islands), wm);
+    const water = new THREE.Mesh(flatShape(p.poly, rim - (pond ? 0.08 : 0.12), islands), wm);
     water.renderOrder = 4;
     water.name = 'water';
     g.add(water);
@@ -363,10 +385,10 @@ export function buildPools(list) {
     }
     // lamps of the water: their colour tints the water and the basin (see applyPoolLight). A lamp with no entity
     // yet is drawn all the same, unlit: it is placed in the editor before it is linked.
-    const lamps = buildLamps((p.lights || []).filter(Boolean), p.poly, p.rim, depth);
+    const lamps = buildLamps((p.lights || []).filter(Boolean), p.poly, rim, depth);
     for (const l of lamps) g.add(l.group);
     // roller cover: drawn as soon as there is one, linked to an entity or not (it is placed before it is linked)
-    const cover = p.cover ? buildCover(p.poly, p.cover, p.rim) : null;
+    const cover = p.cover ? buildCover(p.poly, p.cover, rim) : null;
     if (cover) {
       // the view toggles the cover when its sheet or its roller is clicked
       cover.deck.userData.pool = p.id;
@@ -386,7 +408,7 @@ export function buildPools(list) {
       cover,
       lit: false,
       pond,
-      rim: p.rim,
+      rim,
       depth,
       poly: p.poly,
       islands,

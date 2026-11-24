@@ -1,11 +1,36 @@
-// Pools and ponds drawn on the ground (top view): outline, colour, depth, a cleaning robot, the lamps of the water
+// Pools, spas and ponds drawn on the ground (top view): outline, colour, depth, height over the ground, a cleaning robot, the lamps
 // and a roller cover. Pure helpers, no three / HA knowledge: polygon tests, outline of a rectangle, frame of a side
 // of the outline, the wandering of the robot on the bottom, and the reading of the entities of a pool.
 
+// `up`: how high the rim stands over the ground (m). 0 digs the basin in, as a pool is; a spa stands on the
+// ground by default, its whole height out, and a value in between sinks it part of the way.
 export const POOL_KINDS = {
-  pool: { color: '#2a9fd6', depth: 1.5 },
-  pond: { color: '#3d6b4a', depth: 0.8 },
+  pool: { color: '#2a9fd6', depth: 1.5, up: 0 },
+  pond: { color: '#3d6b4a', depth: 0.8, up: 0 },
+  // a spa is a small basin, drawn with the rectangle tool and then sized to the centimetre (see rectSize)
+  spa: { color: '#1f7fa8', depth: 0.9, up: 0.9 },
 };
+
+/** Highest a basin may stand over the ground (m). */
+export const MAX_UP = 3;
+
+/** Shell of a basin standing over the ground, when none was chosen: the taupe of the usual spa cabinets. */
+export const SHELL_COLOR = '#5c5349';
+
+/**
+ * Colour of the shell of basin `p`, seen from outside — a real spa is one colour inside, in the water, and
+ * another outside, on its cabinet. The coping is the top of that shell, so it takes the same colour.
+ */
+export function shellOf(p) {
+  const c = p && p.shell;
+  return /^#[0-9a-fA-F]{6}$/.test(c || '') ? c : SHELL_COLOR;
+}
+
+/** How high basin `p` stands over the ground: 0 (dug in, like a pool) to MAX_UP. */
+export function standsUp(p) {
+  const v = Number(p && p.up);
+  return Number.isFinite(v) ? Math.min(Math.max(v, 0), MAX_UP) : 0;
+}
 
 /** Point inside polygon [[x, z], ...] (even-odd rule). */
 export function inPolygon(poly, x, z) {
@@ -62,6 +87,35 @@ export function rectFromCorners(a, b) {
   ];
 }
 
+/**
+ * Length and width of a four-point outline, read in the frame of its first side: { l (along that side), w (across
+ * it) }, or null when the outline is not a quadrilateral. A spa is drawn with the rectangle tool, so its size can
+ * then be shown and corrected to the centimetre.
+ */
+export function rectSize(pts) {
+  if (!Array.isArray(pts) || pts.length !== 4) return null;
+  const e = sideExtent(pts, sideFrame(pts, 0));
+  return { l: e.u1 - e.u0, w: Math.abs(e.v1 - e.v0) };
+}
+
+/** Shortest side of a basin sized by hand (m). */
+export const MIN_SIDE = 0.4;
+
+/**
+ * The same rectangle with a new length and width (metres, at least MIN_SIDE): it keeps its middle, its orientation
+ * and the order of its sides, so the lamps and the cover stay where they were put.
+ */
+export function resizeRect(pts, l, w) {
+  const f = sideFrame(pts, 0);
+  const e = sideExtent(pts, f);
+  const cu = (e.u0 + e.u1) / 2;
+  const cv = (e.v0 + e.v1) / 2;
+  const hu = Math.max(Number(l) || 0, MIN_SIDE) / 2;
+  const hv = Math.max(Number(w) || 0, MIN_SIDE) / 2;
+  const at = (u, v) => [f.x + f.ux * u + f.nx * v, f.z + f.uz * u + f.nz * v];
+  return [at(cu - hu, cv - hv), at(cu + hu, cv - hv), at(cu + hu, cv + hv), at(cu - hu, cv + hv)];
+}
+
 /** Prefix of the id of the room that stands for a pool or a pond (see HouseEngine.poolRooms). */
 export const POOL_ROOM = 'pool:';
 
@@ -81,7 +135,8 @@ export function editTarget(focus, pools) {
 /** Defaults of a pool or pond of kind `kind`. */
 export function newPool(kind, id) {
   const k = POOL_KINDS[kind] ? kind : 'pool';
-  return { id, kind: k, shape: 'rect', pts: [], color: POOL_KINDS[k].color, depth: POOL_KINDS[k].depth, robot: '' };
+  const d = POOL_KINDS[k];
+  return { id, kind: k, shape: 'rect', pts: [], color: d.color, shell: SHELL_COLOR, depth: d.depth, up: d.up, robot: '' };
 }
 
 // ---------------------------------------------------------------- entities of a pool
@@ -297,7 +352,7 @@ export function poolRoomsOf(items, pools, level, label) {
     const p = (pools || []).find((x) => x.id === it.id) || {};
     return {
       id: `${POOL_ROOM}${it.id}`,
-      name: p.name || label(it.pond ? 'pond' : 'pool'),
+      name: p.name || label(POOL_KINDS[p.kind] ? p.kind : it.pond ? 'pond' : 'pool'),
       level,
       poly: it.poly,
       pool: it.id,

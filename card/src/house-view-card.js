@@ -6,6 +6,7 @@ import { FenceTools, GateTools, BedTools, PathTools, IrrigationTools, VacuumTool
 import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
 import { renderFences, renderGates, renderBeds, renderPaths, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
+import { treeThumb } from './tree-art.js';
 import {
   renderGeneral,
   renderGeneralEditor,
@@ -2154,11 +2155,12 @@ class HouseViewCard extends LitElement {
 
   /**
    * GitHub backup, only when the user asks: backup, restore (`ref`: a backup of the history, the last one without
-   * it; a second click confirms), history (the list of the backups), status (compare with GitHub now).
+   * it; a second click confirms), history (the list of the backups), status (compare with GitHub now), forget
+   * (`doc`: a document this home no longer holds, dropped from the repository; a second click confirms).
    */
-  async _github(action, ref = undefined) {
-    const key = ref ? `restore:${ref}` : 'restore';
-    if (action === 'restore' && this._confirm !== key) {
+  async _github(action, ref = undefined, doc = undefined) {
+    const key = action === 'forget' ? `forget:${doc}` : ref ? `restore:${ref}` : 'restore';
+    if ((action === 'restore' || action === 'forget') && this._confirm !== key) {
       this._confirm = key; // second click confirms
       this.requestUpdate();
       return;
@@ -2171,10 +2173,11 @@ class HouseViewCard extends LitElement {
         clearTimeout(this._saveTimer);
         await this._save('edits');
       }
-      const r = await this._api.github(action, ref);
+      const r = await this._api.github(action, ref, doc);
       if (action === 'history') this._ghHistory = (r && r.backups) || [];
       else if (action === 'status') this._info = { ...this._info, github_sync: r && r.sync };
       else this._msg = `GitHub : ${r && r.message ? r.message : this._t('done')}`;
+      if (action === 'forget') this._info = { ...this._info, github_sync: r && r.sync };
       if (action === 'restore') await this._reload();
       else if (action === 'backup') {
         this._info = (await this._api.info()) || this._info;
@@ -2210,7 +2213,21 @@ class HouseViewCard extends LitElement {
               .filter(([, v]) => v !== 'same')
               .map(
                 ([k, v]) =>
-                  html`<div class="row"><span class="grow">${docs[k] || k}</span><span class="badge">${t(`github_doc_${v}`)}</span></div>`,
+                  html`<div class="row">
+                    <span class="grow">${docs[k] || k}</span>
+                    <span class="badge">${t(`github_doc_${v}`)}</span>
+                    ${
+                      v === 'remote' || v === 'spare'
+                        ? html`<button
+                            ?disabled=${this._busy}
+                            title=${t('github_forget')}
+                            @click=${() => this._github('forget', undefined, k)}
+                          >
+                            ${this._confirm === `forget:${k}` ? t('github_confirm_forget') : '✕'}
+                          </button>`
+                        : nothing
+                    }
+                  </div>`,
               )
           : nothing
       }
@@ -2747,32 +2764,39 @@ class HouseViewCard extends LitElement {
     const ed = this._editors;
     const info = ed.treeInfo();
     return html` <select @change=${(e) => ed.setTreeMode(e.target.value)}>
-        ${['off', 'delete', 'add'].map((m) => html`<option value=${m} ?selected=${ed.treeMode === m}>${t(`tree_${m}`)}</option>`)}
+        ${['off', 'delete', 'add', 'move'].map((m) => html`<option value=${m} ?selected=${ed.treeMode === m}>${t(`tree_${m}`)}</option>`)}
       </select>
       ${
         ed.treeMode === 'add'
-          ? html`<div class="row">
-              <select
-                @change=${(e) => {
-                  const sp = e.target.value;
-                  ed.setTreeParams({ species: sp, h: SPECIES[sp].height });
-                  this._rev++;
-                }}
-              >
+          ? html`<div class="treepick">
                 ${Object.entries(SPECIES)
                   .filter(([, v]) => !v.hidden)
-                  .map(([k, v]) => html`<option value=${k} ?selected=${ed.treeAdd.species === k}>${v.name}</option>`)}
-              </select>
-              <input
-                type="number"
-                min=${(SPECIES[ed.treeAdd.species] || {}).minHeight ?? 1}
-                max=${(SPECIES[ed.treeAdd.species] || {}).maxHeight ?? 30}
-                step="0.5"
-                .value=${String(ed.treeAdd.h)}
-                @change=${(e) => ed.setTreeParams({ h: parseFloat(e.target.value) || 8 })}
-              />
-              m
-            </div>`
+                  .map(
+                    ([k, v]) =>
+                      html`<button
+                        class=${ed.treeAdd.species === k ? 'on' : ''}
+                        title=${v.name}
+                        @click=${() => {
+                          ed.setTreeParams({ species: k, h: v.height });
+                          this._rev++;
+                        }}
+                      >
+                        <img src=${treeThumb(v)} alt="" />
+                        <span>${v.name}</span>
+                      </button>`,
+                  )}
+              </div>
+              <div class="row">
+                <input
+                  type="number"
+                  min=${(SPECIES[ed.treeAdd.species] || {}).minHeight ?? 1}
+                  max=${(SPECIES[ed.treeAdd.species] || {}).maxHeight ?? 30}
+                  step="0.5"
+                  .value=${String(ed.treeAdd.h)}
+                  @change=${(e) => ed.setTreeParams({ h: parseFloat(e.target.value) || 8 })}
+                />
+                m
+              </div>`
           : nothing
       }
       ${ed.treeMode !== 'off' ? html`<div class="hint">${t(`tree_hint_${ed.treeMode}`)}</div>` : nothing}
@@ -2836,6 +2860,7 @@ class HouseViewCard extends LitElement {
           : nothing
       }
       ${tool.mode !== 'off' ? html`<div class="hint">${t(`tool_hint_${tool.mode}`)}</div>` : nothing}
+      ${ed.moving(`op:${this._opSel}`) ? html`<div class="hint">${t('move_hint')}</div>` : nothing}
       <label>${t('ops')}</label>
       ${
         ops.length
@@ -2866,6 +2891,12 @@ class HouseViewCard extends LitElement {
                         )}
                       </div>
                       <div class="row">
+                        <button
+                          class=${ed.moving(`op:${this._opSel}`) ? 'on' : ''}
+                          @click=${() => (ed.moving(`op:${this._opSel}`) ? ed.setMoveTool(null) : ed.startOpMove(this._opSel))}
+                        >
+                          ✥ ${t('move')}
+                        </button>
                         <button @click=${() => ed.deleteOp(this._opSel)}>${t('delete')}</button>
                         ${
                           op.type === 'wall'
@@ -4235,12 +4266,13 @@ class HouseViewCard extends LitElement {
       border-radius: 6px;
     }
     /* miniatures of the varieties of a fish: a grid of tiles (over the generic button rule of the panels) */
-    .fishpick {
+    .fishpick,
+    .treepick {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
       gap: 4px;
     }
-    :is(.panel, .win) .fishpick button:not(.x) {
+    :is(.panel, .win) :is(.fishpick, .treepick) button:not(.x) {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -4256,7 +4288,12 @@ class HouseViewCard extends LitElement {
       height: 22px;
       object-fit: contain;
     }
-    .fishpick span {
+    .treepick img {
+      width: 46px;
+      height: 56px;
+      object-fit: contain;
+    }
+    :is(.fishpick, .treepick) span {
       max-width: 100%;
       text-align: center;
       overflow-wrap: anywhere;

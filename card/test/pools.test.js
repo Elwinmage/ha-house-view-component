@@ -24,6 +24,13 @@ import {
   poolRoomsOf,
   roomFocus,
   POOL_ROOM,
+  rectSize,
+  resizeRect,
+  MIN_SIDE,
+  MAX_UP,
+  standsUp,
+  shellOf,
+  SHELL_COLOR,
 } from '../src/pools.js';
 import { buildPools, offsetOutline } from '../src/engine/pools-3d.js';
 import { buildTerrain, syntheticTerrain } from '../src/engine/terrain.js';
@@ -211,6 +218,94 @@ describe('pools as rooms', () => {
   it('copes with no drawn pools', () => {
     expect(poolRoomsOf([], undefined, 'L0', () => '')).toEqual([]);
     expect(poolRoomsOf([items[0]], undefined, 'L0', (k) => k)[0].name).toBe('pool');
+  });
+  it('names the room of a spa after its own kind', () => {
+    const rooms = poolRoomsOf(items, [{ id: 'a', kind: 'spa' }], 'L0', (k) => k);
+    expect(rooms[0].name).toBe('spa');
+    expect(rooms[1].name).toBe('pond'); // no kind stored: the one the 3D item says
+  });
+});
+
+describe('a spa, sized by hand', () => {
+  it('is a basin of its own, drawn as a rectangle and standing on the ground', () => {
+    expect(POOL_KINDS.spa).toBeTruthy();
+    expect(newPool('spa', 's1')).toMatchObject({
+      id: 's1',
+      kind: 'spa',
+      shape: 'rect',
+      depth: POOL_KINDS.spa.depth,
+      up: POOL_KINDS.spa.up,
+    });
+    expect(POOL_KINDS.spa.up).toBeCloseTo(POOL_KINDS.spa.depth); // its whole height is out of the ground
+    expect(newPool('pool', 'p1').up).toBe(0); // a pool stays dug in
+  });
+
+  it('wears its own colour outside, the water keeping the one of the basin', () => {
+    expect(shellOf({ shell: '#123456' })).toBe('#123456');
+    expect(shellOf({})).toBe(SHELL_COLOR); // a basin saved before this field takes the usual cabinet colour
+    expect(shellOf({ shell: 'taupe' })).toBe(SHELL_COLOR);
+    expect(shellOf(null)).toBe(SHELL_COLOR);
+    expect(newPool('spa', 's1').shell).toBe(SHELL_COLOR);
+    // the shell and the coping over it are that colour, the liner and the water are not
+    const b = buildPools([{ id: 's', kind: 'spa', poly: square, rim: 0.2, depth: 0.9, up: 0.9, color: '#2a9fd6', shell: '#804020' }]);
+    const colors = b.group.children[0].children.map((m) => m.material && m.material.color && m.material.color.getHexString());
+    expect(colors.filter((c) => c === '804020')).toHaveLength(2);
+  });
+
+  it('reads how high a basin stands over the ground, within bounds', () => {
+    expect(standsUp({ up: 0.6 })).toBeCloseTo(0.6);
+    expect(standsUp({})).toBe(0); // a basin saved before this field is dug in, as it was
+    expect(standsUp(null)).toBe(0);
+    expect(standsUp({ up: -2 })).toBe(0);
+    expect(standsUp({ up: 99 })).toBe(MAX_UP);
+    expect(standsUp({ up: 'haut' })).toBe(0);
+  });
+
+  it('reads the length and the width of a rectangular outline', () => {
+    const sz = rectSize(rectFromCorners([0, 0], [4, 2]));
+    expect(sz.l).toBeCloseTo(4);
+    expect(sz.w).toBeCloseTo(2);
+    expect(rectSize([[0, 0], [1, 0], [1, 1]])).toBeNull(); // prettier-ignore
+    expect(rectSize(null)).toBeNull();
+  });
+
+  it('resizes it around its middle, keeping the order of its sides', () => {
+    const r = rectFromCorners([1, 1], [5, 3]); // middle (3, 2)
+    const bigger = resizeRect(r, 6, 3);
+    const sz = rectSize(bigger);
+    expect(sz.l).toBeCloseTo(6);
+    expect(sz.w).toBeCloseTo(3);
+    expect(centroidOf(bigger)[0]).toBeCloseTo(3);
+    expect(centroidOf(bigger)[1]).toBeCloseTo(2);
+    expect(bigger).toHaveLength(4);
+    // the first side still runs the same way, so a lamp keeps the side it was put on
+    const was = sideFrame(r, 0);
+    const now = sideFrame(bigger, 0);
+    expect(now.ux).toBeCloseTo(was.ux);
+    expect(now.uz).toBeCloseTo(was.uz);
+  });
+
+  it('stands on the ground: the water is raised and the shell is built, a pool keeps its dug rim', () => {
+    const dug = buildPools([{ id: 'p', kind: 'pool', poly: square, rim: 0.2, depth: 1.4 }]);
+    const stand = buildPools([{ id: 's', kind: 'spa', poly: square, rim: 0.2, depth: 0.9, up: 0.9 }]);
+    expect(dug.items[0].rim).toBeCloseTo(0.2); // dug in: the water is at the level of the cut ground
+    expect(stand.items[0].rim).toBeCloseTo(1.1); // standing: raised by its height over the ground
+    // the shell is one mesh more than the same basin dug in, and it rises right under the coping: no gap, and
+    // nothing hanging in the air around it
+    const meshes = (b) => b.group.children[0].children.length;
+    expect(meshes(stand)).toBe(meshes(buildPools([{ id: 's', kind: 'spa', poly: square, rim: 0.2, depth: 0.9, up: 0 }])) + 1);
+    const shell = stand.group.children[0].children[2].geometry.attributes.position.array;
+    const ys = [...shell].filter((_, i) => i % 3 === 1);
+    expect(Math.max(...ys)).toBeCloseTo(1.115); // the top of the coping
+    expect(Math.min(...ys)).toBeCloseTo(0.05); // sunk under the ground, which is cut at 0.2
+    const xs = [...shell].filter((_, i) => i % 3 === 0);
+    expect(Math.max(...xs)).toBeCloseTo(4.32); // as wide as the coping, which rests on it
+  });
+
+  it('never shrinks below the shortest side', () => {
+    const sz = rectSize(resizeRect(rectFromCorners([0, 0], [4, 2]), 0, -3));
+    expect(sz.l).toBeCloseTo(MIN_SIDE);
+    expect(sz.w).toBeCloseTo(MIN_SIDE);
   });
 });
 

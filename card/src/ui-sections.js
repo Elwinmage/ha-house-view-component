@@ -7,6 +7,7 @@ import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
 import { PATH_SURFACES, PATH_W, normalizePath, pathLength } from './paths.js';
 import { GATE_OPEN, GATE_FILL, GATE_TOP, GATE_DOMAINS, normalizeGate } from './gates.js';
 import { mapRoomsToAreas } from './ha-bridge.js';
+import { renderMove } from './ui-pools.js';
 
 const num = (value, onChange, step = 0.1, min = undefined, max = undefined) =>
   html`<input
@@ -29,7 +30,7 @@ export function renderGates(card) {
   const t = card._t;
   const ed = card._editors;
   const gt = card._gateTools;
-  const arming = !!gt.mode && tool(ed, 'gate-pick');
+  const arming = gt.mode === 'add' && tool(ed, 'gate-pick');
   const chips = (g, i, list, field, prefix) =>
     html`<div class="chips">
       ${list.map((k) => html`<button class=${g[field] === k ? 'on' : ''} @click=${() => gt.edit(i, { [field]: k })}>${t(`${prefix}${k}`)}</button>`)}
@@ -45,11 +46,11 @@ export function renderGates(card) {
         ${t('gate_add')}
       </button>
     </div>
-    ${arming ? html`<div class="hint">${t(gt.mode === 'add' ? 'gate_add_hint' : 'gate_move_hint')}</div>` : nothing}
+    ${arming ? html`<div class="hint">${t('gate_add_hint')}</div>` : nothing}
     ${gt.gates.map((raw, i) => {
       const g = normalizeGate(raw);
       const on = gt.sel === i;
-      const moving = arming && gt.mode === 'move' && on;
+      const moving = ed.moving(`gate:${i}`);
       return html`<div class=${`ent ${on ? 'open' : ''}`}>
         <div @click=${() => gt.select(i)}>
           <b>${t('gate')} ${i + 1}</b>
@@ -102,8 +103,9 @@ export function renderGates(card) {
                 </div>`
             : nothing
         }
+        ${moving ? html`<div class="hint">${t('gate_move_hint')}</div>` : nothing}
         <div class="row">
-          <button class=${moving ? 'on' : ''} @click=${() => (moving ? gt.cancel() : gt.startMove(i))}>${t('gate_move')}</button>
+          <button class=${moving ? 'on' : ''} @click=${() => (moving ? ed.setMoveTool(null) : gt.startMove(i))}>${t('gate_move')}</button>
           <button class=${gt.demo.has(g.id) ? 'on' : ''} @click=${() => gt.toggleDemo(g.id)}>${t('gate_try')}</button>
           <button @click=${() => gt.toggleHidden(i)}>${g.hidden ? t('show') : t('hide')}</button>
           <button @click=${() => gt.remove(i)}>${t('delete')}</button>
@@ -232,7 +234,8 @@ export function renderPaths(card) {
                 <div class="row">
                   <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i, true)}>${t('path_extend')}</button>
                   <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i)}>${t('path_redraw')}</button>
-                </div>`
+                </div>
+                ${renderMove(card, `path:${i}`, () => pt.startMove(i))}`
             : nothing
         }
         <div class="row">
@@ -327,9 +330,16 @@ export function renderFences(card) {
         <div><b>${t('fence')} ${i + 1}${ids}</b> <span class="hint">${sideCount(f)} ${t('fence_sides')} · ${kinds}</span></div>
         <div class="row">
           <button class=${on ? 'on' : ''} @click=${() => (on ? ft.cancel() : ft.startEdit(i))}>${t('fence_edit')}</button>
+          <button
+            class=${ed.moving(`fence:${i}`) ? 'on' : ''}
+            @click=${() => (ed.moving(`fence:${i}`) ? ed.setMoveTool(null) : ft.startMove(i))}
+          >
+            ✥ ${t('move')}
+          </button>
           <button @click=${() => ft.toggleHidden(i)}>${f.hidden ? t('show') : t('hide')}</button>
           <button @click=${() => ft.remove(i)}>${t('delete')}</button>
         </div>
+        ${ed.moving(`fence:${i}`) ? html`<div class="hint">${t('move_hint')}</div>` : nothing}
         ${
           on
             ? html`<div class="chips">

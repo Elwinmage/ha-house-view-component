@@ -38,6 +38,7 @@ from .const import (
     KEY_TERRAIN,
     KEYS,
     MAX_BODY_BYTES,
+    OPTIONAL_KEYS,
     UNLOCK_HEADER,
     UNLOCK_TTL,
 )
@@ -83,6 +84,25 @@ def _refusal(view: HomeAssistantView, request: web.Request, store: HouseViewStor
     return None
 
 
+async def _demo_doc(hass: HomeAssistant, name: str) -> Any:
+    """A document shipped with the demo home: read and parsed in one executor job, never on the event loop."""
+    return await hass.async_add_executor_job(lambda: json.loads(_read_demo(name)))
+
+
+async def _read_doc(hass: HomeAssistant, body: bytes, key: str) -> Any:
+    """
+    Parse and check one document, away from the event loop: a terrain is several megabytes of JSON and up to a
+    million values checked one by one, which would otherwise hold up every other integration. Raises ValueError.
+    """
+
+    def work() -> Any:
+        doc = json.loads(body)
+        VALIDATORS[key](doc)
+        return doc
+
+    return await hass.async_add_executor_job(work)
+
+
 def _fire(hass: HomeAssistant, key: str, stamp: str | None, store: HouseViewStore | None = None) -> None:
     hass.bus.async_fire(EVENT_UPDATED, {"key": key, "updated": stamp, "home": store and _home_of(hass, store)})
 
@@ -109,7 +129,7 @@ async def refresh_remote(store: HouseViewStore, gh: GitHubBackup) -> None:
         _LOGGER.debug("House View: GitHub not read: %s", err)
 
 
-def _github_sync(hass: HomeAssistant, store: HouseViewStore) -> dict[str, str] | None:
+async def _github_sync(hass: HomeAssistant, store: HouseViewStore) -> dict[str, str] | None:
     """
     Each document compared with the GitHub backup, for the card's "differs from GitHub" sign. Not known yet: read
     once in the background (a few requests), the card asks again after its next write.
@@ -119,7 +139,8 @@ def _github_sync(hass: HomeAssistant, store: HouseViewStore) -> dict[str, str] |
         return None
     if store.remote is None and (store.remote_job is None or store.remote_job.done()):
         store.remote_job = hass.async_create_background_task(refresh_remote(store, gh), f"{DOMAIN}_github_sync")
-    return sync_state({k: store.get_bytes(k) for k in KEYS}, store.remote)
+    local = {k: await store.async_get_bytes(hass, k) for k in KEYS}
+    return sync_state(local, store.remote, OPTIONAL_KEYS)
 
 
 class HouseViewInfoView(HomeAssistantView):
@@ -150,7 +171,7 @@ class HouseViewInfoView(HomeAssistantView):
                 "has_edits": store.has("edits"),
                 "has_ortho": store.has(KEY_ORTHO),
                 "github": store.options.get(CONF_REPO) if store.options.get(CONF_TOKEN) else None,
-                "github_sync": _github_sync(hass, store) if _is_admin(request) else None,
+                "github_sync": await _github_sync(hass, store) if _is_admin(request) else None,
                 "locked": store.lock is not None,
                 "demo": store.demo,
                 "hide_demo": bool(store.options.get(CONF_HIDE_DEMO, HIDE_DEMO_DEFAULT)),
@@ -172,7 +193,7 @@ class HouseViewDataView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         store = _store(request)
-        body = store.get_bytes(self._key) if store else None
+        body = await store.async_get_bytes(request.app[KEY_HASS], self._key) if store else None
         if body is None:
             return self.json_message("Nothing stored", HTTPStatus.NOT_FOUND)
         resp = web.Response(body=body, content_type="application/json")
@@ -187,13 +208,13 @@ class HouseViewDataView(HomeAssistantView):
             return refusal
         if request.content_length and request.content_length > MAX_BODY_BYTES:
             return self.json_message("Document too large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        hass = request.app[KEY_HASS]
         try:
-            doc: Any = json.loads(await request.read())
-            VALIDATORS[self._key](doc)
+            doc = await _read_doc(hass, await request.read(), self._key)
         except (ValueError, TypeError) as err:  # json.JSONDecodeError is a ValueError
             return self.json_message(str(err), HTTPStatus.BAD_REQUEST)
         stamp = await store.async_set(self._key, doc)
-        _fire(request.app[KEY_HASS], self._key, stamp, store)
+        _fire(hass, self._key, stamp, store)
         return self.json({"ok": True, "updated": stamp})
 
     async def delete(self, request: web.Request) -> web.Response:
@@ -218,7 +239,8 @@ async def run_fetch(hass: HomeAssistant, store: HouseViewStore, params: ign.Fetc
         terrain, photo, notes = await sources.fetch_all(
             async_get_clientsession(hass), params, hass.config.country, hass.async_add_executor_job, progress
         )
-        VALIDATORS[KEY_TERRAIN](terrain)
+        # a fetched terrain holds up to a million values: checked in an executor, like an uploaded one
+        await hass.async_add_executor_job(VALIDATORS[KEY_TERRAIN], terrain)
         _fire(hass, KEY_TERRAIN, await store.async_set(KEY_TERRAIN, terrain), store)
         if photo:
             _fire(hass, KEY_ORTHO, await store.async_set(KEY_ORTHO, photo), store)
@@ -241,7 +263,7 @@ async def run_demo_fetch(hass: HomeAssistant, store: HouseViewStore, params: ign
     for step, seconds in DEMO_STEPS:
         store.job["step"] = step
         await asyncio.sleep(seconds * DEMO_PACE)
-    terrain = json.loads(await hass.async_add_executor_job(_read_demo, "demo-terrain.json"))
+    terrain = await _demo_doc(hass, "demo-terrain.json")
     terrain["center"] = list(params.center)
     _fire(hass, KEY_TERRAIN, await store.async_set(KEY_TERRAIN, terrain), store)
     store.job.update(state="done", step=None, message="démo")
@@ -296,7 +318,8 @@ class HouseViewGitHubView(HomeAssistantView):
     """
     POST (admin, unlocked), only on a request of the user: {"action": "backup"} saves to the private repository,
     {"action": "restore", "ref"?} brings back the last backup or the backup `ref` of the history, {"action":
-    "history"} lists the backups, {"action": "status"} compares the documents with GitHub.
+    "history"} lists the backups, {"action": "status"} compares the documents with GitHub, {"action": "forget",
+    "key"} drops from the repository a document this home no longer holds.
     """
 
     url = f"/api/{DOMAIN}/github"
@@ -315,39 +338,74 @@ class HouseViewGitHubView(HomeAssistantView):
             return self.json_message("GitHub backup is not configured", HTTPStatus.BAD_REQUEST)
         try:
             req = await request.json()
-            action = req.get("action")
-            ref = req.get("ref")
-        except (ValueError, AttributeError):
-            action = ref = None
-        run = {"status": _gh_status, "history": _gh_history, "backup": _gh_backup, "restore": _gh_restore}.get(action)
+        except ValueError:
+            req = None
+        if not isinstance(req, dict):
+            req = {}
+        action, ref, key = req.get("action"), req.get("ref"), req.get("key")
+        run = {
+            "status": _gh_status,
+            "history": _gh_history,
+            "backup": _gh_backup,
+            "restore": _gh_restore,
+            "forget": _gh_forget,
+        }.get(action)
         if run is None:
-            return self.json_message("action must be backup, restore, history or status", HTTPStatus.BAD_REQUEST)
+            return self.json_message(
+                "action must be backup, restore, history, status or forget", HTTPStatus.BAD_REQUEST
+            )
         if ref is not None and not (action == "restore" and isinstance(ref, str) and REF.match(ref)):
             return self.json_message("ref must be the commit id of a backup", HTTPStatus.BAD_REQUEST)
+        if action == "forget":
+            if key not in KEYS:
+                return self.json_message(f"key must be one of {', '.join(KEYS)}", HTTPStatus.BAD_REQUEST)
+            # never drop the backup of a document the home still holds: that is what a backup is for
+            if store.has(key):
+                return self.json_message("this document is stored here: back it up instead", HTTPStatus.CONFLICT)
         try:
-            return self.json(await run(hass, store, gh, ref))
+            return self.json(await run(hass, store, gh, req))
         except GitHubError as err:
             return self.json_message(str(err), HTTPStatus.BAD_GATEWAY)
         except ValueError as err:
             return self.json_message(f"invalid document in the repository: {err}", HTTPStatus.BAD_GATEWAY)
 
 
-async def _gh_status(hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _ref: str | None) -> dict[str, Any]:
+async def _gh_status(
+    hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _req: dict[str, Any]
+) -> dict[str, Any]:
     """Read GitHub again and compare."""
     store.remote = await gh.remote_shas(KEYS)
-    return {"ok": True, "sync": _github_sync(hass, store)}
+    return {"ok": True, "sync": await _github_sync(hass, store)}
 
 
 async def _gh_history(
-    _hass: HomeAssistant, _store: HouseViewStore, gh: GitHubBackup, _ref: str | None
+    _hass: HomeAssistant, _store: HouseViewStore, gh: GitHubBackup, _req: dict[str, Any]
 ) -> dict[str, Any]:
     """The backups, newest first."""
     return {"ok": True, "backups": await gh.history()}
 
 
-async def _gh_backup(_hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _ref: str | None) -> dict[str, Any]:
+async def _gh_forget(
+    hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, req: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Drop from the repository a document this home no longer holds (the ground texture of a home set up without
+    one). The commits stay: an older backup still brings it back.
+    """
+    key = req["key"]
+    removed = await gh.forget(key)
+    if store.remote is not None:
+        store.remote[key] = None
+    msg = f"{key}: removed from GitHub" if removed else f"{key}: nothing to remove on GitHub"
+    sync = await _github_sync(hass, store)
+    return {"ok": True, "key": key, "removed": removed, "sync": sync, "message": msg}
+
+
+async def _gh_backup(
+    hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _req: dict[str, Any]
+) -> dict[str, Any]:
     """Save every stored document that changed."""
-    docs = {k: b for k in KEYS if (b := store.get_bytes(k)) is not None}
+    docs = {k: b for k in KEYS if (b := await store.async_get_bytes(hass, k)) is not None}
     # a document that is not stored here cannot be saved: said plainly, it is the usual reason a file is missing
     # from the repository
     missing = [k for k in KEYS if k not in docs]
@@ -360,14 +418,21 @@ async def _gh_backup(_hass: HomeAssistant, store: HouseViewStore, gh: GitHubBack
     return {"ok": not res["failed"], "missing": missing, **res, "message": _backup_message(res, missing)}
 
 
-async def _gh_restore(hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, ref: str | None) -> dict[str, Any]:
+async def _gh_restore(
+    hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, req: dict[str, Any]
+) -> dict[str, Any]:
     """
     Every document as it was at the backup `ref` (the last backup without it), all checked before any is stored: a
     restore never leaves the home half old, half new. A document the backup did not hold is kept as it is.
     """
-    docs = await gh.restore(KEYS, ref)
-    for key, doc in docs.items():
-        VALIDATORS[key](doc)
+    ref = req.get("ref")
+    raw = await gh.restore(KEYS, ref)
+    docs = {}
+    for key, body in raw.items():
+        try:
+            docs[key] = await _read_doc(hass, body, key)
+        except (ValueError, TypeError) as err:
+            raise ValueError(f"{gh.file_of(key)}: {err}") from err
     for key, doc in docs.items():
         _fire(hass, key, await store.async_set(key, doc), store)
     store.remote = None  # an older backup differs from the branch: read again
@@ -459,7 +524,7 @@ class HouseViewDemoView(HomeAssistantView):
         if store is None:
             return self.json_message("The demo home is not loaded", HTTPStatus.CONFLICT)
         # the shipped edits only: the plan is imported by the user (demo-maison.sh3d) and the terrain is "fetched"
-        doc = json.loads(await hass.async_add_executor_job(_read_demo, "demo-edits.json"))
+        doc = await _demo_doc(hass, "demo-edits.json")
         VALIDATORS[KEY_EDITS](doc)
         _fire(hass, KEY_EDITS, await store.async_set(KEY_EDITS, doc), store)
         store.job = {"state": "idle"}

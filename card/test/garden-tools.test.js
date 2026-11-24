@@ -1,15 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
 import { IrrigationTools, VacuumTools, BedTools, FenceTools, GateTools, PathTools } from '../src/garden-tools.js';
+import { WHOLE } from '../src/move.js';
 
 // minimal stand-in for WorldEditors: keeps the click tool, counts the rebuilds
 const fakeEd = (edits) => ({
   edits,
   frame: 'plan',
   clickTool: null,
+  moveTool: null,
   commits: 0,
   setClickTool(t) {
     this.clickTool = t;
+    if (!t) this.moveTool = null;
   },
+  setMoveTool(t) {
+    this.moveTool = t;
+    this.clickTool = t ? { key: `move:${t.key}` } : null;
+  },
+  moving(key) {
+    return !!this.moveTool && this.moveTool.key === key;
+  },
+  fromPlan: () => (x, z) => [x, z],
   _syncPicker() {},
   commit() {
     this.commits++;
@@ -182,14 +193,20 @@ describe('gate tools', () => {
     expect(gt.placed(2)).toBe(false);
   });
 
-  it('moves a gate with a tap, even onto another fence', () => {
+  it('moves a gate by dragging its handle along the fences', () => {
     const { ed, gt } = setup();
     gt.gates.push({ id: 'a', f: 0, at: [3, 0] });
     gt.startMove(0);
-    expect(gt.mode).toBe('move');
-    ed.clickTool.draft({ ribbon() {}, dot() {} });
-    ed.clickTool.click(hit(10, 7));
+    expect(ed.moving('gate:0')).toBe(true);
+    const M = ed.moveTool;
+    expect(M.points()).toEqual([[3, 0]]);
+    M.draft({ ribbon() {}, dot() {} }, null);
+    M.move({ i: 0, x: 3, z: 0 }, 10, 7, [3, 0]); // onto the second side of the same fence
     expect(gt.gates[0]).toMatchObject({ f: 0, at: [10, 7] });
+    M.move({ i: 0, x: 10, z: 7 }, 60, 60, [10, 7]); // out of reach of every fence: left where it was
+    expect(gt.gates[0]).toMatchObject({ f: 0, at: [10, 7] });
+    M.commit();
+    expect(ed.commits).toBe(1);
     expect(gt.gates).toHaveLength(1);
   });
 
@@ -220,6 +237,21 @@ describe('gate tools', () => {
     gt._draft({ ribbon() {}, dot() {} });
   });
 
+  it('moves a point of a fence, then the whole fence', () => {
+    const { ed, ft } = setup();
+    ft.startMove(0);
+    expect(ed.moving('fence:0')).toBe(true);
+    const M = ed.moveTool;
+    expect(M.closed).toBe(false);
+    expect(M.points()).toEqual([[0, 0], [10, 0], [10, 10]]); // prettier-ignore
+    M.move({ i: 1, x: 10, z: 0 }, 12, 1, [10, 0]);
+    expect(ft.fences[0].pts).toEqual([[0, 0], [12, 1], [10, 10]]); // prettier-ignore
+    M.move({ i: WHOLE, x: 0, z: 0 }, 1, 2, [0, 0]);
+    expect(ft.fences[0].pts).toEqual([[1, 2], [13, 3], [11, 12]]); // prettier-ignore
+    M.commit();
+    expect(ed.commits).toBe(1);
+  });
+
   it('removing a fence removes its gates and shifts the others', () => {
     const { ed, ft } = setup();
     ed.edits.gates.push({ id: 'a', f: 0, at: [3, 0] }, { id: 'b', f: 1, at: [25, 0] });
@@ -230,6 +262,22 @@ describe('gate tools', () => {
 
 describe('drives and paths', () => {
   const hit = (x, z) => ({ point: { x, z } });
+
+  it('moves a point of a path, then the whole path', () => {
+    const ed = fakeEd({ paths: [{ id: 'p1', pts: [[0, 0], [4, 0]], frame: 'plan', w: 2 }] }); // prettier-ignore
+    ed.toStore = (x, z) => [x, z];
+    ed.toPlan = () => (x, z) => [x, z];
+    const pt = new PathTools(ed);
+    pt.startMove(0);
+    expect(ed.moving('path:0')).toBe(true);
+    const M = ed.moveTool;
+    M.move({ i: 0, x: 0, z: 0 }, -1, 1, [0, 0]);
+    expect(pt.paths[0].pts).toEqual([[-1, 1], [4, 0]]); // prettier-ignore
+    M.move({ i: WHOLE, x: 0, z: 0 }, 2, 0, [0, 0]);
+    expect(pt.paths[0].pts).toEqual([[1, 1], [6, 0]]); // prettier-ignore
+    M.commit();
+    expect(ed.commits).toBe(1);
+  });
   it('draws a path, edits it, extends it, draws it again', () => {
     const ed = fakeEd({ paths: [] });
     ed.toStore = (x, z) => [x, z];

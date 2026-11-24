@@ -48,12 +48,19 @@ class HouseViewStore:
         return self._data[key] is not None
 
     def get_bytes(self, key: str) -> bytes | None:
-        """Serialized document (cached until the next write), None when absent."""
+        """Serialized document, only when it is already at hand: None when absent or not serialized yet."""
+        return self._bytes[key] if self._data[key] is not None else None
+
+    async def async_get_bytes(self, hass: HomeAssistant, key: str) -> bytes | None:
+        """
+        Serialized document (cached until the next write), None when absent. A terrain is several megabytes, so it
+        is serialized in an executor rather than on the event loop.
+        """
         doc = self._data[key]
         if doc is None:
             return None
         if self._bytes[key] is None:
-            self._bytes[key] = json_bytes(doc)
+            self._bytes[key] = await hass.async_add_executor_job(json_bytes, doc)
         return self._bytes[key]
 
     async def async_set(self, key: str, doc: Any) -> str:

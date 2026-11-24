@@ -5,6 +5,7 @@ import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
 import { normalizeGate, placeGate } from './gates.js';
 import { smoothPath, headDefaults, sprinklerModel, bearing } from './irrigation.js';
 import { PATH_SURFACES, normalizePath } from './paths.js';
+import { movedPts } from './move.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -108,6 +109,27 @@ export class FenceTools {
     this.ed.commit();
   }
 
+  /** Move the points of fence `i` in the view, or the whole fence (the gates on it follow their side). */
+  startMove(i) {
+    this.draw = null;
+    this.edit = null;
+    const f = (this.fences[i] = normalizeFence(this.fences[i]));
+    const pts = () => {
+      const toPlan = this.ed.toPlan(f);
+      return f.pts.map(([x, z]) => toPlan(x, z));
+    };
+    this.ed.setMoveTool({
+      key: `fence:${i}`,
+      closed: f.closed,
+      points: pts,
+      move: (h, x, z, from) => {
+        const store = this.ed.fromPlan(f);
+        f.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
+      },
+      commit: () => this.ed.commit(),
+    });
+  }
+
   toggleHidden(i) {
     this.fences[i].hidden = !this.fences[i].hidden;
     this.ed.commit();
@@ -140,15 +162,15 @@ export class FenceTools {
 }
 
 /**
- * Gates: added with a tap on a fence (the fence opens under it by itself), moved with another tap on a fence, edited
- * and deleted from the list. Several gates can sit on the same fence, even on the same side.
+ * Gates: added with a tap on a fence (the fence opens under it by itself), moved by dragging them along the fences
+ * (startMove), edited and deleted from the list. Several gates can sit on the same fence, even on the same side.
  */
 export class GateTools {
   constructor(ed) {
     this.ed = ed;
     this.sel = null; // index of the gate unfolded in the panel
     this.demo = new Set(); // gates shown open to try the animation: ids
-    this.mode = null; // 'add' | 'move'
+    this.mode = null; // 'add' while waiting for the tap that puts a new gate on a fence
   }
 
   get gates() {
@@ -159,15 +181,15 @@ export class GateTools {
     return this.ed.edits.fences;
   }
 
-  /** The fence side nearest to a click: { f, at: [x, z] (frame of that fence) } or null. */
-  _target(hit) {
+  /** The fence side nearest to a plan point: { f, at: [x, z] (frame of that fence) } or null. */
+  _target(x, z) {
     let best = null;
     this.fences.forEach((raw, f) => {
       if (raw.hidden) return;
       const fe = normalizeFence(raw);
       const toPlan = this.ed.toPlan(raw);
       const P = fe.pts.map(([x, z]) => toPlan(x, z));
-      const n = nearestSide(P, fe.closed, hit.point.x, hit.point.z);
+      const n = nearestSide(P, fe.closed, x, z);
       if (n.i < 0 || n.d > 4 || (best && n.d >= best.d)) return;
       const [a, b] = [fe.pts[n.i], fe.pts[(n.i + 1) % fe.pts.length]];
       best = { d: n.d, f, at: [r2(a[0] + (b[0] - a[0]) * n.t), r2(a[1] + (b[1] - a[1]) * n.t)] };
@@ -184,19 +206,52 @@ export class GateTools {
     this._arm('add');
   }
 
+  /**
+   * Move gate `i`: its handle is dragged in the view and falls back on the nearest side of a fence (another fence
+   * will do: the gate changes fence). Out of reach of every fence, it stays where it was.
+   */
   startMove(i) {
     this.sel = i;
-    this._arm('move');
+    const g = (this.gates[i] = normalizeGate(this.gates[i]));
+    const place = () => {
+      const fe = this.fences[g.f];
+      const toPlan = this.ed.toPlan(fe || {});
+      return fe ? [toPlan(g.at[0], g.at[1])] : [];
+    };
+    this.ed.setMoveTool({
+      key: `gate:${i}`,
+      whole: false,
+      points: place,
+      move: (h, x, z) => {
+        const tg = this._target(x, z);
+        if (tg) Object.assign(g, { f: tg.f, at: tg.at });
+      },
+      draft: (d, grab) => {
+        this._draftFences(d);
+        const P = place();
+        if (P.length) d.dot(P[0][0], P[0][1], grab ? '#ffe14d' : '#4cd964');
+      },
+      commit: () => this.ed.commit(),
+    });
+  }
+
+  /** The fences on the ground, to see where a gate may be put. */
+  _draftFences(d) {
+    this.fences.forEach((raw) => {
+      if (raw.hidden) return;
+      const fe = normalizeFence(raw);
+      const toPlan = this.ed.toPlan(raw);
+      const P = fe.pts.map(([x, z]) => toPlan(x, z));
+      const n = fe.closed ? P.length : P.length - 1;
+      for (let k = 0; k < n; k++) d.ribbon([P[k], P[(k + 1) % P.length]], '#7b8a95', 0.12);
+    });
   }
 
   _click(hit) {
-    const tg = this._target(hit);
+    const tg = this._target(hit.point.x, hit.point.z);
     if (!tg) return;
-    if (this.mode === 'move' && this.gates[this.sel]) Object.assign(this.gates[this.sel], { f: tg.f, at: tg.at });
-    else {
-      this.gates.push(normalizeGate({ id: uid('g'), f: tg.f, at: tg.at }));
-      this.sel = this.gates.length - 1;
-    }
+    this.gates.push(normalizeGate({ id: uid('g'), f: tg.f, at: tg.at }));
+    this.sel = this.gates.length - 1;
     this.cancel(false);
     this.ed.commit();
   }
@@ -428,6 +483,25 @@ export class PathTools {
   select(i) {
     this.sel = this.sel === i ? null : i;
     this.ed.onChange(false);
+  }
+
+  /** Move the points of path `i` in the view, or the whole path. */
+  startMove(i) {
+    this.draw = null;
+    const p = (this.paths[i] = normalizePath(this.paths[i]));
+    const pts = () => {
+      const toPlan = this.ed.toPlan(p);
+      return p.pts.map(([x, z]) => toPlan(x, z));
+    };
+    this.ed.setMoveTool({
+      key: `path:${i}`,
+      points: pts,
+      move: (h, x, z, from) => {
+        const store = this.ed.fromPlan(p);
+        p.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
+      },
+      commit: () => this.ed.commit(),
+    });
   }
 
   /** Change width / surface / kerbs / name of path i. */

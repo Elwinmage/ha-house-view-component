@@ -107,7 +107,10 @@ export class HouseEngine {
     this.controls.maxZoom = 9;
     this.controls.screenSpacePanning = false;
     this.picker = null; // editor click handler: takes over the clicks (and keeps the orbit controls usable)
-    this.treeMode = 'off'; // 'delete' shows crown markers in the world
+    // handles of the move tool of an editor, dragged on the ground: { pick(ev), y(h), start(h, x, z), move(h, x,
+    // z), tap(h), end(h) }. A press that misses every handle is left alone (the camera turns as usual).
+    this.moveGrab = null;
+    this.treeMode = 'off'; // 'delete' and 'move' show crown markers in the world
     this.layer = 'none'; // 'none' | 'temp'
     this.onLoaded = null; // called after every (re)build of the world
     this._hovered = null;
@@ -147,6 +150,10 @@ export class HouseEngine {
     el.addEventListener('pointerdown', (ev) => this._zoneDown(ev), true);
     el.addEventListener('pointermove', (ev) => this._zoneMove(ev), true);
     el.addEventListener('pointerup', (ev) => this._zoneUp(ev), true);
+    // handles of the move tool, dragged the same way (editors.js installs `moveGrab`)
+    el.addEventListener('pointerdown', (ev) => this._grabDown(ev), true);
+    el.addEventListener('pointermove', (ev) => this._grabMove(ev), true);
+    el.addEventListener('pointerup', (ev) => this._grabUp(ev), true);
     el.addEventListener('pointerdown', (ev) => (this._down = [ev.clientX, ev.clientY]));
     el.addEventListener('pointerup', (ev) => this._click(ev));
     el.addEventListener('pointermove', (ev) => this._hover(ev));
@@ -458,9 +465,14 @@ export class HouseEngine {
     if (w.terrain) for (const g of w.veg.group.children) g.position.y = w.terrain.heightAt(g.position.x, g.position.z);
     root.add(w.veg.group);
 
-    if (this.treeMode === 'delete') {
-      // red markers on the crowns: click one to delete that tree
-      const mk = new THREE.MeshBasicMaterial({ color: '#ff3b30', depthTest: false, transparent: true, opacity: 0.9 });
+    if (this.treeMode === 'delete' || this.treeMode === 'move') {
+      // markers on the crowns: click one to delete that tree (red), or take it to move it (green)
+      const mk = new THREE.MeshBasicMaterial({
+        color: this.treeMode === 'move' ? '#4cd964' : '#ff3b30',
+        depthTest: false,
+        transparent: true,
+        opacity: 0.9,
+      });
       const geo = new THREE.SphereGeometry(0.4, 10, 8);
       w.veg.group.children.forEach((g, i) => {
         const m = new THREE.Mesh(geo, mk);
@@ -1412,6 +1424,51 @@ export class HouseEngine {
     this._down = null; // not a click
     this._updateControls();
     this.zoneDrag.end(id);
+  }
+
+  /** Pointer in the coordinates of `project` (pixels in the canvas). */
+  pointerAt(ev) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return [ev.clientX - r.left, ev.clientY - r.top];
+  }
+
+  /**
+   * A handle of the move tool taken under the pointer: it then travels on the horizontal plane it was taken on,
+   * the orbit controls held back until it is dropped. A press that does not move is a tap: the handle stays taken
+   * and the next click drops it (touch screens, and fine adjustments).
+   */
+  _grabDown(ev) {
+    if (!this.moveGrab || ev.button !== 0 || !this.world) return;
+    const h = this.moveGrab.pick(ev);
+    if (!h) return;
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.moveGrab.y(h));
+    const hit = this.rayAt(ev).ray.intersectPlane(plane, new THREE.Vector3());
+    if (!hit) return;
+    this._mg = { h, plane, down: [ev.clientX, ev.clientY] };
+    this.controls.enabled = false;
+    this.renderer.domElement.setPointerCapture(ev.pointerId);
+    ev.stopImmediatePropagation();
+    this.moveGrab.start(h, hit.x, hit.z);
+  }
+
+  _grabMove(ev) {
+    if (!this._mg || !this.moveGrab) return;
+    ev.stopImmediatePropagation();
+    const hit = this.rayAt(ev).ray.intersectPlane(this._mg.plane, new THREE.Vector3());
+    if (hit) this.moveGrab.move(this._mg.h, hit.x, hit.z);
+  }
+
+  _grabUp(ev) {
+    if (!this._mg) return;
+    if (!this.moveGrab) return void (this._mg = null); // the tool was left mid-drag
+    ev.stopImmediatePropagation();
+    const { h, down } = this._mg;
+    this._mg = null;
+    if (this.renderer.domElement.hasPointerCapture(ev.pointerId)) this.renderer.domElement.releasePointerCapture(ev.pointerId);
+    this._updateControls();
+    if (Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) <= 4) return this.moveGrab.tap(h);
+    this._down = null; // a drag, not a click: the click handlers are left out of it
+    this.moveGrab.end(h);
   }
 
   /** Doors and windows: { openingKey: { open: 0..1, shutter: closed fraction or null } }; they move to it. */

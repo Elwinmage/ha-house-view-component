@@ -8,6 +8,9 @@ backup. A restore can go back to any of them: every file as it was at that commi
 
 Nothing here runs on its own: backups and restores only happen when the user asks for them in the card.
 
+A backup never removes anything: a document the home no longer holds stays in the repository. `forget` drops such a
+file when the user asks for it; the commits are kept, so an older backup still restores it.
+
 A backup writes one commit per file: each one is written on its own, so that a file GitHub refuses does not keep the
 following ones from being saved, and the result says what was written, what was already up to date and what failed.
 Two commits in a row on the same branch can collide (GitHub 409 / 422): the sha is read again and the file written
@@ -67,10 +70,15 @@ def backups_of(commits: list[dict[str, Any]], gap: int = BACKUP_GAP) -> list[dic
     return out
 
 
-def sync_state(local: dict[str, bytes | None], remote: dict[str, str | None] | None) -> dict[str, str] | None:
+def sync_state(
+    local: dict[str, bytes | None],
+    remote: dict[str, str | None] | None,
+    optional: tuple[str, ...] = (),
+) -> dict[str, str] | None:
     """
     Each document compared with GitHub: same | changed (both differ) | local (not on GitHub) | remote (only on
-    GitHub). Documents in neither are left out. None when the GitHub side is not known yet.
+    GitHub) | spare (only on GitHub, and this home may do without it: the backup simply keeps it, see OPTIONAL_KEYS).
+    Documents in neither are left out. None when the GitHub side is not known yet.
     """
     if remote is None:
         return None
@@ -80,7 +88,9 @@ def sync_state(local: dict[str, bytes | None], remote: dict[str, str | None] | N
         if content is None and theirs is None:
             continue
         if content is None:
-            out[key] = "remote"
+            # a document the home does not hold on purpose (the ground texture) is not a difference: the home was
+            # set up without it, or it was removed here, and the repository keeps the copy until it is dropped
+            out[key] = "spare" if key in optional else "remote"
         elif theirs is None:
             out[key] = "local"
         else:
@@ -195,14 +205,38 @@ class GitHubBackup:
                 failed[key] = str(err)
         return {"written": written, "unchanged": unchanged, "failed": failed}
 
-    async def restore(self, keys: tuple[str, ...], ref: str | None = None) -> dict[str, Any]:
+    async def _del(self, key: str, sha: str) -> None:
+        body = {"message": f"House View: remove {key}", "branch": self.branch, "sha": sha}
+        await self._call("DELETE", f"{API}/repos/{self.repo}/contents/{self._file(key)}", json=body)
+
+    async def forget(self, key: str) -> bool:
         """
-        Documents found in the repository (missing files are skipped): as they are on the branch, or as they were at
-        the commit `ref` (a backup of the history).
+        Drop one document from the branch; True when there was a file to drop. The commits are kept, so a restore
+        from an older backup brings it back.
+        """
+        sha = await self._remote_sha(key)
+        if sha is None:
+            return False
+        try:
+            await self._del(key, sha)
+        except GitHubError as err:
+            if not err.conflict:
+                raise
+            sha = await self._remote_sha(key)
+            if sha is None:  # another commit removed it in the meantime
+                return False
+            await self._del(key, sha)
+        return True
+
+    async def restore(self, keys: tuple[str, ...], ref: str | None = None) -> dict[str, bytes]:
+        """
+        Documents found in the repository, still as bytes (missing files are skipped): as they are on the branch, or
+        as they were at the commit `ref` (a backup of the history). A document is several megabytes, so the caller
+        parses them away from the event loop.
         """
         if ref is not None and not REF.match(ref):
             raise ValueError("ref must be a commit id")
-        out: dict[str, Any] = {}
+        out: dict[str, bytes] = {}
         for key in keys:
             status, body = await self._call(
                 "GET",
@@ -211,8 +245,9 @@ class GitHubBackup:
                 params={"ref": ref or self.branch},
             )
             if status == 200:
-                try:
-                    out[key] = json.loads(body)
-                except ValueError as err:
-                    raise GitHubError(f"{self._file(key)} is not valid JSON") from err
+                out[key] = body
         return out
+
+    def file_of(self, key: str) -> str:
+        """Path of a document in the repository, to name it in an error."""
+        return self._file(key)

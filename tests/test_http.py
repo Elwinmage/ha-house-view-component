@@ -247,8 +247,10 @@ async def test_serialized_form_is_cached_and_refreshed(hass, hass_client, hass_a
     client = await _setup(hass, hass_client, hass_admin_user)
     await client.post("/api/house_view/scene", json=SCENE)
     store = next(iter(hass.data[DOMAIN].values()))
-    first = store.get_bytes("scene")
-    assert store.get_bytes("scene") is first  # cached
+    assert store.get_bytes("scene") is None  # not serialized yet: nothing is encoded on the event loop
+    first = await store.async_get_bytes(hass, "scene")
+    assert await store.async_get_bytes(hass, "scene") is first  # cached
+    assert store.get_bytes("scene") is first  # and then at hand, without an executor
     other = {"levels": [{"id": "l1", "elevation": 2.5, "rooms": []}]}
     await client.post("/api/house_view/scene", json=other)
     assert await (await client.get("/api/house_view/scene")).json() == other

@@ -145,6 +145,32 @@ export const FRONDS = 9;
  * The crown of a palm: a tuft at the top of the trunk and fronds that leave it, rise a little and droop at their tip
  * (each one two flat blobs along its length, turned about the vertical axis by `yaw`).
  */
+/**
+ * A column of foliage, barely narrower at the foot than at the middle and rounded off at the top: a yew, a
+ * cypress, a thuja, an Italian poplar. Nothing like the stacked cones of a fir, which taper all the way down.
+ * [height of the centre, width, height of the blob], as shares of the span the foliage covers.
+ */
+const COLUMN_TIERS = [
+  [0.09, 0.86, 0.16],
+  [0.28, 1, 0.17],
+  [0.46, 1, 0.17],
+  [0.63, 0.95, 0.16],
+  [0.77, 0.82, 0.14],
+  [0.88, 0.6, 0.11],
+  [0.95, 0.3, 0.06],
+];
+
+function columnSolids(top, radius, bottom) {
+  // the foliage of a column comes down almost to the ground, the trunk hardly showing
+  const foot = Math.min(bottom * 0.4, top * 0.06);
+  const span = top - foot;
+  return COLUMN_TIERS.map(([t, w, h]) => ({
+    kind: 'blob',
+    at: [0, foot + span * t, 0],
+    size: [radius * w, span * h, radius * w],
+  }));
+}
+
 function palmSolids(top, radius, bottom) {
   const span = Math.max(0.5, top - bottom);
   const t = Math.min(span, radius * 0.8);
@@ -164,8 +190,8 @@ function palmSolids(top, radius, bottom) {
 
 /**
  * The solids of a full crown, for a tree of the default height: blobs `{ kind: 'blob', at: [x, y, z], size: [rx, ry,
- * rz] }` filling the box between the top of the trunk and the top of the tree for a round shape, stacked cones
- * `{ kind: 'cone', at: base centre, size: [radius, height] }` for a conical one.
+ * rz] }` filling the box between the top of the trunk and the top of the tree for a round shape, a stack of them
+ * for a columnar one, and cones `{ kind: 'cone', at: base centre, size: [radius, height] }` for a conical one.
  */
 export function crownSolids(tree) {
   const top = tree.height.default;
@@ -181,6 +207,7 @@ export function crownSolids(tree) {
       size: [(r * radius) / reach, (r * half) / reach, (r * radius) / reach],
     }));
   }
+  if (tree.shape === 'columnar') return columnSolids(top, radius, bottom);
   if (tree.shape === 'weeping') return weepingSolids(top, radius, bottom);
   if (tree.shape === 'palm') return palmSolids(top, radius, bottom);
   const step = (2 * half) / TIERS;
@@ -241,7 +268,7 @@ export function varietyTree(tree, variety) {
 }
 
 /** Shapes of crown the engine draws. */
-export const SHAPES_OF_TREES = ['round', 'conical', 'weeping', 'palm'];
+export const SHAPES_OF_TREES = ['round', 'conical', 'columnar', 'weeping', 'palm'];
 
 /** A descriptor the engine can draw: the fields the geometry reads are there (an entry of a newer format is skipped). */
 export function drawableTree(tree) {

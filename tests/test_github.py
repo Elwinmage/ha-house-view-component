@@ -12,7 +12,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.house_view import _async_options_updated, ign
-from custom_components.house_view.const import DOMAIN
+from custom_components.house_view.const import DOMAIN, KEYS, OPTIONAL_KEYS
 from custom_components.house_view.github import API, GitHubBackup, GitHubError, backups_of, blob_sha, sync_state
 from custom_components.house_view.http import _backup_message
 
@@ -93,12 +93,14 @@ async def test_restore_check_and_errors(hass, aioclient_mock):
     gh = GitHubBackup(session, REPO, "t0k", path="")
     aioclient_mock.get(f"{API}/repos/{REPO}/contents/scene.json", text=json.dumps(SCENE))
     aioclient_mock.get(f"{API}/repos/{REPO}/contents/terrain.json", status=404)
-    assert await gh.restore(("scene", "terrain")) == {"scene": SCENE}
+    got = await gh.restore(("scene", "terrain"))  # raw bytes: the view parses them off the event loop
+    assert {k: json.loads(v) for k, v in got.items()} == {"scene": SCENE}
+    assert gh.file_of("scene") == "scene.json"
 
+    # a file that is not JSON comes back as it is; the view is the one that refuses it (see the restore view)
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{API}/repos/{REPO}/contents/scene.json", text="not json")
-    with pytest.raises(GitHubError, match="not valid JSON"):
-        await gh.restore(("scene",))
+    assert await gh.restore(("scene",)) == {"scene": b"not json"}
 
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{API}/repos/{REPO}", json={"private": True})
@@ -199,7 +201,8 @@ async def test_github_view(hass, hass_client, hass_admin_user, aioclient_mock):
     aioclient_mock.get(f"{CONTENTS}/scene.json", status=403, json={"message": "Resource not accessible"})
     assert (await client.post("/api/house_view/github", json={"action": "restore"})).status == 502
     assert (await client.post("/api/house_view/github", json={"action": "push"})).status == 400
-    assert (await client.post("/api/house_view/github", data=b"[1]")).status == 400
+    assert (await client.post("/api/house_view/github", data=b"[1]")).status == 400  # JSON, but not an object
+    assert (await client.post("/api/house_view/github", data=b"not json")).status == 400
 
 
 async def test_fetch_view(hass, hass_client, hass_admin_user, monkeypatch):
@@ -223,7 +226,7 @@ async def test_fetch_view(hass, hass_client, hass_admin_user, monkeypatch):
     assert r.status == 202
     assert (await client.post("/api/house_view/fetch", json=body)).status == 409  # already running
     gate.set()
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)  # the fetch runs in the background
     st = await (await client.get("/api/house_view/fetch")).json()
     assert st == {"state": "done", "step": None, "message": "ok"}
     info = await (await client.get("/api/house_view/info")).json()
@@ -231,10 +234,10 @@ async def test_fetch_view(hass, hass_client, hass_admin_user, monkeypatch):
     assert info["has_ortho"]
 
     await client.post("/api/house_view/fetch", json=body)  # second run without texture: the old one goes
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert not (await (await client.get("/api/house_view/info")).json())["has_ortho"]
     await client.post("/api/house_view/fetch", json=body)  # nothing to remove this time
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert (await (await client.get("/api/house_view/fetch")).json())["message"] == "again"
 
 
@@ -250,7 +253,7 @@ async def test_fetch_view_errors(hass, hass_client, hass_admin_user, monkeypatch
 
     monkeypatch.setattr(ign, "fetch_all", failing)
     await client.post("/api/house_view/fetch", json={"lat": 43.4, "lon": 1.3, "center": [0, 0], "provider": "ign"})
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     st = await (await client.get("/api/house_view/fetch")).json()
     assert st["state"] == "error"
     assert st["message"] == message
@@ -346,6 +349,16 @@ def test_sync_state_compares_each_document():
     assert sync_state(local, None) is None
 
 
+def test_sync_state_keeps_an_optional_document_left_on_github():
+    """The home was set up without a ground texture: the copy GitHub keeps is not a difference to warn about."""
+    a = b'{"a": 1}'
+    remote = {"scene": blob_sha(a), "ortho": "x"}
+    local = {"scene": a, "ortho": None}
+    assert sync_state(local, remote, OPTIONAL_KEYS) == {"scene": "same", "ortho": "spare"}
+    # the same document missing from a home that is not meant to do without it is still a difference
+    assert sync_state({"terrain": None}, {"terrain": "x"}, OPTIONAL_KEYS) == {"terrain": "remote"}
+
+
 async def test_remote_history_and_restore_at_a_backup(hass, aioclient_mock):
     session = aioclient_mock.create_session(hass.loop)
     gh = GitHubBackup(session, REPO, "t0k", path="house_view")
@@ -369,7 +382,8 @@ async def test_remote_history_and_restore_at_a_backup(hass, aioclient_mock):
 
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{CONTENTS}/scene.json", text=json.dumps(SCENE))
-    assert await gh.restore(("scene",), "abc1234") == {"scene": SCENE}
+    got = await gh.restore(("scene",), "abc1234")
+    assert {k: json.loads(v) for k, v in got.items()} == {"scene": SCENE}
     assert aioclient_mock.mock_calls[-1][1].query["ref"] == "abc1234"  # as it was at that backup
     with pytest.raises(ValueError, match="commit id"):
         await gh.restore(("scene",), "main; rm")
@@ -440,6 +454,15 @@ async def test_github_status_history_and_restore_views(hass, hass_client, hass_a
     assert await (await client.get("/api/house_view/scene")).json() == old
     assert store.remote is None
 
+    # a file of the repository that is not a document: refused, and the file is named
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", text="not json")
+    for k in ("terrain", "edits", "ortho"):
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    r = await client.post("/api/house_view/github", json={"action": "restore"})
+    assert r.status == 502
+    assert "house_view/scene.json" in (await r.json())["message"]
+
     # a ref that is not a commit id, or with another action: refused before calling GitHub
     for bad in (
         {"action": "restore", "ref": "main"},
@@ -462,3 +485,91 @@ async def test_github_unreadable_stays_unknown(hass, hass_client, hass_admin_use
     await hass.async_block_till_done()
     assert hass.data[DOMAIN][entry.entry_id].remote is None
     assert (await (await client.get("/api/house_view/info")).json())["github_sync"] is None
+
+
+async def test_forget_gives_up_on_any_other_error(hass, aioclient_mock):
+    """A collision is retried; anything else is not, and says so."""
+    session = aioclient_mock.create_session(hass.loop)
+    gh = GitHubBackup(session, REPO, "t0k", path="house_view")
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", json={"sha": "o1"})
+    aioclient_mock.delete(f"{CONTENTS}/ortho.json", status=500, json={"message": "boom"})
+    with pytest.raises(GitHubError, match="500"):
+        await gh.forget("ortho")
+    await session.close()
+
+
+async def test_forget_stops_when_another_commit_got_there_first(hass, monkeypatch):
+    """The file collided, and by the time its sha is read again it is already gone: nothing left to drop."""
+    gh = GitHubBackup(None, REPO, "t0k", path="house_view")
+    shas = ["o1", None]
+
+    async def remote_sha(_key):
+        return shas.pop(0)
+
+    async def collide(_key, _sha):
+        raise GitHubError("GitHub 409: conflict", 409)
+
+    monkeypatch.setattr(gh, "_remote_sha", remote_sha)
+    monkeypatch.setattr(gh, "_del", collide)
+    assert await gh.forget("ortho") is False
+    assert not shas
+
+
+async def test_forget_drops_a_file_and_retries_a_collision(hass, aioclient_mock):
+    session = aioclient_mock.create_session(hass.loop)
+    gh = GitHubBackup(session, REPO, "t0k", path="house_view")
+
+    # nothing to drop
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", status=404)
+    assert await gh.forget("ortho") is False
+
+    # two commits in a row collide: the sha is read again and the file dropped once more
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", json={"sha": "o1"})
+    aioclient_mock.delete(f"{CONTENTS}/ortho.json", status=409, json={"message": "conflict"})
+    with pytest.raises(GitHubError):
+        await gh.forget("ortho")  # the second delete fails too
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", json={"sha": "o1"})
+    aioclient_mock.delete(f"{CONTENTS}/ortho.json", json={})
+    assert await gh.forget("ortho") is True
+    assert aioclient_mock.mock_calls[-1][2]["sha"] == "o1"
+    await session.close()
+
+
+async def test_github_keeps_then_forgets_an_optional_document(hass, hass_client, hass_admin_user, aioclient_mock):
+    """A home without a ground texture: GitHub keeps its copy without the card calling it a difference."""
+    entry, client = await _setup(hass, hass_client, OPTIONS)
+    store = hass.data[DOMAIN][entry.entry_id]
+    await client.post("/api/house_view/scene", json=SCENE)
+
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": blob_sha(json_bytes(SCENE))})
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", json={"sha": "o1"})
+    for k in ("terrain", "edits"):
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    body = await (await client.post("/api/house_view/github", json={"action": "status"})).json()
+    assert body["sync"] == {"scene": "same", "ortho": "spare"}
+
+    # dropped from the repository when the user asks for it
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/ortho.json", json={"sha": "o1"})
+    aioclient_mock.delete(f"{CONTENTS}/ortho.json", json={})
+    body = await (await client.post("/api/house_view/github", json={"action": "forget", "key": "ortho"})).json()
+    assert body["removed"] is True
+    assert body["sync"] == {"scene": "same"}
+    assert store.remote["ortho"] is None
+
+    # nothing read from GitHub yet: the file is dropped all the same, and the comparison is read in the background
+    store.remote = None
+    aioclient_mock.clear_requests()
+    for k in KEYS:
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    body = await (await client.post("/api/house_view/github", json={"action": "forget", "key": "ortho"})).json()
+    assert body["removed"] is False
+    assert "nothing to remove" in body["message"]
+    await hass.async_block_till_done()
+
+    # a document stored here is never dropped, and the key must be one of the documents
+    assert (await client.post("/api/house_view/github", json={"action": "forget", "key": "scene"})).status == 409
+    assert (await client.post("/api/house_view/github", json={"action": "forget", "key": "nope"})).status == 400
+    assert (await client.post("/api/house_view/github", json={"action": "forget"})).status == 400

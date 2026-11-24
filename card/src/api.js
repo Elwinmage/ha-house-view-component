@@ -41,13 +41,18 @@ export function errorReason(message) {
   }
 }
 
+/** States that need nothing: the document matches the backup, or the backup keeps one the home does without. */
+export const SETTLED = ['same', 'spare'];
+
 /**
- * The documents compared with the GitHub backup (`sync` of the integration: { key: same | changed | local | remote }):
- * 'differs' when one of them is not the same, 'same', or null while it is not known (no backup set up, not read yet).
+ * The documents compared with the GitHub backup (`sync` of the integration: { key: same | changed | local | remote
+ * | spare }): 'differs' when one of them needs attention, 'same', or null while it is not known (no backup set up,
+ * not read yet). 'spare' is the ground texture the home was set up without: the repository keeps its copy, which
+ * is not a difference to warn about.
  */
 export function githubState(sync) {
   if (!sync || typeof sync !== 'object') return null;
-  return Object.values(sync).some((v) => v !== 'same') ? 'differs' : 'same';
+  return Object.values(sync).some((v) => !SETTLED.includes(v)) ? 'differs' : 'same';
 }
 
 export class HouseViewApi {
@@ -217,10 +222,11 @@ export class HouseViewApi {
 
   /**
    * GitHub backup, only on a request of the user: action = 'backup' | 'restore' (`ref`: a backup of the history,
-   * the last one without it) | 'history' (the backups) | 'status' (the documents compared with GitHub).
+   * the last one without it) | 'history' (the backups) | 'status' (the documents compared with GitHub) | 'forget'
+   * (`key`: a document this home no longer holds, dropped from the repository).
    */
-  github(action, ref = undefined) {
-    return this._send('github', 'POST', ref ? { action, ref } : { action });
+  github(action, ref = undefined, key = undefined) {
+    return this._send('github', 'POST', { action, ...(ref ? { ref } : {}), ...(key ? { key } : {}) });
   }
 
   _send(path, method, body) {

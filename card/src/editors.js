@@ -7,6 +7,7 @@ import { gridToPlan, planToGrid, houseParcel } from './engine/terrain.js';
 import { unionOutline, inPoly } from './parcels.js';
 import { normalizeScene } from './engine/scene-model.js';
 import { emptyEdits } from './engine/edits.js';
+import { GRAB_PX, WHOLE, handlesOf, movedPts, nearestHandle } from './move.js';
 
 const round = (v, n) => Math.round(v * n) / n;
 const ringArea = (r) => r.reduce((a, p, i) => a + p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1], 0) / 2;
@@ -26,6 +27,7 @@ export class WorldEditors {
     this.selOp = -1;
     this.history = []; // undo stack of the tree editor
     this.clickTool = null; // generic one-at-a-time click tool of a feature editor: { key, click(hit, ev), draft?(d), wall?, furniture? }
+    this.move = null; // move tool in use: { spec, grab (the handle taken, null), from ([x, z] where it was taken) }
     this.placing = null; // entity id waiting for its position (next click)
     this.parcelSel = null; // Set of parcel indexes while choosing the parcels of the property
     this.section = null; // { d, ground0, ground, surf, wall } of the last cross-section
@@ -49,6 +51,7 @@ export class WorldEditors {
     if (keep !== 'tree') {
       this.treeMode = 'off';
       this.engine.treeMode = 'off';
+      this._treeMove = null;
     }
     if (keep !== 'tool') {
       this.tool.mode = 'off';
@@ -107,6 +110,120 @@ export class WorldEditors {
     this.onChange(false);
   }
 
+  // ------------------------------------------------------------ moving points and whole objects
+
+  /**
+   * Move tool of a feature editor: the points of the object become handles that are dragged in the view (the orbit
+   * controls are held back during the drag), with one more handle in the middle that moves the object as a whole.
+   * A press that does not move takes the handle instead, and the next click drops it: touch screens, and a point
+   * put exactly where another click tool would put it.
+   *
+   * spec = {
+   *   key,                     // name of the tool, to leave it or tell it from another one
+   *   points(),                // the handles, in plan coordinates: [[x, z], ...]
+   *   move(h, x, z, from),     // the handle `h` ({ i, x, z }, i = WHOLE for the object) moved to a plan point;
+   *                            // `from` is where it was taken, for an object moved as a whole
+   *   commit(),                // rebuild the world and save: called when the handle is dropped
+   *   whole,                   // false: no handle for the object as a whole (one point, or points of their own)
+   *   closed,                  // the outline drawn between the points is a loop
+   *   draft(d, grab),          // optional: draw the overlay in place of the outline and its handles
+   *   pickAt(h),               // optional: height a handle is seen at, when it is not on the ground
+   *   leave(),                 // optional: called when the tool is left, to put back what it changed
+   * }
+   */
+  setMoveTool(spec) {
+    if (!spec) return this.setClickTool(null);
+    // installed first: leaving the tool that was in use clears `move` and `moveGrab`, which are set right after
+    this.setClickTool({
+      key: `move:${spec.key}`,
+      // the handles are taken by the drag; a click on the view drops the one that was tapped
+      pick: (ev) => this.engine.pickPoint(ev),
+      click: (hit) => {
+        if (!this.move || !this.move.grab || !hit) return;
+        this._moveTo(this.move.grab, hit.point.x, hit.point.z);
+        this._drop();
+      },
+      draft: (d) => this._moveDraft(d),
+      leave: () => {
+        this.engine.moveGrab = null;
+        this.move = null;
+        if (spec.leave) spec.leave();
+      },
+    });
+    this.move = { spec, grab: null, from: null };
+    this.engine.moveGrab = {
+      pick: (ev) => (this.move && !this.move.grab ? this._handleAt(ev) : null),
+      y: (h) => this._handleY(h),
+      start: (h) => this._grab(h),
+      move: (h, x, z) => this._moveTo(h, x, z),
+      tap: () => this.onChange(false), // the handle stays taken: the next click drops it
+      end: () => this._drop(),
+    };
+    this.drawDraft();
+  }
+
+  /** The move tool `key` is the one in use. */
+  moving(key) {
+    return !!this.move && this.move.spec.key === key && !!this.clickTool && this.clickTool.key === `move:${key}`;
+  }
+
+  _handles() {
+    const sp = this.move.spec;
+    return handlesOf(sp.points(), sp.whole !== false);
+  }
+
+  /** Height of a handle: the ground under it, where the drag plane sits. */
+  _handleY(h) {
+    const w = this.engine.world;
+    return w ? w.groundAt(h.x, h.z) : 0;
+  }
+
+  _handleAt(ev) {
+    const [sx, sy] = this.engine.pointerAt(ev);
+    const sp = this.move.spec;
+    const at = (h) => this.engine.project(h.x, sp.pickAt ? sp.pickAt(h) : this._handleY(h), h.z);
+    return nearestHandle(this._handles(), at, sx, sy, GRAB_PX);
+  }
+
+  _grab(h) {
+    this.move.grab = h;
+    this.move.from = [h.x, h.z];
+    this.drawDraft();
+    this.onChange(false);
+  }
+
+  /** The handle taken follows the pointer: only the overlay is redrawn, the world waits for the drop. */
+  _moveTo(h, x, z) {
+    const M = this.move;
+    if (!M) return;
+    M.spec.move(h, x, z, M.from);
+    M.from = [x, z];
+    M.grab = { ...h, x, z };
+    this.drawDraft();
+  }
+
+  _drop() {
+    const M = this.move;
+    if (!M) return;
+    M.grab = null;
+    M.from = null;
+    M.spec.commit();
+  }
+
+  /** Overlay of the move tool: the outline, a dot per handle, the one taken lit up and bigger. */
+  _moveDraft(d) {
+    const M = this.move;
+    if (!M) return;
+    const grab = M.grab;
+    if (M.spec.draft) return M.spec.draft(d, grab);
+    const pts = M.spec.points();
+    if (pts.length > 1) d.ribbon(M.spec.closed ? [...pts, pts[0]] : pts, '#7b8a95', 0.12);
+    for (const h of this._handles()) {
+      const on = grab && grab.i === h.i;
+      d.dot(h.x, h.z, on ? '#ffe14d' : h.i === WHOLE ? '#4cd964' : '#ffffff');
+    }
+  }
+
   get frame() {
     return this.cfg ? 'grid' : 'plan';
   }
@@ -120,6 +237,15 @@ export class WorldEditors {
   /** Converter of the stored points of garden object `o` to plan coordinates. */
   toPlan(o) {
     return this.engine.world.anchor(o);
+  }
+
+  /** The other way round: plan coordinates to the frame `o` is stored in (its own, which may not be the current one). */
+  fromPlan(o) {
+    const grid = o && o.frame !== 'plan' && this.cfg ? planToGrid(this.cfg.data, this.cfg) : null;
+    return (x, z) => {
+      const q = grid ? grid(x, z) : [x, z];
+      return [round(q[0], 100), round(q[1], 100)];
+    };
   }
 
   /** Rebuild the world and save (for feature editors). */
@@ -155,6 +281,7 @@ export class WorldEditors {
   }
 
   setTreeMode(m) {
+    if (m === 'move') return this.startTreeMove();
     this._exclusive('tree');
     this.treeMode = m;
     this.engine.treeMode = m;
@@ -178,6 +305,77 @@ export class WorldEditors {
   treeReset() {
     this.edits.trees = emptyEdits().trees;
     this.history.length = 0;
+    this._commit();
+  }
+
+  /**
+   * Move the trees in the view: every tree is taken by its crown. One added by hand simply moves; one that comes
+   * from the height model or from the plan is taken off and an equal one put at the new place — those trees are
+   * not stored in the edits, so that is the only way to move them (and `treeUndo` puts it all back).
+   */
+  startTreeMove() {
+    this._treeMove = null;
+    const trees = () => (this.engine.world ? this.engine.world.trees : []);
+    const crown = (t) => SPECIES[t.species].height * 0.8 * (t.scale || 1);
+    this.setMoveTool({
+      key: 'trees',
+      whole: false,
+      points: () => trees().map((t) => [t.at[0], t.at[1]]),
+      pickAt: (h) => {
+        const t = trees()[h.i];
+        return this._handleY(h) + (t ? crown(t) : 0);
+      },
+      move: (h, x, z) => {
+        const t = trees()[h.i];
+        if (!t) return;
+        t.at = [round(x, 10), round(z, 10)]; // the copy of the world, so the handle follows the pointer
+        this._treeMove = { src: t._src, species: t.species, scale: t.scale, at: t.at };
+      },
+      draft: (d, grab) => {
+        const t = grab ? trees()[grab.i] : null;
+        if (t) d.dot(t.at[0], t.at[1], '#ffe14d');
+      },
+      commit: () => this._dropTree(),
+      leave: () => {
+        this.treeMode = 'off';
+        this.engine.treeMode = 'off';
+        this._treeMove = null;
+        this.engine.commit();
+      },
+    });
+    // after the click tool is installed, which leaves every tree mode: the markers are part of the world
+    this.treeMode = 'move';
+    this.engine.treeMode = 'move';
+    this.engine.commit();
+    this._syncPicker();
+  }
+
+  _dropTree() {
+    const M = this._treeMove;
+    this._treeMove = null;
+    if (!M) return;
+    const added = this.edits.trees.added;
+    const rem = this.edits.trees.removed;
+    const at = [round(M.at[0], 10), round(M.at[1], 10)];
+    if (M.src.kind === 'added') {
+      const a = added[M.src.idx];
+      if (!a) return;
+      const was = a.at;
+      a.at = at;
+      this.history.push(() => {
+        a.at = was;
+      });
+    } else {
+      // a tree of the height model or of the plan: taken off there, put back here as a tree of its own
+      if (M.src.kind === 'dsm') rem.dsm.push([M.src.gx, M.src.gz]);
+      else rem.sd.push(M.src.idx);
+      added.push({ species: M.species, at, h: round((M.scale || 1) * SPECIES[M.species].height, 10) });
+      this.history.push(() => {
+        added.pop();
+        if (M.src.kind === 'dsm') rem.dsm.pop();
+        else rem.sd.pop();
+      });
+    }
     this._commit();
   }
 
@@ -344,6 +542,31 @@ export class WorldEditors {
   selectOp(i) {
     this.selOp = i;
     this.drawDraft();
+  }
+
+  /** Move the points of ground correction `i` in the view, or the whole correction (a brush is a single point). */
+  startOpMove(i) {
+    const op = this.edits.terrain[i];
+    if (!op || !this.cfg) return;
+    const key = op.type === 'wall' ? 'pts' : op.type === 'terrace' ? 'poly' : null;
+    const pts = () => {
+      const g2p = gridToPlan(this.cfg.data, this.cfg);
+      return key ? op[key].map(([x, z]) => g2p(x, z)) : [g2p(op.pt[0], op.pt[1])];
+    };
+    this.selOp = i;
+    this.setMoveTool({
+      key: `op:${i}`,
+      closed: op.type === 'terrace',
+      whole: !!key,
+      points: pts,
+      move: (h, x, z, from) => {
+        const p2g = planToGrid(this.cfg.data, this.cfg);
+        const next = movedPts(pts(), h, x, z, from).map(([a, b]) => p2g(a, b).map((v) => round(v, 100)));
+        if (key) op[key] = next;
+        else op.pt = next[0];
+      },
+      commit: () => this._commit(),
+    });
   }
 
   editOp(i, patch) {

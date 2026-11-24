@@ -209,6 +209,8 @@ describe('the GitHub backup compared', () => {
     expect(githubState({})).toBe('same'); // nothing stored, nothing on GitHub
     expect(githubState({ scene: 'same', edits: 'same' })).toBe('same');
     for (const v of ['changed', 'local', 'remote']) expect(githubState({ scene: 'same', edits: v })).toBe('differs');
+    // the ground texture of a home set up without one: GitHub keeps its copy, which is not a difference
+    expect(githubState({ scene: 'same', ortho: 'spare' })).toBe('same');
   });
 });
 
@@ -222,5 +224,14 @@ describe('GitHub requests', () => {
     expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'restore' });
     await api.github('restore', 'abc1234');
     expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'restore', ref: 'abc1234' });
+  });
+
+  it('names the document to drop from the repository', async () => {
+    HouseViewApi.token = null;
+    HouseViewApi.locked = false;
+    const s = server('');
+    const api = new HouseViewApi(s.hass);
+    await api.github('forget', undefined, 'ortho');
+    expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'forget', key: 'ortho' });
   });
 });

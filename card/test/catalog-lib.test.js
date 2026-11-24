@@ -167,6 +167,19 @@ describe('trees', () => {
     expect(solids[3].at[1] + solids[3].size[1]).toBeCloseTo(9);
   });
 
+  it('builds a column of foliage for a columnar tree, down to the ground', () => {
+    // a yew, a cypress: as wide near the foot as in the middle, rounded off at the top
+    const solids = crownSolids({ ...OAK, shape: 'columnar', crown_radius: 0.9 });
+    expect(new Set(solids.map((s) => s.kind))).toEqual(new Set(['blob']));
+    const width = solids.map((s) => s.size[0]);
+    expect(Math.max(...width)).toBeCloseTo(0.9);
+    expect(width[0]).toBeGreaterThan(0.9 * 0.8); // full at the foot, unlike a cone
+    expect(width.at(-1)).toBeLessThan(0.9 * 0.4); // and narrowing only at the top
+    expect(Math.min(...solids.map((s) => s.at[1] - s.size[1]))).toBeLessThan(OAK.trunk.height); // under the trunk top
+    expect(Math.max(...solids.map((s) => s.at[1] + s.size[1]))).toBeCloseTo(9, 0); // up to the top of the tree
+    expect(drawableTree({ ...OAK, shape: 'columnar' })).toBe(true);
+  });
+
   it('lists a tree as a species of the engine', () => {
     const sp = treeSpecies('oak', OAK, 'fr');
     expect(sp).toMatchObject({
