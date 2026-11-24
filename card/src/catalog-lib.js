@@ -151,13 +151,13 @@ export const FRONDS = 9;
  * [height of the centre, width, height of the blob], as shares of the span the foliage covers.
  */
 const COLUMN_TIERS = [
-  [0.09, 0.86, 0.16],
+  [0.13, 0.86, 0.13],
   [0.28, 1, 0.17],
   [0.46, 1, 0.17],
   [0.63, 0.95, 0.16],
   [0.77, 0.82, 0.14],
   [0.88, 0.6, 0.11],
-  [0.95, 0.3, 0.06],
+  [0.94, 0.3, 0.06],
 ];
 
 function columnSolids(top, radius, bottom) {
