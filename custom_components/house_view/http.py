@@ -41,7 +41,7 @@ from .const import (
     UNLOCK_HEADER,
     UNLOCK_TTL,
 )
-from .github import GitHubBackup, GitHubError
+from .github import REF, GitHubBackup, GitHubError, blob_sha, sync_state
 from .lock import verify_password
 from .store import HouseViewStore
 from .validate import VALIDATORS
@@ -101,6 +101,27 @@ def github_client(hass: HomeAssistant, store: HouseViewStore) -> GitHubBackup | 
     )
 
 
+async def refresh_remote(store: HouseViewStore, gh: GitHubBackup) -> None:
+    """Read what GitHub holds (blob ids only, nothing is written); a failure leaves it unknown."""
+    try:
+        store.remote = await gh.remote_shas(KEYS)
+    except GitHubError as err:
+        _LOGGER.debug("House View: GitHub not read: %s", err)
+
+
+def _github_sync(hass: HomeAssistant, store: HouseViewStore) -> dict[str, str] | None:
+    """
+    Each document compared with the GitHub backup, for the card's "differs from GitHub" sign. Not known yet: read
+    once in the background (a few requests), the card asks again after its next write.
+    """
+    gh = github_client(hass, store)
+    if gh is None:
+        return None
+    if store.remote is None and (store.remote_job is None or store.remote_job.done()):
+        store.remote_job = hass.async_create_background_task(refresh_remote(store, gh), f"{DOMAIN}_github_sync")
+    return sync_state({k: store.get_bytes(k) for k in KEYS}, store.remote)
+
+
 class HouseViewInfoView(HomeAssistantView):
     """Small status document: what is stored, and the home location from the HA configuration."""
 
@@ -129,6 +150,7 @@ class HouseViewInfoView(HomeAssistantView):
                 "has_edits": store.has("edits"),
                 "has_ortho": store.has(KEY_ORTHO),
                 "github": store.options.get(CONF_REPO) if store.options.get(CONF_TOKEN) else None,
+                "github_sync": _github_sync(hass, store) if _is_admin(request) else None,
                 "locked": store.lock is not None,
                 "demo": store.demo,
                 "hide_demo": bool(store.options.get(CONF_HIDE_DEMO, HIDE_DEMO_DEFAULT)),
@@ -271,7 +293,11 @@ def _backup_message(res: dict[str, Any], missing: list[str]) -> str:
 
 
 class HouseViewGitHubView(HomeAssistantView):
-    """POST (admin, unlocked) {"action": "backup" | "restore"}: manual backup to / restore from the private repo."""
+    """
+    POST (admin, unlocked), only on a request of the user: {"action": "backup"} saves to the private repository,
+    {"action": "restore", "ref"?} brings back the last backup or the backup `ref` of the history, {"action":
+    "history"} lists the backups, {"action": "status"} compares the documents with GitHub.
+    """
 
     url = f"/api/{DOMAIN}/github"
     name = f"api:{DOMAIN}:github"
@@ -288,30 +314,66 @@ class HouseViewGitHubView(HomeAssistantView):
         if gh is None:
             return self.json_message("GitHub backup is not configured", HTTPStatus.BAD_REQUEST)
         try:
-            action = (await request.json()).get("action")
+            req = await request.json()
+            action = req.get("action")
+            ref = req.get("ref")
         except (ValueError, AttributeError):
-            action = None
+            action = ref = None
+        run = {"status": _gh_status, "history": _gh_history, "backup": _gh_backup, "restore": _gh_restore}.get(action)
+        if run is None:
+            return self.json_message("action must be backup, restore, history or status", HTTPStatus.BAD_REQUEST)
+        if ref is not None and not (action == "restore" and isinstance(ref, str) and REF.match(ref)):
+            return self.json_message("ref must be the commit id of a backup", HTTPStatus.BAD_REQUEST)
         try:
-            if action == "backup":
-                docs = {k: b for k in KEYS if (b := store.get_bytes(k)) is not None}
-                # a document that is not stored here cannot be saved: said plainly, it is the usual reason a file
-                # is missing from the repository
-                missing = [k for k in KEYS if k not in docs]
-                res = await gh.backup(docs)
-                msg = _backup_message(res, missing)
-                return self.json({"ok": not res["failed"], "missing": missing, **res, "message": msg})
-            if action == "restore":
-                docs = await gh.restore(KEYS)
-                for key, doc in docs.items():
-                    VALIDATORS[key](doc)
-                for key, doc in docs.items():
-                    _fire(hass, key, await store.async_set(key, doc), store)
-                return self.json({"ok": True, "restored": list(docs), "message": f"{len(docs)} file(s) restored"})
+            return self.json(await run(hass, store, gh, ref))
         except GitHubError as err:
             return self.json_message(str(err), HTTPStatus.BAD_GATEWAY)
         except ValueError as err:
             return self.json_message(f"invalid document in the repository: {err}", HTTPStatus.BAD_GATEWAY)
-        return self.json_message("action must be backup or restore", HTTPStatus.BAD_REQUEST)
+
+
+async def _gh_status(hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _ref: str | None) -> dict[str, Any]:
+    """Read GitHub again and compare."""
+    store.remote = await gh.remote_shas(KEYS)
+    return {"ok": True, "sync": _github_sync(hass, store)}
+
+
+async def _gh_history(
+    _hass: HomeAssistant, _store: HouseViewStore, gh: GitHubBackup, _ref: str | None
+) -> dict[str, Any]:
+    """The backups, newest first."""
+    return {"ok": True, "backups": await gh.history()}
+
+
+async def _gh_backup(_hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, _ref: str | None) -> dict[str, Any]:
+    """Save every stored document that changed."""
+    docs = {k: b for k in KEYS if (b := store.get_bytes(k)) is not None}
+    # a document that is not stored here cannot be saved: said plainly, it is the usual reason a file is missing
+    # from the repository
+    missing = [k for k in KEYS if k not in docs]
+    res = await gh.backup(docs)
+    # what GitHub holds now: the files written or already there; after a failure, read again later
+    if store.remote is not None and not res["failed"]:
+        store.remote.update({k: blob_sha(docs[k]) for k in res["written"] + res["unchanged"]})
+    else:
+        store.remote = None
+    return {"ok": not res["failed"], "missing": missing, **res, "message": _backup_message(res, missing)}
+
+
+async def _gh_restore(hass: HomeAssistant, store: HouseViewStore, gh: GitHubBackup, ref: str | None) -> dict[str, Any]:
+    """
+    Every document as it was at the backup `ref` (the last backup without it), all checked before any is stored: a
+    restore never leaves the home half old, half new. A document the backup did not hold is kept as it is.
+    """
+    docs = await gh.restore(KEYS, ref)
+    for key, doc in docs.items():
+        VALIDATORS[key](doc)
+    for key, doc in docs.items():
+        _fire(hass, key, await store.async_set(key, doc), store)
+    store.remote = None  # an older backup differs from the branch: read again
+    kept = [k for k in KEYS if k not in docs and store.has(k)]
+    msg = f"{len(docs)} file(s) restored" + (f" — not in that backup, kept: {', '.join(kept)}" if kept else "")
+    return {"ok": True, "restored": list(docs), "kept": kept, "ref": ref, "message": msg}
 
 
 class HouseViewUnlockView(HomeAssistantView):

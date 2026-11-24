@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { HouseEngine } from './engine.js';
-import { HouseViewApi } from './api.js';
+import { HouseViewApi, errorReason, githubState, saveCleared, saveFailure } from './api.js';
 import { WorldEditors, drawSection } from './editors.js';
 import { FenceTools, GateTools, BedTools, PathTools, IrrigationTools, VacuumTools } from './garden-tools.js';
 import { VacuumController } from './vacuum-ctl.js';
@@ -156,6 +156,7 @@ class HouseViewCard extends LitElement {
     _fetch: { state: true }, // terrain fetch job status
     _busy: { state: true },
     _lockDlg: { state: true }, // password dialog of the edit lock: { error, busy } while shown
+    _saveErr: { state: true }, // a save the integration refused: { what, message, at, open } (see saveFailure)
     _provider: { state: true }, // terrain source chosen in the fetch form: auto | ign | world
   };
 
@@ -348,7 +349,9 @@ class HouseViewCard extends LitElement {
   }
 
   _onKey(e) {
-    if (e.key === 'Escape' && this._editors && this._editors.tool.mode !== 'off') this._editors.cancelDraft();
+    if (e.key !== 'Escape') return;
+    if (this._saveErr && this._saveErr.open) return this._saveErrOpen(false);
+    if (this._editors && this._editors.tool.mode !== 'off') this._editors.cancelDraft();
   }
 
   /** Card height: fill the screen below the card's top (default), keep an aspect ratio, or a fixed height. */
@@ -451,6 +454,7 @@ class HouseViewCard extends LitElement {
   async _reload() {
     try {
       this._status = 'loading';
+      this._saveErr = null; // everything is read again: nothing pending any more
       const info = await this._api.info();
       if (!info) throw Object.assign(new Error('no_integration'), { code: 'no_integration' });
       this._info = info;
@@ -1801,15 +1805,87 @@ class HouseViewCard extends LitElement {
         this._dirty = false; // only once the integration holds them: a refused save stays pending
       } else if (what === 'terrain') await (this._data.terrain ? this._api.setTerrain(this._data.terrain) : this._api.clearTerrain());
       if (Date.now() - (this._saidAt || 0) > 3000) this._msg = this._t('saved'); // keep the message of the action just done
+      this._saveErr = saveCleared(this._saveErr, what);
       await this._refreshInfo();
     } catch (e) {
       // a save that did not go through stays pending (it is tried again on the next change and before a GitHub
-      // backup) and says so: what the integration never stored cannot be saved anywhere else
+      // backup) and says so, in a window of its own: the message of the panel is hidden by the windows of the
+      // editor, and what the integration never stored cannot be saved anywhere else
       this._msg = `${this._t('error')}: ${e.message}`;
       this._saidAt = Date.now();
+      this._saveErr = saveFailure(this._saveErr, what, e.message, Date.now());
       if (what === 'edits') this._dirty = true;
       this.requestUpdate();
     }
+  }
+
+  // ------------------------------------------------------------ refused save
+
+  /** Show or close the window of the refused save (its button stays in the toolbar while the save is pending). */
+  _saveErrOpen(open) {
+    if (this._saveErr) this._saveErr = { ...this._saveErr, open };
+    this._copied = false;
+  }
+
+  /** Try the refused save again, now. */
+  async _saveRetry() {
+    const err = this._saveErr;
+    if (!err || this._saveBusy) return;
+    this._saveBusy = true;
+    this.requestUpdate();
+    if (err.what === 'edits') clearTimeout(this._saveTimer);
+    await this._save(err.what);
+    this._saveBusy = false;
+    this.requestUpdate();
+  }
+
+  /**
+   * Copy the text of the refused save. Without the clipboard of the browser (a page served over plain http has
+   * none) the text is selected and copied the old way; it stays selected, ready to be copied by hand.
+   */
+  async _saveErrCopy() {
+    const pre = this.renderRoot.querySelector('.savedlg pre');
+    if (!pre) return;
+    const text = pre.textContent;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.selectAllChildren(pre);
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+    }
+    this._copied = ok;
+    this.requestUpdate();
+  }
+
+  /** Window of a refused save: what was not saved, why, with a text that can be selected and copied. */
+  _renderSaveError() {
+    const err = this._saveErr;
+    if (!err || !err.open) return nothing;
+    const t = this._t;
+    const label = t({ scene: 'plan', terrain: 'terrain', edits: 'edits' }[err.what] || 'edits');
+    const reason = errorReason(err.message);
+    const detail = `House View ${pkg.version} · ${label} · ${new Date(err.at).toLocaleString()}\n${err.message}`;
+    const close = () => this._saveErrOpen(false);
+    return html`<div class="savedlg" @pointerdown=${(e) => e.stopPropagation()} @click=${(e) => e.target === e.currentTarget && close()}>
+      <div class="box" role="alertdialog" aria-label=${t('save_failed')}>
+        <div class="head"><b>⚠ ${t('save_failed')}</b><button class="x" title=${t('close')} @click=${close}>✕</button></div>
+        <div class="hint">${t('save_failed_hint')}</div>
+        <div class="reason">${label} : ${reason}</div>
+        <pre>${detail}</pre>
+        <div class="row">
+          <button @click=${() => this._saveErrCopy()}>${this._copied ? `✓ ${t('copied')}` : t('copy')}</button>
+          <button class="primary" ?disabled=${!!this._saveBusy} @click=${() => this._saveRetry()}>${t('save_retry')}</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /** What the integration holds (listed in the setup, saved by a backup), read again after a write. */
@@ -2076,9 +2152,14 @@ class HouseViewCard extends LitElement {
     }
   }
 
-  async _github(action) {
-    if (action === 'restore' && this._confirm !== 'restore') {
-      this._confirm = 'restore'; // second click confirms
+  /**
+   * GitHub backup, only when the user asks: backup, restore (`ref`: a backup of the history, the last one without
+   * it; a second click confirms), history (the list of the backups), status (compare with GitHub now).
+   */
+  async _github(action, ref = undefined) {
+    const key = ref ? `restore:${ref}` : 'restore';
+    if (action === 'restore' && this._confirm !== key) {
+      this._confirm = key; // second click confirms
       this.requestUpdate();
       return;
     }
@@ -2090,14 +2171,79 @@ class HouseViewCard extends LitElement {
         clearTimeout(this._saveTimer);
         await this._save('edits');
       }
-      const r = await this._api.github(action);
-      this._msg = `GitHub : ${r && r.message ? r.message : this._t('done')}`;
+      const r = await this._api.github(action, ref);
+      if (action === 'history') this._ghHistory = (r && r.backups) || [];
+      else if (action === 'status') this._info = { ...this._info, github_sync: r && r.sync };
+      else this._msg = `GitHub : ${r && r.message ? r.message : this._t('done')}`;
       if (action === 'restore') await this._reload();
-      else this._info = (await this._api.info()) || this._info;
+      else if (action === 'backup') {
+        this._info = (await this._api.info()) || this._info;
+        if (this._ghHistory) this._ghHistory = ((await this._api.github('history')) || {}).backups || [];
+      }
     } catch (e) {
       this._msg = `${this._t('error')}: ${e.message}`;
     }
     this._busy = false;
+  }
+
+  /** The GitHub part of the backup section: each document compared with GitHub, the backups to go back to. */
+  _renderGithub() {
+    const t = this._t;
+    const info = this._info;
+    const sync = info.github_sync;
+    const state = githubState(sync);
+    const docs = { scene: t('plan'), terrain: t('terrain'), edits: t('edits'), ortho: t('photo_ortho') };
+    const when = (d) => {
+      const x = new Date(d);
+      return Number.isNaN(x.getTime()) ? d : x.toLocaleString();
+    };
+    const hist = this._ghHistory;
+    return html`<div class="hint">${t('github_hint')} ${info.github}</div>
+      <div class=${`ghstate ${state || 'unknown'}`}>
+        <ha-icon icon=${state === 'same' ? 'mdi:cloud-check' : state === 'differs' ? 'mdi:cloud-alert' : 'mdi:cloud-question'}></ha-icon>
+        <span class="grow">${t(`github_${state || 'unknown'}`)}</span>
+        <button ?disabled=${this._busy} title=${t('github_check')} @click=${() => this._github('status')}>↻</button>
+      </div>
+      ${
+        sync
+          ? Object.entries(sync)
+              .filter(([, v]) => v !== 'same')
+              .map(
+                ([k, v]) =>
+                  html`<div class="row"><span class="grow">${docs[k] || k}</span><span class="badge">${t(`github_doc_${v}`)}</span></div>`,
+              )
+          : nothing
+      }
+      <div class="row">
+        <button ?disabled=${this._busy} @click=${() => this._github('backup')}>${t('github_backup')}</button>
+        <button ?disabled=${this._busy} @click=${() => this._github('restore')}>
+          ${this._confirm === 'restore' ? t('github_confirm') : t('github_restore')}
+        </button>
+      </div>
+      ${this._confirm && this._confirm.startsWith('restore') && state === 'differs' ? html`<div class="hint err">${t('github_restore_loses')}</div>` : nothing}
+      <div class="row">
+        <button ?disabled=${this._busy} @click=${() => (hist ? ((this._ghHistory = null), this.requestUpdate()) : this._github('history'))}>
+          ${t(hist ? 'github_history_hide' : 'github_history')}
+        </button>
+      </div>
+      ${
+        hist
+          ? hist.length
+            ? html`<div class="ghlist">
+                ${hist.map(
+                  (b, i) =>
+                    html`<div class="row">
+                      <span class="grow">${when(b.date)}${i === 0 ? html` <i>(${t('github_latest')})</i>` : nothing}</span>
+                      <span class="hint">${b.files} ${t('github_files')}</span>
+                      <button ?disabled=${this._busy} @click=${() => this._github('restore', b.ref)}>
+                        ${this._confirm === `restore:${b.ref}` ? t('github_confirm') : t('github_restore_this')}
+                      </button>
+                    </div>`,
+                )}
+              </div>`
+            : html`<div class="hint">${t('github_history_none')}</div>`
+          : nothing
+      }`;
   }
 
   /**
@@ -2322,20 +2468,13 @@ class HouseViewCard extends LitElement {
                     : nothing
                 }
               </details>
-              <details>
-                <summary>${t('backup')}</summary>
+              <details ?open=${!!this._ghOpen} @toggle=${(e) => (this._ghOpen = e.target.open)}>
+                <summary>
+                  ${t('backup')}
+                  ${githubState(this._info && this._info.github_sync) === 'differs' ? html`<span class="ghdot" title=${t('github_differs')}>●</span>` : nothing}
+                </summary>
                 ${this._renderStored()}
-                ${
-                  this._info && this._info.github
-                    ? html`<div class="hint">${t('github_hint')} ${this._info.github}</div>
-                        <div class="row">
-                          <button ?disabled=${this._busy} @click=${() => this._github('backup')}>${t('github_backup')}</button>
-                          <button ?disabled=${this._busy} @click=${() => this._github('restore')}>
-                            ${this._confirm === 'restore' ? t('github_confirm') : t('github_restore')}
-                          </button>
-                        </div>`
-                    : html`<div class="hint">${t('github_setup')}</div>`
-                }
+                ${this._info && this._info.github ? this._renderGithub() : html`<div class="hint">${t('github_setup')}</div>`}
               </details>
               <details>
                 <summary>${t('lock_section')}</summary>
@@ -3047,6 +3186,27 @@ class HouseViewCard extends LitElement {
             : nothing
         }
         <div class="toolbar">
+          ${
+            this._saveErr
+              ? html`<button class="tb unsaved" title=${t('save_failed')} @click=${() => this._saveErrOpen(!this._saveErr.open)}>
+                  <ha-icon icon="mdi:content-save-alert"></ha-icon>
+                </button>`
+              : nothing
+          }
+          ${
+            this._isAdmin && githubState(this._info && this._info.github_sync) === 'differs'
+              ? html`<button
+                  class="tb ghsign"
+                  title=${t('github_differs')}
+                  @click=${() => {
+                    this._ghOpen = true;
+                    if (this._panel !== 'setup') this._guardedPanel('setup');
+                  }}
+                >
+                  <ha-icon icon="mdi:cloud-alert"></ha-icon>
+                </button>`
+              : nothing
+          }
           ${ready ? renderAlarmBadge(this) : nothing} ${ready ? this._vacuumIds.map(vacBtn) : nothing}
           ${this._toolItems(ready)
             .filter((it) => it.show && this._inBar(it.key))
@@ -3085,7 +3245,7 @@ class HouseViewCard extends LitElement {
               </div>`
             : nothing
         }
-        ${this._renderPanel()} ${this._renderWindows()} ${this._renderVacuum()} ${this._renderLock()}
+        ${this._renderPanel()} ${this._renderWindows()} ${this._renderVacuum()} ${this._renderSaveError()} ${this._renderLock()}
         ${ready ? renderAlarmList(this) : nothing} ${renderAquariumDialog(this)} ${renderLinkDialog(this)}
         ${
           this._focus && ready && !this._vacMode
@@ -4256,6 +4416,134 @@ class HouseViewCard extends LitElement {
     }
     .msg.bad {
       color: var(--error-color, #ef5350);
+    }
+    /* the documents differ from the GitHub backup */
+    .tb.ghsign {
+      background: #ef6c00;
+      border-color: transparent;
+    }
+    .ghdot {
+      color: #ffa726;
+      margin-left: 4px;
+    }
+    :is(.panel, .win) .ghstate {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    :is(.panel, .win) .ghstate.same ha-icon {
+      color: #66bb6a;
+    }
+    :is(.panel, .win) .ghstate.differs ha-icon {
+      color: #ffa726;
+    }
+    :is(.panel, .win) .ghlist {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    /* a save the integration refused: its button in the toolbar, its window over everything else */
+    .tb.unsaved {
+      background: #c62828;
+      border-color: transparent;
+      animation: alarm-pulse 1.6s ease-in-out infinite;
+    }
+    .savedlg {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(16, 21, 28, 0.6);
+    }
+    .savedlg .box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: min(460px, calc(100% - 32px));
+      max-height: calc(100% - 32px);
+      box-sizing: border-box;
+      padding: 12px 14px 14px;
+      background: rgba(22, 28, 38, 0.98);
+      color: #e6edf5;
+      border: 1px solid var(--error-color, #ef5350);
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    .savedlg .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .savedlg .hint {
+      opacity: 0.8;
+      font-size: 12px;
+    }
+    /* the text can be selected (long press on a phone), whatever the page around the card allows */
+    .savedlg .reason,
+    .savedlg pre {
+      user-select: text;
+      -webkit-user-select: text;
+      -webkit-touch-callout: default;
+      cursor: text;
+    }
+    .savedlg .reason {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .savedlg pre {
+      flex: 1;
+      min-height: 2.6em;
+      margin: 0;
+      padding: 8px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font:
+        12px/1.35 ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+    }
+    .savedlg .row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .savedlg button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+    .savedlg button.x {
+      border: none;
+      padding: 2px 6px;
+      font-size: 14px;
+    }
+    .savedlg button.primary {
+      background: var(--primary-color, #03a9f4);
+      border-color: transparent;
+      color: #fff;
+    }
+    .savedlg button:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
     .lockdlg {
       position: absolute;

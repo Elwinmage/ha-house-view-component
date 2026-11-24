@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { HouseViewApi, LockedError } from '../src/api.js';
+import { HouseViewApi, LockedError, errorReason, githubState, saveCleared, saveFailure } from '../src/api.js';
 
 const HEADER = 'X-House-View-Unlock';
 
@@ -167,5 +167,60 @@ describe('homes', () => {
     const hass = { fetchWithAuth: async (url) => ({ ok: url === '/api/house_view/homes', json: async () => homes }) };
     expect(await new HouseViewApi(hass, 'a').homes()).toEqual(homes);
     expect(await new HouseViewApi({ fetchWithAuth: async () => ({ ok: false }) }).homes()).toEqual([]);
+  });
+});
+
+describe('a refused save', () => {
+  const MSG = 'edits: HTTP 400 {"message": "edits.sea must be an object"}';
+  it('opens its window once, and leaves it as the user left it when it happens again', () => {
+    const first = saveFailure(null, 'edits', MSG, 1000);
+    expect(first).toEqual({ what: 'edits', message: MSG, at: 1000, open: true });
+    // closed by the user, then the same refusal at the next change: still closed, the time follows
+    const again = saveFailure({ ...first, open: false }, 'edits', MSG, 2000);
+    expect(again).toEqual({ what: 'edits', message: MSG, at: 2000, open: false });
+    expect(saveFailure(first, 'edits', MSG, 3000).open).toBe(true); // left open: stays open
+    // another reason, or another document: a new window
+    expect(saveFailure(again, 'edits', 'edits: HTTP 500', 4000).open).toBe(true);
+    expect(saveFailure(again, 'scene', MSG, 5000)).toMatchObject({ what: 'scene', open: true });
+  });
+
+  it('is over once that document is saved', () => {
+    const err = saveFailure(null, 'edits', MSG, 1000);
+    expect(saveCleared(err, 'edits')).toBeNull();
+    expect(saveCleared(err, 'scene')).toBe(err); // the plan went through, the edits are still pending
+    expect(saveCleared(null, 'edits')).toBeNull();
+  });
+
+  it('gives its reason in plain words', () => {
+    expect(errorReason(MSG)).toBe('edits.sea must be an object');
+    expect(errorReason('edits: HTTP 500 Internal Server Error')).toBe('edits: HTTP 500 Internal Server Error');
+    expect(errorReason('edits: HTTP 400 {not json}')).toBe('edits: HTTP 400 {not json}');
+    expect(errorReason('edits: HTTP 400 {"message": 12}')).toBe('edits: HTTP 400 {"message": 12}');
+    expect(errorReason('edits: HTTP 413 {"message": ""}')).toBe('edits: HTTP 413 {"message": ""}');
+    expect(errorReason('Failed to fetch')).toBe('Failed to fetch');
+    expect(errorReason(undefined)).toBe('');
+  });
+});
+
+describe('the GitHub backup compared', () => {
+  it('differs as soon as one document is not the same', () => {
+    expect(githubState(null)).toBeNull(); // not known yet, or no backup set up
+    expect(githubState(undefined)).toBeNull();
+    expect(githubState({})).toBe('same'); // nothing stored, nothing on GitHub
+    expect(githubState({ scene: 'same', edits: 'same' })).toBe('same');
+    for (const v of ['changed', 'local', 'remote']) expect(githubState({ scene: 'same', edits: v })).toBe('differs');
+  });
+});
+
+describe('GitHub requests', () => {
+  it('names a backup of the history only when one is chosen', async () => {
+    HouseViewApi.token = null;
+    HouseViewApi.locked = false;
+    const s = server('');
+    const api = new HouseViewApi(s.hass);
+    await api.github('restore');
+    expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'restore' });
+    await api.github('restore', 'abc1234');
+    expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'restore', ref: 'abc1234' });
   });
 });

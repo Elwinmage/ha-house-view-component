@@ -13,7 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.house_view import _async_options_updated, ign
 from custom_components.house_view.const import DOMAIN
-from custom_components.house_view.github import API, GitHubBackup, GitHubError, blob_sha
+from custom_components.house_view.github import API, GitHubBackup, GitHubError, backups_of, blob_sha, sync_state
 from custom_components.house_view.http import _backup_message
 
 REPO = "me/house"
@@ -313,3 +313,152 @@ async def test_options_flow(hass, aioclient_mock):
     r = await step({"repo": REPO, "branch": "backup"})
     assert r["type"] == "create_entry"
     assert r["data"] == {**lock, **OPTIONS, "branch": "backup"}
+
+
+# ---------------------------------------------------------------------------- comparison and history
+
+
+def _commit(sha, date):
+    return {"sha": sha, "commit": {"committer": {"date": date}, "message": "House View: update x"}}
+
+
+def test_backups_group_the_commits_of_one_backup():
+    commits = [
+        _commit("c3", "2026-11-23T20:00:40Z"),  # one backup: three files, a few seconds apart
+        _commit("c2", "2026-11-23T20:00:20Z"),
+        _commit("c1", "2026-11-23T20:00:00Z"),
+        {"sha": "bad", "commit": {}},  # unreadable: left out
+        {"sha": "author", "commit": {"author": {"date": "2026-11-22T10:00:00Z"}}},  # no committer: the author
+        _commit("b1", "2026-11-22T09:59:00Z"),
+    ]
+    assert backups_of(commits) == [
+        {"ref": "c3", "date": "2026-11-23T20:00:40Z", "files": 3},
+        {"ref": "author", "date": "2026-11-22T10:00:00Z", "files": 2},
+    ]
+    assert backups_of([]) == []
+
+
+def test_sync_state_compares_each_document():
+    a, b = b'{"a": 1}', b'{"b": 2}'
+    remote = {"scene": blob_sha(a), "terrain": blob_sha(a), "edits": None, "ortho": "x"}
+    local = {"scene": a, "terrain": b, "edits": b, "ortho": None, "other": None}
+    assert sync_state(local, remote) == {"scene": "same", "terrain": "changed", "edits": "local", "ortho": "remote"}
+    assert sync_state(local, None) is None
+
+
+async def test_remote_history_and_restore_at_a_backup(hass, aioclient_mock):
+    session = aioclient_mock.create_session(hass.loop)
+    gh = GitHubBackup(session, REPO, "t0k", path="house_view")
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": "s1"})
+    aioclient_mock.get(f"{CONTENTS}/edits.json", status=404)
+    assert await gh.remote_shas(("scene", "edits")) == {"scene": "s1", "edits": None}
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/repos/{REPO}/commits", json=[_commit("abc1234", "2026-11-23T20:00:00Z")])
+    assert await gh.history() == [{"ref": "abc1234", "date": "2026-11-23T20:00:00Z", "files": 1}]
+    assert aioclient_mock.mock_calls[-1][1].query["path"] == "house_view"
+    assert aioclient_mock.mock_calls[-1][1].query["sha"] == "main"
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/repos/{REPO}/commits", status=404)
+    assert await gh.history() == []  # an empty repository
+    root = GitHubBackup(session, REPO, "t0k", path="")
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/repos/{REPO}/commits", json=[])
+    assert await root.history() == []
+    assert "path" not in aioclient_mock.mock_calls[-1][1].query  # the whole repository
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", text=json.dumps(SCENE))
+    assert await gh.restore(("scene",), "abc1234") == {"scene": SCENE}
+    assert aioclient_mock.mock_calls[-1][1].query["ref"] == "abc1234"  # as it was at that backup
+    with pytest.raises(ValueError, match="commit id"):
+        await gh.restore(("scene",), "main; rm")
+    await session.close()
+
+
+async def test_github_status_history_and_restore_views(hass, hass_client, hass_admin_user, aioclient_mock):
+    entry, client = await _setup(hass, hass_client)
+    await client.post("/api/house_view/scene", json=SCENE)
+    info = await (await client.get("/api/house_view/info")).json()
+    assert info["github_sync"] is None  # no GitHub backup set up
+
+    hass.config_entries.async_update_entry(entry, options=OPTIONS)
+    await hass.async_block_till_done()
+    store = hass.data[DOMAIN][entry.entry_id]
+    # not known yet: read once in the background, the scene is not on GitHub
+    aioclient_mock.get(f"{CONTENTS}/scene.json", status=404)
+    for k in ("terrain", "edits", "ortho"):
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    await client.get("/api/house_view/info")
+    await hass.async_block_till_done()
+    assert (await (await client.get("/api/house_view/info")).json())["github_sync"] == {"scene": "local"}
+
+    # a backup: GitHub holds the scene now, without reading it again
+    aioclient_mock.put(f"{CONTENTS}/scene.json", json={})
+    await client.post("/api/house_view/github", json={"action": "backup"})
+    assert (await (await client.get("/api/house_view/info")).json())["github_sync"] == {"scene": "same"}
+    # a change here: differs from GitHub
+    await client.post("/api/house_view/edits", json={"version": 1})
+    assert (await (await client.get("/api/house_view/info")).json())["github_sync"] == {
+        "scene": "same",
+        "edits": "local",
+    }
+
+    # a failed backup: read again later
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": blob_sha(json_bytes(SCENE))})
+    aioclient_mock.get(f"{CONTENTS}/edits.json", json={"sha": "old"})
+    aioclient_mock.put(f"{CONTENTS}/edits.json", status=403, json={"message": "no"})
+    await client.post("/api/house_view/github", json={"action": "backup"})
+    assert store.remote is None
+
+    # status: read on request
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", json={"sha": blob_sha(json_bytes(SCENE))})
+    for k in ("terrain", "edits", "ortho"):
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    body = await (await client.post("/api/house_view/github", json={"action": "status"})).json()
+    assert body == {"ok": True, "sync": {"scene": "same", "edits": "local"}}
+
+    # history
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/repos/{REPO}/commits", json=[_commit("abc1234", "2026-11-23T20:00:00Z")])
+    body = await (await client.post("/api/house_view/github", json={"action": "history"})).json()
+    assert body["backups"][0]["ref"] == "abc1234"
+
+    # restore at a backup that had no edits: the scene comes back, the edits are kept
+    old = {"levels": [{"id": "old", "elevation": 0, "rooms": []}]}
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{CONTENTS}/scene.json", text=json.dumps(old))
+    for k in ("terrain", "edits", "ortho"):
+        aioclient_mock.get(f"{CONTENTS}/{k}.json", status=404)
+    body = await (await client.post("/api/house_view/github", json={"action": "restore", "ref": "abc1234"})).json()
+    assert body["restored"] == ["scene"]
+    assert body["kept"] == ["edits"]
+    assert "kept: edits" in body["message"]
+    assert all(c[1].query.get("ref") == "abc1234" for c in aioclient_mock.mock_calls)
+    assert await (await client.get("/api/house_view/scene")).json() == old
+    assert store.remote is None
+
+    # a ref that is not a commit id, or with another action: refused before calling GitHub
+    for bad in (
+        {"action": "restore", "ref": "main"},
+        {"action": "restore", "ref": 12},
+        {"action": "backup", "ref": "abc1234"},
+    ):
+        assert (await client.post("/api/house_view/github", json=bad)).status == 400
+
+    # new GitHub settings: read again
+    store.remote = {}
+    hass.config_entries.async_update_entry(entry, options={**OPTIONS, "branch": "other"})
+    await hass.async_block_till_done()
+    assert store.remote is None
+
+
+async def test_github_unreadable_stays_unknown(hass, hass_client, hass_admin_user, aioclient_mock):
+    entry, client = await _setup(hass, hass_client, OPTIONS)
+    aioclient_mock.get(f"{CONTENTS}/scene.json", status=401, json={"message": "Bad credentials"})
+    await client.get("/api/house_view/info")
+    await hass.async_block_till_done()
+    assert hass.data[DOMAIN][entry.entry_id].remote is None
+    assert (await (await client.get("/api/house_view/info")).json())["github_sync"] is None

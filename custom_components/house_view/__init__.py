@@ -82,6 +82,7 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
         if store.options.get(CONF_LOCK) != entry.options.get(CONF_LOCK):
             store.unlocks.clear()  # password changed or removed: the cards have to unlock again
         store.options = dict(entry.options)
+        store.remote = None  # another repository, branch or folder perhaps: read again when asked
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

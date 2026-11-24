@@ -28,6 +28,9 @@ class HouseViewStore:
         self.options: dict[str, Any] = {}  # config entry options (GitHub backup, edit lock)
         self.unlocks = Unlocks()  # tokens of the cards that gave the edit password
         self.job: dict[str, Any] = {"state": "idle"}  # terrain fetch job, polled by the card
+        # blob id of each document on GitHub, as last read or written (None: not known yet, read on demand)
+        self.remote: dict[str, str | None] | None = None
+        self.remote_job: Any = None  # reading of `remote` in progress
 
     @property
     def lock(self) -> dict[str, Any] | None:

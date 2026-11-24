@@ -10,6 +10,46 @@ export class LockedError extends Error {
   }
 }
 
+/**
+ * A save the integration refused, as the card keeps it: { what, message, at, open }. `prev`: the failure kept so
+ * far (or null), `what`: the document (scene | edits | terrain), `at`: when (ms). A new failure opens its window;
+ * the same one again (a pending save is tried again at every change) leaves the window as the user left it.
+ */
+export function saveFailure(prev, what, message, at) {
+  const same = !!prev && prev.what === what && prev.message === message;
+  return { what, message, at, open: same ? prev.open : true };
+}
+
+/** After a save of `what` went through: its failure is over, the failure of another document stays. */
+export function saveCleared(prev, what) {
+  return prev && prev.what === what ? null : prev;
+}
+
+/**
+ * The reason inside the message of a refused request (`edits: HTTP 400 {"message": "edits.sea must be..."}` gives
+ * `edits.sea must be...`), or the message itself when it holds none.
+ */
+export function errorReason(message) {
+  const text = String(message || '');
+  const body = /^[^:\n]+: HTTP \d+ (\{.*\})$/s.exec(text);
+  if (!body) return text;
+  try {
+    const reason = JSON.parse(body[1]).message;
+    return typeof reason === 'string' && reason ? reason : text;
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * The documents compared with the GitHub backup (`sync` of the integration: { key: same | changed | local | remote }):
+ * 'differs' when one of them is not the same, 'same', or null while it is not known (no backup set up, not read yet).
+ */
+export function githubState(sync) {
+  if (!sync || typeof sync !== 'object') return null;
+  return Object.values(sync).some((v) => v !== 'same') ? 'differs' : 'same';
+}
+
 export class HouseViewApi {
   // Unlock state of each home (its config entry id, '' for the first home): the token got with the edit password,
   // shared by every card of the page showing that home, forgotten on reload. The server drops it after `ttl`
@@ -175,9 +215,12 @@ export class HouseViewApi {
     return this._json('fetch');
   }
 
-  /** GitHub backup: action = 'backup' | 'restore'. */
-  github(action) {
-    return this._send('github', 'POST', { action });
+  /**
+   * GitHub backup, only on a request of the user: action = 'backup' | 'restore' (`ref`: a backup of the history,
+   * the last one without it) | 'history' (the backups) | 'status' (the documents compared with GitHub).
+   */
+  github(action, ref = undefined) {
+    return this._send('github', 'POST', ref ? { action, ref } : { action });
   }
 
   _send(path, method, body) {
