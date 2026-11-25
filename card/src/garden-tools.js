@@ -8,6 +8,13 @@ import { PATH_SURFACES, normalizePath } from './paths.js';
 import { movedPts } from './move.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+
+//: What the editor rings in red: the object the settings on the panel belong to.
+const SEL_COLOR = '#ff3b30';
+
+/** A circle on the ground as a closed polyline, to ring what is being set up. */
+const ringPts = (x, z, r, n = 28) =>
+  Array.from({ length: n + 1 }, (_, i) => [x + r * Math.cos((i * 2 * Math.PI) / n), z + r * Math.sin((i * 2 * Math.PI) / n)]);
 const r2 = (v) => Math.round(v * 100) / 100;
 
 export class FenceTools {
@@ -540,6 +547,7 @@ export class IrrigationTools {
     this.sel = null; // id of the line / circuit unfolded in the panel
     this.draw = null; // { id, pts } of the drip line being drawn
     this.mode = null; // { kind: place | aim, cid, hid }
+    this.selHead = null; // id of the head unfolded in the panel, ringed in the view
     this.demo = null; // accelerated test: { ids: Set, all, t0, speed, dur } (the valves stay closed)
   }
 
@@ -681,8 +689,10 @@ export class IrrigationTools {
         const h = this.head(cid, hid);
         h.frame = this.ed.frame;
         h.at = this.ed.toStore(hit.point.x, hit.point.z);
+        this.selHead = hid;
         this._leave();
         this.ed.commit();
+        this.showHeads(cid); // the ring comes back once the head is down
       },
     });
   }
@@ -704,6 +714,7 @@ export class IrrigationTools {
         h.rMin = Math.min(h.rMin, r2(h.rMax * 0.5));
         this._leave();
         this.ed.commit();
+        this.showHeads(cid);
       },
     });
   }
@@ -720,7 +731,61 @@ export class IrrigationTools {
   removeHead(cid, hid) {
     const c = this.circuit(cid);
     c.heads = c.heads.filter((h) => h.id !== hid);
+    if (this.selHead === hid) this.selHead = null;
     this.ed.commit();
+    this.showHeads(cid);
+  }
+
+  /**
+   * Move a head to another circuit, keeping everything it has been given: where it stands, which way it points,
+   * its arc and its ranges. The panel follows it, so the circuit it lands in opens with the head unfolded.
+   */
+  moveHead(cid, hid, toCid) {
+    const from = this.circuit(cid);
+    const to = this.circuit(toCid);
+    const h = this.head(cid, hid);
+    if (!from || !to || !h || from === to) return false;
+    if (this.mode && this.mode.hid === hid) this._leave();
+    from.heads = from.heads.filter((o) => o.id !== hid);
+    to.heads.push(h);
+    this.sel = toCid;
+    this.selHead = hid;
+    this.ed.commit();
+    this.showHeads(toCid);
+    return true;
+  }
+
+  /**
+   * Unfold one head of a circuit in the panel, folding the one before it: a circuit of ten heads would otherwise
+   * be a wall of settings. Clicking the same head again folds it. The head unfolded is ringed in the view.
+   */
+  selectHead(cid, hid) {
+    this.selHead = this.selHead === hid ? null : hid;
+    this.showHeads(cid);
+  }
+
+  /**
+   * Overlay of a circuit being set up: a red ring around the head unfolded in the panel, a pale one around the
+   * others, so that the head under the settings is plain to see. It draws and nothing else — a click on the view
+   * is left alone, and placing or aiming a head takes the tool over until it is done.
+   */
+  showHeads(cid) {
+    const c = this.circuit(cid);
+    if (!c) return this.ed.setClickTool(null);
+    this.ed.setClickTool({
+      key: `head-sel:${cid}`,
+      pick: () => null, // nothing to pick: the tool only draws
+      click: () => {},
+      draft: (d) => {
+        for (const h of c.heads) {
+          if (!h.at) continue;
+          const [x, z] = this.ed.toPlan(h)(h.at[0], h.at[1]);
+          const on = h.id === this.selHead;
+          d.ribbon(ringPts(x, z, on ? 0.55 : 0.35), on ? SEL_COLOR : '#8aa0b0', on ? 0.09 : 0.04);
+          if (on) d.dot(x, z, SEL_COLOR);
+        }
+      },
+    });
   }
 
   /**

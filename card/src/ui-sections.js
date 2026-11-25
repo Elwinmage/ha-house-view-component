@@ -738,38 +738,86 @@ export function renderIrrigation(card) {
       }
     </div>`;
   };
+  // one head at a time: a circuit of ten would otherwise be a wall of settings, and the one unfolded is the one
+  // ringed in red in the view
   const head = (c, h, k) => {
     const m = sprinklerModel(h.model);
+    const on = it.selHead === h.id;
     const set = (patch) => it.editHead(c.id, h.id, patch);
     const is = (kind) => mode && mode.kind === kind && mode.hid === h.id;
-    return html`<div class="sub">
-      <b>${t('irr_head')} ${k + 1}</b> <span class="hint">${h.at ? '' : t('entity_unplaced')}</span>
-      <div class="grid">
-        <span>${t('irr_model')}</span>
-        <select @change=${(e) => set({ model: e.target.value })}>
-          ${SPRINKLERS.map((s) => html`<option value=${s.id} ?selected=${s.id === m.id}>${s.brand ? `${s.brand} ` : ''}${s.name}</option>`)}
-        </select>
-        <span>${t('irr_rmin')}</span>${num(h.rMin, (v) => set({ rMin: v }), 0.1, 0)}
-        <span>${t('irr_rmax')} (${m.rRange[0]}–${m.rRange[1]} m)</span>${num(h.rMax, (v) => set({ rMax: v }), 0.1, 0.5)}
-        <span>${t('irr_dir')}</span>${num(h.dir, (v) => set({ dir: ((v % 360) + 360) % 360 }), 5)}
-        <span>${t('irr_arc')} (${m.arc[0]}–${m.arc[1]}°)</span>${num(h.arc, (v) => set({ arc: Math.min(Math.max(v, 1), 360) }), 5, 1, 360)}
+    return html`<div class=${`ent ${on ? 'open pick' : ''}`}>
+      <div
+        class="ent-head"
+        @click=${() => {
+          it.selectHead(c.id, h.id);
+          card.requestUpdate();
+        }}
+      >
+        <ha-icon icon="mdi:sprinkler"></ha-icon>
+        <span class="grow">${t('irr_head')} ${k + 1}</span>
+        <span class="hint">${h.at ? m.name : t('entity_unplaced')}</span>
+        <span>${on ? '▾' : '▸'}</span>
       </div>
-      <div class="row">
-        <button class=${is('place') ? 'on' : ''} @click=${() => (is('place') ? it.cancel() : it.placeHead(c.id, h.id))}>
-          ${t('irr_place')}
-        </button>
-        <button class=${is('aim') ? 'on' : ''} ?disabled=${!h.at} @click=${() => (is('aim') ? it.cancel() : it.aimHead(c.id, h.id))}>
-          ${t('irr_aim')}
-        </button>
-        <button @click=${() => it.removeHead(c.id, h.id)}>${t('delete')}</button>
-      </div>
-      ${is('place') ? html`<div class="hint">${t('irr_place_hint')}</div>` : is('aim') ? html`<div class="hint">${t('irr_aim_hint')}</div>` : nothing}
+      ${
+        !on
+          ? nothing
+          : html`<div class="grid">
+                <span>${t('irr_model')}</span>
+                <select @change=${(e) => set({ model: e.target.value })}>
+                  ${SPRINKLERS.map((s) => html`<option value=${s.id} ?selected=${s.id === m.id}>${s.brand ? `${s.brand} ` : ''}${s.name}</option>`)}
+                </select>
+                ${
+                  irr.circuits.length < 2
+                    ? nothing
+                    : html`<span>${t('irr_circuit')}</span>
+                        <select
+                          @change=${(e) => {
+                            it.moveHead(c.id, h.id, e.target.value);
+                            card.requestUpdate();
+                          }}
+                        >
+                          ${irr.circuits.map(
+                            (o, j) =>
+                              html`<option value=${o.id} ?selected=${o.id === c.id}>${o.name || `${t('irr_circuit')} ${j + 1}`}</option>`,
+                          )}
+                        </select>`
+                }
+                <span>${t('irr_rmin')}</span>${num(h.rMin, (v) => set({ rMin: v }), 0.1, 0)}
+                <span>${t('irr_rmax')} (${m.rRange[0]}–${m.rRange[1]} m)</span>${num(h.rMax, (v) => set({ rMax: v }), 0.1, 0.5)}
+                <span>${t('irr_dir')}</span>${num(h.dir, (v) => set({ dir: ((v % 360) + 360) % 360 }), 5)}
+                <span>${t('irr_arc')} (${m.arc[0]}–${m.arc[1]}°)</span
+                >${num(h.arc, (v) => set({ arc: Math.min(Math.max(v, 1), 360) }), 5, 1, 360)}
+              </div>
+              <div class="row">
+                <button class=${is('place') ? 'on' : ''} @click=${() => (is('place') ? it.cancel() : it.placeHead(c.id, h.id))}>
+                  ${t('irr_place')}
+                </button>
+                <button
+                  class=${is('aim') ? 'on' : ''}
+                  ?disabled=${!h.at}
+                  @click=${() => (is('aim') ? it.cancel() : it.aimHead(c.id, h.id))}
+                >
+                  ${t('irr_aim')}
+                </button>
+                <button @click=${() => it.removeHead(c.id, h.id)}>${t('delete')}</button>
+              </div>
+              ${is('place') ? html`<div class="hint">${t('irr_place_hint')}</div>` : is('aim') ? html`<div class="hint">${t('irr_aim_hint')}</div>` : nothing}`
+      }
     </div>`;
+  };
+  // opening a circuit rings its heads in the view; closing it takes the overlay away
+  const openCircuit = (c) => {
+    const was = it.sel === c.id;
+    it.sel = was ? null : c.id;
+    it.selHead = null;
+    if (was) it.cancel();
+    else it.showHeads(c.id);
+    card.requestUpdate();
   };
   const circuit = (c, i) => {
     const on = it.sel === c.id;
     return html`<div class=${`ent ${on ? 'open' : ''}`}>
-      <div class="ent-head" @click=${() => open(c.id)}>
+      <div class="ent-head" @click=${() => openCircuit(c)}>
         <ha-icon icon="mdi:sprinkler-variant"></ha-icon>
         <span class="grow">${c.name || `${t('irr_circuit')} ${i + 1}`}</span>
         <span class="hint">${c.heads.length} ${t('irr_heads')} · ${stateOf(c)}</span>
@@ -791,7 +839,7 @@ export function renderIrrigation(card) {
                   ${previewBtn(c)}
                   <button @click=${() => it.removeCircuit(c.id)}>${t('irr_del_circuit')}</button>
                 </div>`,
-              () => open(c.id),
+              () => openCircuit(c),
             )
           : nothing
       }

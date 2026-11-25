@@ -260,6 +260,111 @@ describe('gate tools', () => {
   });
 });
 
+describe('sprinkler heads, one at a time', () => {
+  const circuit = () => ({
+    id: 'c1',
+    heads: [
+      { id: 'h1', model: 'hunter-psu-04-15a', at: [2, 3], frame: 'plan' },
+      { id: 'h2', model: 'hunter-pgp-ultra', at: [8, 3], frame: 'plan' },
+      { id: 'h3', model: 'hunter-mp2000', at: null, frame: 'plan' },
+    ],
+  });
+  const setup = () => {
+    const ed = fakeEd({ irrigation: { lines: [], circuits: [circuit()] } });
+    ed.toPlan = () => (x, z) => [x, z];
+    ed.toStore = (x, z) => [x, z];
+    return { ed, it: new IrrigationTools(ed) };
+  };
+  /** The rings the overlay draws: [x, z, colour] per head, widest ring first. */
+  const rings = (ed) => {
+    const out = [];
+    ed.clickTool.draft({
+      ribbon: (pts, color, width) => {
+        const xs = pts.map((q) => q[0]);
+        out.push({ x: (Math.min(...xs) + Math.max(...xs)) / 2, color, width, r: (Math.max(...xs) - Math.min(...xs)) / 2 });
+      },
+      dot: (x, z, color) => out.push({ dot: true, x, color }),
+      line: () => {},
+    });
+    return out;
+  };
+
+  it('unfolds one head at a time and rings it in the view', () => {
+    const { ed, it } = setup();
+    expect(it.selHead).toBeNull();
+    it.selectHead('c1', 'h2');
+    expect(it.selHead).toBe('h2');
+    expect(ed.clickTool.key).toBe('head-sel:c1');
+    expect(ed.clickTool.pick()).toBeNull(); // the overlay draws, it does not take the clicks
+
+    // a ring per head that is down (the third is not placed yet), the one unfolded in red and wider
+    const drawn = rings(ed);
+    expect(drawn.filter((r) => !r.dot)).toHaveLength(2);
+    const red = drawn.filter((r) => r.color === '#ff3b30');
+    expect(red.map((r) => r.x)).toEqual([8, 8]); // the ring and the dot of h2
+    const pale = drawn.find((r) => r.color !== '#ff3b30');
+    expect(pale.x).toBe(2);
+    expect(red[0].width).toBeGreaterThan(pale.width);
+
+    it.selectHead('c1', 'h2'); // the same head again: folded, no ring left
+    expect(it.selHead).toBeNull();
+    expect(rings(ed).some((r) => r.color === '#ff3b30')).toBe(false);
+  });
+
+  it('keeps the ring after placing a head, and drops it with the head', () => {
+    const { ed, it } = setup();
+    it.selectHead('c1', 'h1');
+    it.placeHead('c1', 'h3');
+    expect(ed.clickTool.key).toBe('head-place'); // placing takes the tool over
+    ed.clickTool.click({ point: { x: 5, z: 7 } });
+    expect(it.head('c1', 'h3').at).toEqual([5, 7]);
+    expect(it.selHead).toBe('h3'); // the head just placed is the one unfolded
+    expect(ed.clickTool.key).toBe('head-sel:c1'); // and ringed again
+    expect(rings(ed).filter((r) => !r.dot)).toHaveLength(3);
+
+    it.removeHead('c1', 'h3');
+    expect(it.selHead).toBeNull();
+    expect(rings(ed).filter((r) => !r.dot)).toHaveLength(2);
+  });
+
+  it('moves a head to another circuit with everything it was given', () => {
+    const ed = fakeEd({ irrigation: { lines: [], circuits: [circuit(), { id: 'c2', heads: [] }] } });
+    ed.toPlan = () => (x, z) => [x, z];
+    const it = new IrrigationTools(ed);
+    const was = { ...it.head('c1', 'h2') };
+
+    expect(it.moveHead('c1', 'h2', 'c2')).toBe(true);
+    expect(it.circuit('c1').heads.map((h) => h.id)).toEqual(['h1', 'h3']);
+    expect(it.head('c2', 'h2')).toEqual(was); // the same head, not a new one placed again
+    expect(it.sel).toBe('c2'); // the panel follows it
+    expect(it.selHead).toBe('h2');
+    expect(ed.clickTool.key).toBe('head-sel:c2');
+    expect(ed.commits).toBe(1);
+
+    // a move that leads nowhere changes nothing
+    expect(it.moveHead('c2', 'h2', 'c2')).toBe(false);
+    expect(it.moveHead('c2', 'h2', 'nope')).toBe(false);
+    expect(it.moveHead('c2', 'gone', 'c1')).toBe(false);
+    expect(ed.commits).toBe(1);
+  });
+
+  it('stops placing a head that is moved away', () => {
+    const ed = fakeEd({ irrigation: { lines: [], circuits: [circuit(), { id: 'c2', heads: [] }] } });
+    ed.toPlan = () => (x, z) => [x, z];
+    const it = new IrrigationTools(ed);
+    it.placeHead('c1', 'h3');
+    it.moveHead('c1', 'h3', 'c2');
+    expect(it.mode).toBeNull();
+    expect(ed.clickTool.key).toBe('head-sel:c2');
+  });
+
+  it('leaves no overlay for a circuit that is gone', () => {
+    const { ed, it } = setup();
+    it.showHeads('nope');
+    expect(ed.clickTool).toBeNull();
+  });
+});
+
 describe('drives and paths', () => {
   const hit = (x, z) => ({ point: { x, z } });
 

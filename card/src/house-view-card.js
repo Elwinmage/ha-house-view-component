@@ -3989,6 +3989,10 @@ class HouseViewCard extends LitElement {
     :is(.panel, .win) .ent.open {
       border-left-color: var(--primary-color, #03a9f4);
     }
+    /* what the settings belong to, ringed in the same red in the view */
+    :is(.panel, .win) .ent.pick {
+      border-left-color: #ff3b30;
+    }
     :is(.panel, .win) .ent-head {
       display: flex;
       align-items: center;
