@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { PATH_DEFAULT, PATH_SURFACES, PATH_W, buildPaths, normalizePath, pathLength, pathStrip } from '../src/paths.js';
+import { PATH_DEFAULT, PATH_W, buildPaths, modulePath, normalizePath, pathLength, pathStrip } from '../src/paths.js';
+import { BUILTIN_PATHS, pathKind, setPathCatalog } from '../src/path-art.js';
 
 const LINE = [
   [0, 0],
@@ -119,15 +120,54 @@ describe('3D drives and paths', () => {
     expect(buildPaths(undefined, anchor, () => 0).count).toBe(0);
   });
 
+  it('sets the elements of a modular path on the ground, one colour each', () => {
+    setPathCatalog({
+      stones: {
+        name: { en: 'Stepping stones' },
+        kind: 'module',
+        draft: '#b5b0a6',
+        width: { default: 0.5, min: 0.3, max: 1.2 },
+        module: { shapes: ['round', 'half-moon'], size: [0.45, 0.45], thickness: 0.05, gap: 0.25, colors: ['#8d8a84', '#a39a8c'] },
+      },
+    });
+    const built = buildPaths([{ id: 'p1', pts: LINE, surface: 'stones', w: 0.5 }], anchor, () => 2);
+    expect(built.count).toBe(1);
+    const meshes = [];
+    built.group.traverse((o) => o.isMesh && meshes.push(o));
+    expect(meshes).toHaveLength(1); // one merged mesh for the whole path
+    const geo = meshes[0].geometry;
+    expect(geo.attributes.color).toBeTruthy();
+    expect(built.materials[0].vertexColors).toBe(true);
+    geo.computeBoundingBox();
+    // the elements stand on the ground, the thickness above it
+    expect(geo.boundingBox.min.y).toBeCloseTo(2.05, 2);
+    expect(geo.boundingBox.max.y).toBeCloseTo(2.1, 2);
+    // and stay along the line, never a stone's throw off it
+    expect(geo.boundingBox.min.x).toBeGreaterThan(-1);
+    expect(geo.boundingBox.max.x).toBeLessThan(11);
+    expect(geo.boundingBox.min.z).toBeGreaterThan(-1);
+    expect(geo.boundingBox.max.z).toBeLessThan(7);
+
+    // the same path drawn again is the same path
+    const again = buildPaths([{ id: 'p1', pts: LINE, surface: 'stones', w: 0.5 }], anchor, () => 2);
+    const [first] = [];
+    expect(again.group.children[0].children[0].geometry.attributes.position.count).toBe(geo.attributes.position.count);
+    expect(first).toBeUndefined();
+
+    // a line too short for one element draws nothing
+    expect(modulePath(pathKind('stones').module, [[0, 0]], 0.5, () => 0, 'x')).toBeNull();
+    setPathCatalog({});
+  });
+
   it('draws a texture per surface in a browser', () => {
     const ctx = new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => ((o[k] = v), true) });
     vi.stubGlobal('document', { createElement: () => ({ getContext: () => ctx }) });
     const built = buildPaths(
-      Object.keys(PATH_SURFACES).map((surface) => ({ pts: LINE, surface })),
+      Object.keys(BUILTIN_PATHS).map((surface) => ({ pts: LINE, surface })),
       anchor,
       () => 0,
     );
-    expect(built.materials).toHaveLength(Object.keys(PATH_SURFACES).length);
+    expect(built.materials).toHaveLength(Object.keys(BUILTIN_PATHS).length);
     for (const m of built.materials) expect(m.map).not.toBeNull();
     // drawn once: the same texture for the next build
     const again = buildPaths([{ pts: LINE, surface: 'gravel' }], anchor, () => 0);

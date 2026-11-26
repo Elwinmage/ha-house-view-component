@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { climateFor, seasonBlend, seasonsOf, seasonKey, seasonDay } from '../src/climate.js';
+import { climateFor, seasonBlend, seasonsOf, seasonKey, seasonDay, doyToDate, dateToDoy } from '../src/climate.js';
 
 describe('climate and seasons', () => {
   it('tells the zones apart', () => {
@@ -57,5 +57,22 @@ describe('climate and seasons', () => {
     expect(seasonDay('wet', s)).toBe(44);
     // weaker near the equator
     expect(climateFor(1).amp).toBeLessThan(c.amp);
+  });
+});
+
+describe('a day of the calendar and the date of an input', () => {
+  const year = new Date().getFullYear();
+
+  it('reads and writes the same day', () => {
+    expect(doyToDate(1)).toBe(`${year}-01-01`);
+    expect(dateToDoy(`${year}-01-01`)).toBe(1);
+    expect(dateToDoy(`${year}-12-31`)).toBe(365); // the last day of a leap year is held at 365, as the seasons are
+    for (const doy of [1, 60, 172, 200, 365]) expect(dateToDoy(doyToDate(doy))).toBe(doy);
+  });
+
+  it('stays in the year, whatever it is given', () => {
+    expect(dateToDoy('1999-12-31')).toBe(365);
+    expect(dateToDoy('')).toBeNull();
+    expect(dateToDoy('not a date')).toBeNull();
   });
 });

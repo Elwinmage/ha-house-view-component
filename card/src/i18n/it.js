@@ -132,7 +132,7 @@ export default {
   area_none: 'nessuna',
   rooms: 'Stanze ↔ aree di Home Assistant',
   rooms_hint:
-    'Per impostazione predefinita, una stanza della planimetria è collegata all’area con lo stesso nome (accenti e maiuscole ignorati). Scelga qui un’altra area, o nessuna. Passi il mouse su un nome per vedere la stanza.',
+    'Per impostazione predefinita, una stanza della planimetria è collegata all’area con lo stesso nome (accenti e maiuscole ignorati). Scelga qui un’altra area, o nessuna. Passi il mouse su un nome per vedere la stanza. Le sue finestre, porte e porte del garage sono elencate sotto: un clic apre lo stesso editor del menu Porte e finestre.',
   white: 'Bianco',
   black: 'Nero',
   name: 'Nome',
@@ -189,6 +189,8 @@ export default {
   path_gravel: 'Ghiaia',
   path_concrete: 'Cemento',
   path_pavers: 'Autobloccanti',
+  path_surfaces: 'Pavimentazioni',
+  path_modules: 'Elementi posati',
   path_dirt: 'Terra',
   path_tracks: 'Carreggiate',
   fence_draw: 'Traccia una recinzione',
@@ -517,6 +519,9 @@ export default {
   layer_general_hint:
     'Entità della vista generale. Per quelle di una stanza, faccia clic su di essa nella vista: si ingrandisce e la modifica diventa quella della stanza.',
   openings: 'Porte e finestre',
+  openings_room_hint:
+    'Le aperture della stanza su cui hai ingrandito. Toccane una per collegarla; torna alla vista d’insieme per vedere tutta la casa.',
+  openings_room_none: 'Questa stanza non ha né finestre né porte sulla pianta.',
   openings_hint:
     'Faccia clic su una porta o finestra nella vista (o nell’elenco) per collegare le sue entità. Una stanza con una sola finestra o una sola porta si collega da sola alle entità della sua area HA.',
   openings_pick: 'Scegli nella vista',
@@ -564,6 +569,17 @@ export default {
   opening_window: 'Finestra',
   opening_patio: 'Porta-finestra',
   opening_door: 'Porta',
+  opening_garage: 'Porta del garage',
+  opening_is_garage: 'Porta del garage',
+  opening_garage_kind: 'Tipo di apertura',
+  opening_garage_hint:
+    'La porta segue il suo motore (un cover di classe garage) o il suo contatto, e impiega una decina di secondi come quella vera. Senza entità resta chiusa.',
+  garage_sectional: 'Sezionale',
+  garage_tilt: 'Basculante',
+  garage_roller: 'Avvolgibile',
+  garage_swing: 'A battente',
+  garage_slide: 'Laterale',
+  garage_folding: 'A libro',
   opening_opening: 'Passaggio',
   opening_room: 'Stanza',
   opening_link_contact: 'Sensore aperto / chiuso',
@@ -652,6 +668,14 @@ export default {
   pool_lamp_depth: 'Profondità della lampada (m)',
   pool_lamps_hint:
     'Una lampada è un faro incassato nella parete del lato scelto. Una luce colorata dà il proprio colore, una presa o una luce bianca prende il colore scelto qui. Le lampade accese tingono l’acqua e la vasca, tanto più di notte.',
+  pool_falls: 'Cascate',
+  pool_fall: 'Cascata',
+  pool_fall_color: 'Colore',
+  pool_fall_pos: 'Lungo il lato',
+  pool_fall_len: 'Larghezza della lama (m)',
+  pool_fall_h: 'Altezza di caduta (m)',
+  pool_falls_hint:
+    'Una cascata versa nella vasca da una soglia posta sopra il lato scelto. Senza entità scorre sempre; collegata a una pompa, scorre finché la pompa gira. Una vasca può averne più di una.',
   pool_cover: 'Tapparella',
   pool_cover_color: 'Lamelle',
   pool_cover_invert: 'Invertire aperto / chiuso',

@@ -137,7 +137,7 @@ export default {
   area_none: 'keiner',
   rooms: 'Räume ↔ Bereiche von Home Assistant',
   rooms_hint:
-    'Standardmäßig wird ein Raum des Grundrisses mit dem Bereich gleichen Namens verknüpft (Akzente und Groß-/Kleinschreibung werden ignoriert). Wählen Sie hier einen anderen Bereich oder keinen. Fahren Sie über einen Namen, um den Raum zu sehen.',
+    'Standardmäßig wird ein Raum des Grundrisses mit dem Bereich gleichen Namens verknüpft (Akzente und Groß-/Kleinschreibung werden ignoriert). Wählen Sie hier einen anderen Bereich oder keinen. Fahren Sie über einen Namen, um den Raum zu sehen. Seine Fenster, Türen und Garagentore sind darunter aufgeführt: ein Klick öffnet denselben Editor wie das Menü Türen und Fenster.',
   white: 'Weiß',
   black: 'Schwarz',
   name: 'Name',
@@ -195,6 +195,8 @@ export default {
   path_gravel: 'Kies',
   path_concrete: 'Beton',
   path_pavers: 'Pflaster',
+  path_surfaces: 'Beläge',
+  path_modules: 'Einzelne Elemente',
   path_dirt: 'Erde',
   path_tracks: 'Fahrspuren',
   fence_draw: 'Zaun zeichnen',
@@ -524,6 +526,9 @@ export default {
   layer_general_hint:
     'Entitäten der Gesamtansicht. Für die eines Raums klicken Sie in der Ansicht darauf: Es wird herangezoomt und die Bearbeitung wechselt zu der des Raums.',
   openings: 'Türen und Fenster',
+  openings_room_hint:
+    'Die Öffnungen des Raums, auf den Sie gezoomt haben. Tippen Sie eine an, um sie zu verknüpfen; zurück in der Gesamtansicht sehen Sie das ganze Haus.',
+  openings_room_none: 'Dieser Raum hat auf dem Plan weder Fenster noch Tür.',
   openings_hint:
     'Klicken Sie in der Ansicht (oder in der Liste) auf eine Tür oder ein Fenster, um seine Entitäten zu verknüpfen. Ein Raum mit nur einem Fenster oder nur einer Tür wird automatisch mit den Entitäten seines HA-Bereichs verknüpft.',
   openings_pick: 'In der Ansicht wählen',
@@ -571,6 +576,17 @@ export default {
   opening_window: 'Fenster',
   opening_patio: 'Terrassentür',
   opening_door: 'Tür',
+  opening_garage: 'Garagentor',
+  opening_is_garage: 'Garagentor',
+  opening_garage_kind: 'Öffnungsart',
+  opening_garage_hint:
+    'Das Tor folgt seinem Antrieb (ein Cover der Klasse garage) oder seinem Kontakt und braucht gut zehn Sekunden wie das echte. Ohne Entität bleibt es zu.',
+  garage_sectional: 'Sektionaltor',
+  garage_tilt: 'Schwingtor',
+  garage_roller: 'Rolltor',
+  garage_swing: 'Flügeltor',
+  garage_slide: 'Seitentor',
+  garage_folding: 'Falttor',
   opening_opening: 'Durchgang',
   opening_room: 'Raum',
   opening_link_contact: 'Sensor offen / geschlossen',
@@ -659,6 +675,14 @@ export default {
   pool_lamp_depth: 'Tiefe der Lampe (m)',
   pool_lamps_hint:
     'Eine Lampe ist ein Scheinwerfer in der Wand der gewählten Seite. Ein farbiges Licht gibt seine eigene Farbe, eine Steckdose oder ein weißes Licht nimmt die hier gewählte Farbe. Eingeschaltete Lampen färben Wasser und Becken, nachts umso mehr.',
+  pool_falls: 'Wasserfälle',
+  pool_fall: 'Wasserfall',
+  pool_fall_color: 'Farbe',
+  pool_fall_pos: 'Entlang der Seite',
+  pool_fall_len: 'Breite des Schleiers (m)',
+  pool_fall_h: 'Fallhöhe (m)',
+  pool_falls_hint:
+    'Ein Wasserfall ergießt sich über eine Lippe an der gewählten Seite in das Becken. Ohne Entität läuft er ständig; mit einer Pumpe verbunden läuft er, solange die Pumpe läuft. Ein Becken kann mehrere haben.',
   pool_cover: 'Rollabdeckung',
   pool_cover_color: 'Lamellen',
   pool_cover_invert: 'Offen / geschlossen tauschen',

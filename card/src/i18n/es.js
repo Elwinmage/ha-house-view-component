@@ -133,7 +133,7 @@ export default {
   area_none: 'ninguna',
   rooms: 'Habitaciones ↔ áreas de Home Assistant',
   rooms_hint:
-    'Por defecto, una habitación del plano se enlaza con el área del mismo nombre (se ignoran acentos y mayúsculas). Elija aquí otra área, o ninguna. Pase el ratón por un nombre para ver la habitación.',
+    'Por defecto, una habitación del plano se enlaza con el área del mismo nombre (se ignoran acentos y mayúsculas). Elija aquí otra área, o ninguna. Pase el ratón por un nombre para ver la habitación. Sus ventanas, puertas y puertas de garaje se enumeran debajo: un clic abre el mismo editor que el menú Puertas y ventanas.',
   white: 'Blanco',
   black: 'Negro',
   name: 'Nombre',
@@ -190,6 +190,8 @@ export default {
   path_gravel: 'Grava',
   path_concrete: 'Hormigón',
   path_pavers: 'Adoquines',
+  path_surfaces: 'Pavimentos',
+  path_modules: 'Elementos sueltos',
   path_dirt: 'Tierra',
   path_tracks: 'Rodadas',
   fence_draw: 'Trazar una valla',
@@ -517,6 +519,9 @@ export default {
   layer_general_hint:
     'Entidades de la vista general. Para las de una habitación, haga clic en ella en la vista: se acerca y la edición pasa a ser la de la habitación.',
   openings: 'Puertas y ventanas',
+  openings_room_hint:
+    'Las aberturas de la habitación a la que ha hecho zoom. Toque una para vincularla; vuelva a la vista general para ver toda la casa.',
+  openings_room_none: 'Esta habitación no tiene ventana ni puerta en el plano.',
   openings_hint:
     'Haga clic en una puerta o ventana de la vista (o de la lista) para enlazar sus entidades. Una habitación con una sola ventana o una sola puerta se enlaza sola con las entidades de su área de HA.',
   openings_pick: 'Elegir en la vista',
@@ -564,6 +569,17 @@ export default {
   opening_window: 'Ventana',
   opening_patio: 'Puerta de patio',
   opening_door: 'Puerta',
+  opening_garage: 'Puerta de garaje',
+  opening_is_garage: 'Puerta de garaje',
+  opening_garage_kind: 'Tipo de apertura',
+  opening_garage_hint:
+    'La puerta sigue su motor (un cover de clase garage) o su contacto, y tarda una decena de segundos como la real. Sin entidad, permanece cerrada.',
+  garage_sectional: 'Seccional',
+  garage_tilt: 'Basculante',
+  garage_roller: 'Enrollable',
+  garage_swing: 'Batiente',
+  garage_slide: 'Lateral',
+  garage_folding: 'Plegable',
   opening_opening: 'Paso',
   opening_room: 'Habitación',
   opening_link_contact: 'Sensor abierto / cerrado',
@@ -653,6 +669,14 @@ export default {
   pool_lamp_depth: 'Profundidad de la lámpara (m)',
   pool_lamps_hint:
     'Una lámpara es un foco encastrado en la pared del lado elegido. Una luz de color da la suya, un enchufe o una luz blanca toma el color elegido aquí. Las lámparas encendidas tiñen el agua y el vaso, más aún de noche.',
+  pool_falls: 'Cascadas',
+  pool_fall: 'Cascada',
+  pool_fall_color: 'Color',
+  pool_fall_pos: 'A lo largo del lado',
+  pool_fall_len: 'Ancho de la lámina (m)',
+  pool_fall_h: 'Altura de caída (m)',
+  pool_falls_hint:
+    'Una cascada vierte en el estanque desde un labio situado sobre el lado elegido. Sin entidad corre siempre; vinculada a una bomba, corre mientras la bomba funciona. Un vaso puede tener varias.',
   pool_cover: 'Cubierta de persiana',
   pool_cover_color: 'Lamas',
   pool_cover_invert: 'Invertir abierto / cerrado',

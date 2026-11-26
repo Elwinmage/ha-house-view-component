@@ -16,7 +16,7 @@ import {
 } from './plan-builder.js';
 
 const SIDE_KEYS = ['n', 'e', 's', 'w'];
-const TYPE_COLOR = { window: '#7fd3ff', patio: '#3fa9f5', door: '#f5b041' };
+const TYPE_COLOR = { window: '#7fd3ff', patio: '#3fa9f5', door: '#f5b041', garage: '#c08a3e' };
 
 /** Point of the plan (meters) under a pointer event on the svg. */
 function planPoint(ev, svgEl) {
@@ -250,7 +250,7 @@ function roomFields(card, b, t, r) {
     </div>
     <div class="row">${num('x', r.x, (v) => set({ x: v }), 0.05, -999)} ${num('z', r.z, (v) => set({ z: v }), 0.05, -999)}</div>
     <div class="row">
-      ${['window', 'patio', 'door'].map(
+      ${['window', 'patio', 'door', 'garage'].map(
         (k) =>
           html`<button
             class=${card._bPlace === k ? 'on' : ''}
@@ -292,7 +292,7 @@ function roomFields(card, b, t, r) {
                   changed();
                 }}
               >
-                ${['window', 'patio', 'door'].map((k) => html`<option value=${k} ?selected=${op.type === k}>${t(`opening_${k}`)}</option>`)}
+                ${['window', 'patio', 'door', 'garage'].map((k) => html`<option value=${k} ?selected=${op.type === k}>${t(`opening_${k}`)}</option>`)}
               </select>
               <select
                 @change=${(e) => {

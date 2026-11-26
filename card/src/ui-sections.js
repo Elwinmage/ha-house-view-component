@@ -4,10 +4,37 @@ import { html, nothing } from 'lit';
 import { FENCE_TYPES, normalizeFence, sideCount } from './fences.js';
 import { SPRINKLERS, SOILS, LINE_COLORS, sprinklerModel, smoothPath, isOn } from './irrigation.js';
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
-import { PATH_SURFACES, PATH_W, normalizePath, pathLength } from './paths.js';
+import { PATH_W, normalizePath, pathLength, pathThumb } from './paths.js';
+import { pathKind, pathKindName, pathKinds, pathWidth } from './path-art.js';
+import { renderRoomOpenings } from './ui-openings.js';
 import { GATE_OPEN, GATE_FILL, GATE_TOP, GATE_DOMAINS, normalizeGate } from './gates.js';
 import { mapRoomsToAreas } from './ha-bridge.js';
 import { renderMove } from './ui-pools.js';
+
+/** Colour a kind of path is drawn in on the overlay; grey when the kind is gone from the catalog. */
+const pathDraft = (id) => (pathKind(id) || {}).draft || '#9aa0a6';
+/** Its name: the one of the catalog, else the translation of the kinds the card knows, else the id. */
+const pathLabel = (id, t) => pathKindName(id) || (t(`path_${id}`) === `path_${id}` ? id : t(`path_${id}`));
+/** Width offered for a kind: its own bounds, else the ones of the card. */
+const pathBounds = (id) => {
+  const w = pathWidth(pathKind(id), { min: PATH_W[0], max: PATH_W[1] });
+  return [w.min, w.max];
+};
+/** The kinds in the picker: the unbroken surfaces, then the ones set element by element. */
+const pathGroups = (t) => {
+  const kinds = pathKinds();
+  const ids = Object.keys(kinds).sort((a, b) => pathLabel(a, t).localeCompare(pathLabel(b, t)));
+  return [
+    [t('path_surfaces'), ids.filter((id) => kinds[id].kind !== 'module')],
+    [t('path_modules'), ids.filter((id) => kinds[id].kind === 'module')],
+  ].filter(([, list]) => list.length);
+};
+/** Picking a kind keeps the width when it fits, else takes the usual one of that kind. */
+const pathChoice = (id, w) => {
+  const [min, max] = pathBounds(id);
+  const def = pathWidth(pathKind(id), null);
+  return { surface: id, w: w >= min && w <= max ? w : def ? def.default : Math.min(max, Math.max(min, w)) };
+};
 
 const num = (value, onChange, step = 0.1, min = undefined, max = undefined) =>
   html`<input
@@ -205,9 +232,9 @@ export function renderPaths(card) {
       const on = pt.sel === i;
       return html`<div class=${`ent ${on ? 'open' : ''}`}>
         <div @click=${() => pt.select(i)}>
-          <i class="sw" style=${`background:${PATH_SURFACES[p.surface].draft}`}></i>
+          <i class="sw" style=${`background:${pathDraft(p.surface)}`}></i>
           <b>${p.name || `${t('path')} ${i + 1}`}</b>
-          <span class="hint">${t(`path_${p.surface}`)} · ${p.w} m · ${Math.round(pathLength(p.pts))} m</span>
+          <span class="hint">${pathLabel(p.surface, t)} · ${p.w} m · ${Math.round(pathLength(p.pts))} m</span>
         </div>
         ${
           on
@@ -215,16 +242,26 @@ export function renderPaths(card) {
                   <span>${t('name')}</span
                   ><input type="text" .value=${p.name || ''} @change=${(e) => pt.edit(i, { name: e.target.value.trim() })} />
                 </div>
-                <div class="chips">
-                  ${Object.keys(PATH_SURFACES).map(
-                    (k) =>
-                      html`<button class=${p.surface === k ? 'on' : ''} @click=${() => pt.edit(i, { surface: k })}>
-                        <i class="sw" style=${`background:${PATH_SURFACES[k].draft}`}></i>${t(`path_${k}`)}
-                      </button>`,
-                  )}
-                </div>
+                ${pathGroups(t).map(
+                  ([label, ids]) =>
+                    html`<div class="sub">${label}</div>
+                      <div class="pathpick">
+                        ${ids.map(
+                          (k) =>
+                            html`<button
+                              class=${p.surface === k ? 'on' : ''}
+                              title=${pathLabel(k, t)}
+                              @click=${() => pt.edit(i, pathChoice(k, p.w))}
+                            >
+                              ${pathThumb(k) ? html`<img src=${pathThumb(k)} alt="" />` : html`<i class="sw" style=${`background:${pathDraft(k)}`}></i>`}
+                              <span>${pathLabel(k, t)}</span>
+                            </button>`,
+                        )}
+                      </div>`,
+                )}
                 <div class="row">
-                  <span>${t('path_w')}</span>${num(p.w, (v) => pt.edit(i, { w: v }), 0.25, PATH_W[0], PATH_W[1])}
+                  <span>${t('path_w')}</span
+                  >${num(p.w, (v) => pt.edit(i, { w: v }), 0.25, pathBounds(p.surface)[0], pathBounds(p.surface)[1])}
                   <label class="chk"
                     ><input type="checkbox" .checked=${p.edge} @change=${(e) => pt.edit(i, { edge: e.target.checked })} />
                     ${t('path_edge')}</label
@@ -374,26 +411,35 @@ export function renderRooms(card) {
     card._pushLive();
     card._edited(true);
   };
+  // zoomed on a room, only that one is shown: the editor works on it alone, as the list of its entities does
+  const shown = (lv) => lv.rooms.filter((r) => !card._focus || r.id === card._focus);
   return html`<div class="hint">${t('rooms_hint')}</div>
-    ${eng.world.sd.levels.map(
-      (lv) =>
-        html`<b>${lv.name || lv.id}</b>
-          <div class="grid rooms">
-            ${lv.rooms.map(
+    ${eng.world.sd.levels
+      .filter((lv) => shown(lv).length)
+      .map(
+        (lv) =>
+          html`<b>${lv.name || lv.id}</b> ${shown(lv).map(
               (r) =>
-                html`<span @pointerenter=${() => eng.setHighlight(new Set([r.id]))} @pointerleave=${() => card._vacuumSync()}
-                    >${r.name || r.id}</span
-                  >
-                  <select @change=${(e) => set(r.id, e.target.value)}>
-                    <option value="" ?selected=${!explicit[r.id]}>
-                      ${t('area_auto')} : ${auto[r.id] ? name(auto[r.id]) : t('area_none')}
-                    </option>
-                    <option value="-" ?selected=${explicit[r.id] === '-'}>— ${t('area_none')} —</option>
-                    ${areas.map((a) => html`<option value=${a.area_id} ?selected=${explicit[r.id] === a.area_id}>${a.name}</option>`)}
-                  </select>`,
-            )}
-          </div>`,
-    )}`;
+                html`<div class="roomblk">
+                  <div class="row">
+                    <span
+                      class="grow ell"
+                      @pointerenter=${() => eng.setHighlight(new Set([r.id]))}
+                      @pointerleave=${() => card._vacuumSync()}
+                      >${r.name || r.id}</span
+                    >
+                    <select @change=${(e) => set(r.id, e.target.value)}>
+                      <option value="" ?selected=${!explicit[r.id]}>
+                        ${t('area_auto')} : ${auto[r.id] ? name(auto[r.id]) : t('area_none')}
+                      </option>
+                      <option value="-" ?selected=${explicit[r.id] === '-'}>— ${t('area_none')} —</option>
+                      ${areas.map((a) => html`<option value=${a.area_id} ?selected=${explicit[r.id] === a.area_id}>${a.name}</option>`)}
+                    </select>
+                  </div>
+                  ${renderRoomOpenings(card, r.id)}
+                </div>`,
+            )}`,
+      )}`;
 }
 
 // ---------------------------------------------------------------------------- robot vacuum

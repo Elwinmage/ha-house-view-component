@@ -1,7 +1,7 @@
 import pytest
 
 HOUSE_RELEASES = "https://github.com/Elwinmage/house-catalog/releases/download"
-SECTIONS = ("trees", "objects", "pond_fish")
+SECTIONS = ("trees", "objects", "pond_fish", "paths")
 
 
 @pytest.fixture(autouse=True)

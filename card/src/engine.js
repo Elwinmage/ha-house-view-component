@@ -28,6 +28,7 @@ import { buildGates, gatesOf, cutFence } from './gates.js';
 import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
 import { OpeningsFx } from './engine/openings-3d.js';
+import { GARAGE_KINDS } from './openings.js';
 import { buildPools } from './engine/pools-3d.js';
 import { buildSea, activeSea, seaWaves, swellDirection } from './engine/sea-3d.js';
 import { tideLevel, simMs } from './engine/tide.js';
@@ -307,7 +308,9 @@ export class HouseEngine {
             g.add(spill);
             w.spills.push({ room: p.room, mesh: spill });
           }
-        } else w.openings.leaf(p.key);
+        } else if (p.kind === 'garage')
+          w.openings.garage(p.key, GARAGE_KINDS[0]); // the choice of the user follows
+        else w.openings.leaf(p.key);
       }
     }
 
@@ -335,6 +338,7 @@ export class HouseEngine {
     w.pools.setRobots(this._poolRobots);
     w.pools.setLights(this._poolLights, this._poolGlow());
     w.pools.setCovers(this._poolCovers, true); // a cover already closed shows closed, it does not travel on loading
+    w.pools.setFalls(this._poolFalls);
     root.add(w.pools.group);
     // the sea: a water plane at its level around the terrain
     const seaCfg = activeSea(edits.sea);
@@ -1517,6 +1521,12 @@ export class HouseEngine {
   setPoolCovers(map) {
     this._poolCovers = map || null;
     if (this.world) this.world.pools.setCovers(this._poolCovers);
+  }
+
+  /** Waterfalls of the drawn pools: { poolId: { fallId: pouring } } (see fallRunning in pools.js). */
+  setPoolFalls(map) {
+    this._poolFalls = map || null;
+    if (this.world) this.world.pools.setFalls(this._poolFalls);
   }
 
   /** How far the cover of a pool is drawn over the water (0..1), or null: what the editor watches while it tests. */

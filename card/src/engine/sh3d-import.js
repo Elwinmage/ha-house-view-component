@@ -65,14 +65,23 @@ export function readHomeXml(buffer) {
 const FLOOR_TILE = /cuisine|kitchen|bain|bath|douche|shower|wc|toilet|buanderie|laundry|garage|entree|hall/;
 const guessFloor = (name) => (FLOOR_TILE.test(strip(name)) ? '#cfcfc8' : '#b99a6b');
 
-function classifyOpening(name, catalogId, elevation, height) {
+const GARAGE_DOOR = /garage|sectionnelle|basculante|enroulable|up and over|overhead|carport/;
+
+export function classifyOpening(name, catalogId, elevation, height, width) {
   const n = strip(`${name} ${catalogId}`);
   if (elevation < 0.1 && /doorframe|frame|opening|passage|arche|arch|cadre|ouverture/.test(n)) return 'opening';
   if (elevation >= 0.35) return 'window';
+  // glazing is read first: a wide patio door is not a garage door
   if (/baie|patio|coulissant|sliding|french|vitree|balcon|glass door/.test(n)) return 'patio';
   if (/window|fenetre|velux|vitre/.test(n)) return height > 1.8 ? 'patio' : 'window';
+  // a garage door: named as one, or simply a door too wide to be anything else
+  if (elevation < 0.2 && (GARAGE_DOOR.test(n) || (width >= 2.4 && height >= 1.9))) return 'garage';
   return 'door';
 }
+
+/** A door of a room named after a garage is one, as soon as a car could go through it. */
+export const inGarage = (type, width, roomName) =>
+  type === 'door' && width >= 2 && /garage|carport/.test(strip(roomName || '')) ? 'garage' : type;
 
 const VEG_RULES = [
   [/pin\b|pine|sapin|conifer|cypres|epicea|thuya/, 'pine'],
@@ -251,7 +260,9 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
     walls: [],
   }));
   if (!levels.length) {
-    levels = [{ id: '__level0', name: 'Niveau 0', elevation: 0, floorThickness: 0.12, height: defaultWallH, viewable: true, rooms: [], walls: [] }];
+    levels = [
+      { id: '__level0', name: 'Niveau 0', elevation: 0, floorThickness: 0.12, height: defaultWallH, viewable: true, rooms: [], walls: [] },
+    ];
   }
   levels.sort((a, b) => a.elevation - b.elevation);
   const byId = new Map(levels.map((l) => [l.id, l]));
@@ -324,7 +335,13 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
     }
     return true;
   };
-  const isOutside = (lv, p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some((d) => rayFree(lv, p, d));
+  const isOutside = (lv, p) =>
+    [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ].some((d) => rayFree(lv, p, d));
   for (const lv of levels) {
     if (!lv.rooms.length && lv.walls.length) {
       for (const w of lv.walls) {
@@ -358,7 +375,8 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
   const collect = (parent, inherited) => {
     for (const el of Array.from(parent.children)) {
       if (el.tagName === 'furnitureGroup') collect(el, el.getAttribute('level') || inherited);
-      else if (['pieceOfFurniture', 'doorOrWindow', 'light'].includes(el.tagName)) pieces.push({ el, level: el.getAttribute('level') || inherited });
+      else if (['pieceOfFurniture', 'doorOrWindow', 'light'].includes(el.tagName))
+        pieces.push({ el, level: el.getAttribute('level') || inherited });
     }
   };
   collect(home, null);
@@ -388,12 +406,21 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
     const angle = num(el, 'angle');
 
     if (el.tagName === 'doorOrWindow') {
-      const type = classifyOpening(name, catalogId, elev, h);
+      const type = classifyOpening(name, catalogId, elev, h, w);
       // owning room = the room on either side of the wall (wall direction = piece angle)
       const nx = -Math.sin(angle);
       const nz = Math.cos(angle);
       const room = roomAt(lv, [x + nx * 0.35, z + nz * 0.35]) || roomAt(lv, [x - nx * 0.35, z - nz * 0.35]);
-      openings.push({ level: lv.id, type, at: [x, z], width: w, sill: elev, height: h, room: room ? room.id : null, name });
+      openings.push({
+        level: lv.id,
+        type: inGarage(type, w, room && room.name),
+        at: [x, z],
+        width: w,
+        sill: elev,
+        height: h,
+        room: room ? room.id : null,
+        name,
+      });
       continue;
     }
 
@@ -457,7 +484,10 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
     if (!inRoom && ((!lv.rooms.length && !lv.walls.length) || OUTDOOR_NAME.test(name))) {
       // the same object drawn twice (copy left on another level): keep one
       if (sitePool && /piscine|pool|bassin/i.test(name) && Math.max(w, d) > 2) continue;
-      if (outdoor.some((o) => o.name === (name || 'objet') && Math.hypot(o.at[0] - x, o.at[1] - z) < 0.05 && Math.abs(o.size[0] - w) < 0.05)) continue;
+      if (
+        outdoor.some((o) => o.name === (name || 'objet') && Math.hypot(o.at[0] - x, o.at[1] - z) < 0.05 && Math.abs(o.size[0] - w) < 0.05)
+      )
+        continue;
       const n = (outdoorCount[name] = (outdoorCount[name] || 0) + 1);
       // id = name + occurrence: stable when the piece is moved in SH3D, so manual edits survive a re-import
       outdoor.push({
@@ -474,7 +504,18 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
       });
       continue;
     }
-    furniture.push({ kind: 'box', level: lv.id, at: [x, z], rot: angle, size: [w, h, d], elevation: elev, color, colored, name, _model: modelOf(el) });
+    furniture.push({
+      kind: 'box',
+      level: lv.id,
+      at: [x, z],
+      rot: angle,
+      size: [w, h, d],
+      elevation: elev,
+      color,
+      colored,
+      name,
+      _model: modelOf(el),
+    });
   }
 
   // light radius from the size of its room
@@ -503,7 +544,8 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
   if (sitePool) site.pool = sitePool;
   if (compass) {
     if (compass.hasAttribute('latitude')) site.latitude = (num(compass, 'latitude') * 180) / Math.PI;
-    if (Math.abs(site.latitude - 48.8566) < 0.05) warnings.push('Latitude de la boussole = valeur par défaut de SH3D (Paris) : régler la boussole sur le site réel (soleil, saisons)');
+    if (Math.abs(site.latitude - 48.8566) < 0.05)
+      warnings.push('Latitude de la boussole = valeur par défaut de SH3D (Paris) : régler la boussole sur le site réel (soleil, saisons)');
     site.northOffsetDeg = (num(compass, 'northDirection') * 180) / Math.PI;
   } else warnings.push('Pas de boussole dans le plan : latitude par défaut (43,6°), nord vers le haut');
 
@@ -512,7 +554,10 @@ export function parseHome(xmlText, filename = 'plan.sh3d') {
   levels = levels.filter((l) => l.rooms.length || l.walls.length);
   if (!levels.length) throw new Error('Aucun mur ni aucune pièce dans ce plan.');
   const noRoom = levels.filter((l) => !l.rooms.length).map((l) => l.name);
-  if (noRoom.length) warnings.push(`Aucune pièce dessinée sur : ${noRoom.join(', ')}. Façades déduites des murs, mais pas de lumières ni de lien area : tracer les pièces dans SH3D (outil « Créer des pièces »)`);
+  if (noRoom.length)
+    warnings.push(
+      `Aucune pièce dessinée sur : ${noRoom.join(', ')}. Façades déduites des murs, mais pas de lumières ni de lien area : tracer les pièces dans SH3D (outil « Créer des pièces »)`,
+    );
 
   // Top level made only of low walls (parapet / terrace) -> flat roof slab instead of a level
   let roof;

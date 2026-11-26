@@ -31,6 +31,11 @@ import {
   standsUp,
   shellOf,
   SHELL_COLOR,
+  newFall,
+  normalizeFall,
+  fallsOf,
+  fallRunning,
+  FALL_COLOR,
 } from '../src/pools.js';
 import { buildPools, offsetOutline } from '../src/engine/pools-3d.js';
 import { buildTerrain, syntheticTerrain } from '../src/engine/terrain.js';
@@ -470,5 +475,74 @@ describe('where the editor opens', () => {
     expect(editTarget(`${POOL_ROOM}p2`, pools)).toEqual({ section: 'pools', pool: 'p2' }); // the settings of the pond
     expect(editTarget(`${POOL_ROOM}gone`, pools)).toEqual({ section: 'pools' });
     expect(editTarget(`${POOL_ROOM}p1`, undefined)).toEqual({ section: 'pools' });
+  });
+});
+
+describe('waterfalls of a basin', () => {
+  it('starts one in the middle of a side, and keeps every value in its bounds', () => {
+    expect(newFall('f1', 2)).toEqual({ id: 'f1', side: 2, t: 0.5, length: 0.6, height: 0.5, color: FALL_COLOR, entity: '' });
+    expect(normalizeFall({ id: 'f', side: -3.4, t: 7, length: 99, height: -2, color: 'blue', entity: 'switch.pump' })).toEqual({
+      id: 'f',
+      side: 0,
+      t: 1,
+      length: 8,
+      height: 0.1,
+      color: FALL_COLOR,
+      entity: 'switch.pump',
+    });
+    expect(normalizeFall({}).color).toBe(FALL_COLOR);
+    expect(normalizeFall({ color: '#AABBCC' }).color).toBe('#AABBCC');
+  });
+
+  it('reads several of them off a basin, and drops what is not one', () => {
+    expect(fallsOf(null)).toEqual([]);
+    expect(fallsOf({ falls: 'no' })).toEqual([]);
+    const two = fallsOf({ falls: [newFall('a'), null, { id: 'b', side: 1, height: 1.2 }] });
+    expect(two.map((f) => f.id)).toEqual(['a', 'b']);
+    expect(two[1].height).toBe(1.2);
+  });
+
+  it('pours all the time without an entity, and with the pump otherwise', () => {
+    expect(fallRunning(newFall('a'), null)).toBe(true);
+    const pump = { ...newFall('a'), entity: 'switch.pump' };
+    expect(fallRunning(pump, { state: 'on' })).toBe(true);
+    expect(fallRunning(pump, { state: 'off' })).toBe(false);
+    expect(fallRunning(pump, null)).toBe(false);
+    expect(fallRunning(null, { state: 'on' })).toBe(true);
+  });
+
+  it('draws the sheet from its lip down into the water, and runs it', () => {
+    const p = buildPools([
+      {
+        id: 'p',
+        kind: 'pool',
+        poly: square,
+        rim: 0.2,
+        depth: 1.4,
+        falls: [newFall('f1', 0), { id: 'f2', side: 1, length: 1.2, height: 1, color: '#88ccff' }],
+      },
+    ]);
+    const falls = p.items[0].falls;
+    expect(falls).toHaveLength(2);
+    const [first, second] = falls;
+    expect(second.sheet.material.color.getHexString()).toBe('88ccff');
+    // the sheet hangs between the lip and the surface of the water
+    const box = second.sheet.geometry.boundingBox || (second.sheet.geometry.computeBoundingBox(), second.sheet.geometry.boundingBox);
+    expect(box.max.x - box.min.x).toBeCloseTo(1.2, 3);
+    expect(second.sheet.position.y + box.max.y).toBeCloseTo(1 - 0.035, 3);
+    expect(second.sheet.position.y + box.min.y).toBeCloseTo(-0.12, 3);
+    // the foam lies on the water
+    expect(second.foam.position.y).toBeCloseTo(-0.11, 3);
+
+    // it pours, then the pump stops
+    p.tick(0.1, 2);
+    const moved = first.sheet.material.map;
+    expect(moved === null || moved.offset.y <= 0).toBe(true);
+    p.setFalls({ p: { f1: false } });
+    expect(first.sheet.visible).toBe(false);
+    expect(first.foam.visible).toBe(false);
+    expect(second.sheet.visible).toBe(true); // not named: it keeps pouring
+    p.setFalls(null);
+    expect(first.sheet.visible).toBe(true);
   });
 });

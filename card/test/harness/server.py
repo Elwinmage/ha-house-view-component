@@ -21,6 +21,7 @@ BUILTIN = {
     "trees": ("catalog_builtin", "tree.json"),
     "objects": ("catalog_builtin_objects", "object.json"),
     "pond_fish": ("catalog_builtin_pond_fish", "pond_fish.json"),
+    "paths": ("catalog_builtin_paths", "path.json"),
 }
 
 

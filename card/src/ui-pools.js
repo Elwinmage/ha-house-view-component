@@ -1,5 +1,6 @@
 // Editor of the pools, spas and ponds drawn from the top: outline (rectangle from two corners, or free), kind, colour,
-// depth, the entity of the cleaning robot, the lamps of the water, the roller cover and, for a pond, its islands.
+// depth, the entity of the cleaning robot, the lamps of the water, the waterfalls pouring into it, the roller cover
+// and, for a pond, its islands.
 // The ground is dug when the world is rebuilt (an island keeps its ground, a little above the water).
 import { html, nothing } from 'lit';
 import {
@@ -10,6 +11,10 @@ import {
   newPool,
   newLamp,
   newCover,
+  newFall,
+  FALL_COLOR,
+  FALL_H,
+  FALL_L,
   rectFromCorners,
   poolValid,
   sideFrame,
@@ -30,6 +35,7 @@ const POOL_ICONS = { pool: 'mdi:pool', pond: 'mdi:fishbowl-outline', spa: 'mdi:h
 
 const uid = () => `pool${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 const lampId = () => `lamp${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+const fallId = () => `fall${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 
 /**
  * Draw state of the card: { id, shape, pts (store frame), hover (plan point), island } while drawing an outline.
@@ -390,7 +396,7 @@ function renderPoolEditor(card, p) {
       '',
     )}
     <div class="hint">${t('pool_robot_hint')}</div>
-    ${renderLamps(card, p, commit)} ${p.kind === 'pond' ? nothing : renderCover(card, p, commit)}
+    ${renderLamps(card, p, commit)} ${renderFalls(card, p, commit)} ${p.kind === 'pond' ? nothing : renderCover(card, p, commit)}
     <button
       class="danger"
       @click=${() => {
@@ -566,6 +572,81 @@ function renderLamps(card, p, commit) {
       ＋ ${t('pool_lamp')}
     </button>
     <div class="hint">${t('pool_lamps_hint')}</div>`;
+}
+
+/**
+ * Waterfalls: each one pours into the water from a lip over one side of the outline. Its colour, how long the
+ * sheet is along that side and how high it falls from are chosen here; a basin may have as many as it likes. A
+ * waterfall left without an entity pours all the time, one linked to a pump pours while that pump runs.
+ */
+function renderFalls(card, p, commit) {
+  const t = card._t;
+  const sides = sideOptions(p, t);
+  const list = (p.falls = p.falls || []);
+  return html`<div class="sub">${t('pool_falls')}</div>
+    ${list.map((f, i) => {
+      const set = (patch) => {
+        Object.assign(f, patch);
+        commit();
+      };
+      const seen = card._poolPart === `fall:${f.id}`;
+      return html`<div class="bbox" style=${seen ? 'outline:2px solid var(--primary-color);outline-offset:2px' : ''}>
+        <div class="row">
+          <span class="grow">${t('pool_fall')} ${i + 1}</span>
+          <label class="bnum"
+            >${t('pool_fall_color')}<input type="color" .value=${f.color || FALL_COLOR} @change=${(e) => set({ color: e.target.value })}
+          /></label>
+          <button
+            title=${t('delete')}
+            @click=${() => {
+              list.splice(i, 1);
+              commit();
+            }}
+          >
+            🗑
+          </button>
+        </div>
+        ${card._entityInput(f.entity || '', (v) => set({ entity: v }), ROBOT_DOMAINS, '')}
+        ${sideSelect(card, p, `fall:${f.id}`, sides, f.side, (v) => set({ side: v }))}
+        ${card._range(
+          t('pool_fall_pos'),
+          f.t ?? 0.5,
+          0,
+          1,
+          0.02,
+          (v) => set({ t: v }),
+          (v) => `${Math.round(v * 100)} %`,
+        )}
+        ${card._range(
+          t('pool_fall_len'),
+          f.length ?? 0.6,
+          FALL_L[0],
+          FALL_L[1],
+          0.05,
+          (v) => set({ length: v }),
+          (v) => `${v.toFixed(2)} m`,
+        )}
+        ${card._range(
+          t('pool_fall_h'),
+          f.height ?? 0.5,
+          FALL_H[0],
+          FALL_H[1],
+          0.05,
+          (v) => set({ height: v }),
+          (v) => `${v.toFixed(2)} m`,
+        )}
+      </div>`;
+    })}
+    <button
+      ?disabled=${!poolValid(p)}
+      @click=${() => {
+        list.push(newFall(fallId()));
+        commit();
+      }}
+    >
+      ＋ ${t('pool_fall')}
+    </button>
+    <div class="hint">${t('pool_falls_hint')}</div>`;
 }
 
 /**

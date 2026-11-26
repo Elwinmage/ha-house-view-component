@@ -281,7 +281,11 @@ class Model {
       const d = norm(this.dir(it.args[2], [0, 0, 1]));
       const h = +it.args[3] || 0;
       const bottom = prof.map((q) => apply(m, [q[0], q[1], 0]));
-      const md = [m[0] * d[0] + m[1] * d[1] + m[2] * d[2], m[4] * d[0] + m[5] * d[1] + m[6] * d[2], m[8] * d[0] + m[9] * d[1] + m[10] * d[2]];
+      const md = [
+        m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+        m[4] * d[0] + m[5] * d[1] + m[6] * d[2],
+        m[8] * d[0] + m[9] * d[1] + m[10] * d[2],
+      ];
       const top = bottom.map((q) => [q[0] + md[0] * h, q[1] + md[1] * h, q[2] + md[2] * h]);
       return [bottom, top];
     }
@@ -521,7 +525,9 @@ export function parseIfc(text, filename = 'plan.ifc', latitude = 45) {
     if (!fp || Math.abs(area2(fp.poly)) < 0.5) continue;
     ri++;
     const name = sp.args[7] || sp.args[2] || `Pièce ${ri}`;
-    rooms.get(storeyOf(id, fp.zMin)).push({ id: `r${ri}`, name: String(name), area: slug(String(name)) || `room_${ri}`, poly: fp.poly.map(toPlan), zMin: fp.zMin });
+    rooms
+      .get(storeyOf(id, fp.zMin))
+      .push({ id: `r${ri}`, name: String(name), area: slug(String(name)) || `room_${ri}`, poly: fp.poly.map(toPlan), zMin: fp.zMin });
   }
 
   // ---- walls
@@ -553,7 +559,15 @@ export function parseIfc(text, filename = 'plan.ifc', latitude = 45) {
     const ws = walls.get(s.id);
     const wallH = ws.length ? Math.max(...ws.map((w) => w.height)) : 2.5;
     const height = next ? Math.max(next.elevation - s.elevation - SLAB_T, 2) : wallH;
-    return { id: `L${s.id}`, sid: s.id, name: String(s.name), elevation: s.elevation, height: fix(height), rooms: rooms.get(s.id), walls: ws };
+    return {
+      id: `L${s.id}`,
+      sid: s.id,
+      name: String(s.name),
+      elevation: s.elevation,
+      height: fix(height),
+      rooms: rooms.get(s.id),
+      walls: ws,
+    };
   });
 
   // ---- doors and windows: centre and width from their body, on the wall nearest to them
@@ -591,11 +605,24 @@ export function parseIfc(text, filename = 'plan.ifc', latitude = 45) {
     const name = String(o.args[2] || '');
     if (type === 'window' && sill < 0.3 && height > 1.8) type = 'patio';
     if (type === 'door' && /slid|coulis|patio|glaz|vitr|baie/i.test(name)) type = 'patio';
+    // a garage door: named as one, or simply a door too wide to be anything else
+    if (type === 'door' && sill < 0.2 && (/garage|sectional|basculante|overhead/i.test(name) || (width >= 2.4 && height >= 1.9)))
+      type = 'garage';
     const nx = -(near.w.b[1] - near.w.a[1]);
     const nz = near.w.b[0] - near.w.a[0];
     const L = Math.hypot(nx, nz) || 1;
-    const room = roomAt(lv, [at[0] + (nx / L) * 0.35, at[1] + (nz / L) * 0.35]) || roomAt(lv, [at[0] - (nx / L) * 0.35, at[1] - (nz / L) * 0.35]);
-    openings.push({ level: lv.id, type, at, width: fix(Math.max(width, 0.3)), sill, height: fix(Math.max(height, 0.3)), room: room ? room.id : null, name });
+    const room =
+      roomAt(lv, [at[0] + (nx / L) * 0.35, at[1] + (nz / L) * 0.35]) || roomAt(lv, [at[0] - (nx / L) * 0.35, at[1] - (nz / L) * 0.35]);
+    openings.push({
+      level: lv.id,
+      type,
+      at,
+      width: fix(Math.max(width, 0.3)),
+      sill,
+      height: fix(Math.max(height, 0.3)),
+      room: room ? room.id : null,
+      name,
+    });
   }
 
   // ---- scene: the walls of the file, or walls drawn around the spaces when it has none

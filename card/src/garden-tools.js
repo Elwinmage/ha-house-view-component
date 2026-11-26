@@ -4,7 +4,8 @@ import { FENCE_TYPES, normalizeFence, nearestSide, nearestPoint, splitSide, remo
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
 import { normalizeGate, placeGate } from './gates.js';
 import { smoothPath, headDefaults, sprinklerModel, bearing } from './irrigation.js';
-import { PATH_SURFACES, normalizePath } from './paths.js';
+import { normalizePath } from './paths.js';
+import { pathKind } from './path-art.js';
 import { movedPts } from './move.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
@@ -536,7 +537,7 @@ export class PathTools {
     const brush = old || normalizePath({});
     const toPlan = this.ed.toPlan({ frame: D ? D.frame : this.ed.frame });
     const P = (D ? D.pts : []).map(([x, z]) => toPlan(x, z));
-    if (P.length > 1) d.ribbon(smoothPath(P, 0.5), PATH_SURFACES[brush.surface].draft, brush.w);
+    if (P.length > 1) d.ribbon(smoothPath(P, 0.5), (pathKind(brush.surface) || {}).draft || '#9aa0a6', brush.w);
     for (const [x, z] of P) d.dot(x, z, '#ffffff');
   }
 }

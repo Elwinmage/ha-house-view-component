@@ -2,7 +2,7 @@
 // sloping bottom for a pond) or standing over it on its shell (a spa), coping or pebble ring, moving water, the
 // cleaning robot wandering on the bottom, the lamps of the water and the roller cover sliding over the pool.
 import * as THREE from 'three';
-import { polygonArea, centroidOf, robotStep, inPolygon, sideFrame, sideExtent, sidePoint, standsUp, shellOf } from '../pools.js';
+import { polygonArea, centroidOf, robotStep, inPolygon, sideFrame, sideExtent, sidePoint, standsUp, shellOf, fallsOf } from '../pools.js';
 import { buildPondFish } from './fish-3d.js';
 
 const BLACK = new THREE.Color('#000000');
@@ -194,6 +194,95 @@ function buildLamps(list, poly, rim, depth) {
   return out;
 }
 
+let fallStreaks = null;
+/** Streaks of falling water (shared; none outside a browser): white on black, used as the shape of the sheet. */
+function fallTexture() {
+  if (fallStreaks !== null || typeof document === 'undefined') return fallStreaks;
+  const W = 64;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.fillStyle = '#6f7d84';
+  g.fillRect(0, 0, W, H);
+  let seed = 12345;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 90; i++) {
+    const x = rand() * W;
+    const y = rand() * H;
+    const len = H * (0.1 + rand() * 0.5);
+    const w = 0.5 + rand() * 2.2;
+    const light = Math.round(180 + rand() * 75);
+    g.fillStyle = `rgb(${light},${light},${light})`;
+    g.fillRect(x, y, w, len);
+    if (y + len > H) g.fillRect(x, y + len - H, w, len); // the streaks wrap, so the sheet never shows a seam
+  }
+  fallStreaks = new THREE.CanvasTexture(c);
+  fallStreaks.wrapS = fallStreaks.wrapT = THREE.RepeatWrapping;
+  return fallStreaks;
+}
+
+/**
+ * Waterfalls: a sheet of water pouring into the basin from a lip over one of its sides, and the foam where it
+ * lands. `list` = the waterfalls of the basin (see newFall in pools.js), `surface` = level of the water.
+ */
+function buildFalls(list, poly, rim, surface, shell) {
+  const out = [];
+  for (const cfg of list) {
+    const [x, z, f] = sidePoint(poly, cfg.side, cfg.t, 0.03);
+    const g = new THREE.Group();
+    g.name = 'pool-fall';
+    g.position.set(x, rim, z);
+    g.rotation.y = Math.atan2(f.nx, f.nz); // local +z goes toward the water, +x runs along the side
+    // the lip it pours from, held over the side
+    const lip = new THREE.Mesh(
+      new THREE.BoxGeometry(cfg.length + 0.14, 0.07, 0.26),
+      new THREE.MeshStandardMaterial({ color: shade(shell, 0.05), roughness: 0.8 }),
+    );
+    lip.position.set(0, cfg.height, 0.1);
+    lip.castShadow = true;
+    // the sheet, from under the lip down into the water
+    const top = cfg.height - 0.035;
+    const drop = Math.max(top - (surface - rim), 0.12);
+    const map = fallTexture();
+    const sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(cfg.length, drop),
+      new THREE.MeshStandardMaterial({
+        color: cfg.color,
+        map: map ? map.clone() : null,
+        transparent: true,
+        opacity: 0.82,
+        roughness: 0.12,
+        metalness: 0.1,
+        emissive: new THREE.Color(cfg.color),
+        emissiveIntensity: 0.12,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    if (sheet.material.map) {
+      sheet.material.map.repeat.set(1, Math.max(1, drop / 0.9));
+      sheet.material.map.needsUpdate = true;
+    }
+    sheet.position.set(0, top - drop / 2, 0.2);
+    sheet.renderOrder = 5;
+    // foam where it lands, lying on the water
+    const foam = new THREE.Mesh(
+      new THREE.CircleGeometry(Math.max(cfg.length, 0.3) * 0.55, 20),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    foam.geometry.scale(1, 0.55, 1); // an ellipse, wider along the side than it reaches into the water
+    foam.rotation.x = -Math.PI / 2;
+    foam.position.set(0, surface - rim + 0.01, 0.28);
+    foam.renderOrder = 6;
+    g.add(lip, sheet, foam);
+    out.push({ cfg, group: g, sheet, foam, on: true });
+  }
+  return out;
+}
+
 /**
  * Roller cover of a pool: a sheet of slats growing over the water from one side of the outline, and the roller it
  * winds on (on the deck at the end of the pool, or sunk in the water). `cfg`: see newCover in pools.js.
@@ -275,7 +364,10 @@ function buildCleaner(color) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.2, 0.38), new THREE.MeshStandardMaterial({ color: '#eeeeee', roughness: 0.5 }));
   body.position.y = 0.12;
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.3), new THREE.MeshStandardMaterial({ color: shade(color, -0.35), roughness: 0.5 }));
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.05, 0.3),
+    new THREE.MeshStandardMaterial({ color: shade(color, -0.35), roughness: 0.5 }),
+  );
   top.position.y = 0.245;
   const trackMat = new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.9 });
   for (const s of [-1, 1]) {
@@ -309,7 +401,11 @@ export function buildPools(list) {
     g.name = `pool-${p.id}`;
     g.userData.pool = p.id;
     // basin
-    const liner = new THREE.MeshStandardMaterial({ color: pond ? shade('#5a4a35', 0) : shade(color, 0.55), roughness: pond ? 1 : 0.6, side: THREE.DoubleSide });
+    const liner = new THREE.MeshStandardMaterial({
+      color: pond ? shade('#5a4a35', 0) : shade(color, 0.55),
+      roughness: pond ? 1 : 0.6,
+      side: THREE.DoubleSide,
+    });
     if (pond) g.add(new THREE.Mesh(pondBasin(p.poly, rim, depth), liner));
     else {
       g.add(new THREE.Mesh(poolWalls(p.poly, rim, bottom), liner));
@@ -387,6 +483,9 @@ export function buildPools(list) {
     // yet is drawn all the same, unlit: it is placed in the editor before it is linked.
     const lamps = buildLamps((p.lights || []).filter(Boolean), p.poly, rim, depth);
     for (const l of lamps) g.add(l.group);
+    // waterfalls: drawn as soon as there is one, pouring until an entity says otherwise
+    const falls = buildFalls(fallsOf(p), p.poly, rim, rim - (pond ? 0.08 : 0.12), shell);
+    for (const fall of falls) g.add(fall.group);
     // roller cover: drawn as soon as there is one, linked to an entity or not (it is placed before it is linked)
     const cover = p.cover ? buildCover(p.poly, p.cover, rim) : null;
     if (cover) {
@@ -405,6 +504,7 @@ export function buildPools(list) {
       linerMat: liner,
       robot,
       lamps,
+      falls,
       cover,
       lit: false,
       pond,
@@ -450,6 +550,19 @@ export function buildPools(list) {
     setLights(map, g = 1) {
       glow = g;
       for (const it of items) applyPoolLight(it, map && map[it.id], glow);
+    },
+    /**
+     * Waterfalls of each pool: `map` = { poolId: { fallId: pouring } } (see fallRunning in pools.js). One that is
+     * not named keeps pouring: a waterfall linked to nothing is only decoration.
+     */
+    setFalls(map) {
+      for (const it of items)
+        for (const fall of it.falls) {
+          const state = map && map[it.id] ? map[it.id][fall.cfg.id] : undefined;
+          fall.on = state === undefined ? true : !!state;
+          fall.sheet.visible = fall.on;
+          fall.foam.visible = fall.on;
+        }
     },
     /**
      * Covers of each pool: `map` = { poolId: { closed, moving } } (see coverClosed in pools.js). With `snap`, the
@@ -500,6 +613,13 @@ export function buildPools(list) {
         if (it.lit) {
           it.wm.emissiveIntensity = 0.92 + 0.08 * Math.sin(t * 1.7 + it.rim);
           for (const l of it.lamps) l.group.scale.setScalar(1 + 0.03 * Math.sin(t * 2.3 + l.cfg.t));
+        }
+        // the water pours: the streaks run down the sheet and the foam breathes where it lands
+        for (const fall of it.falls) {
+          if (!fall.on) continue;
+          const map = fall.sheet.material.map;
+          if (map) map.offset.y = -(t * 1.1) % 1;
+          fall.foam.material.opacity = 0.22 + 0.12 * Math.sin(t * 3.1 + fall.cfg.t * 6);
         }
         // the cover travels toward its place, the roller turning with it
         const C = it.cover;

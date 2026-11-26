@@ -133,7 +133,7 @@ export default {
   area_none: 'geen',
   rooms: 'Kamers ↔ gebieden van Home Assistant',
   rooms_hint:
-    'Standaard is een kamer van de plattegrond gekoppeld aan het gebied met dezelfde naam (accenten en hoofdletters genegeerd). Kies hier een ander gebied, of geen. Beweeg over een naam om de kamer te zien.',
+    'Standaard is een kamer van de plattegrond gekoppeld aan het gebied met dezelfde naam (accenten en hoofdletters genegeerd). Kies hier een ander gebied, of geen. Beweeg over een naam om de kamer te zien. Haar ramen, deuren en garagedeuren staan eronder: een klik opent dezelfde editor als het menu Deuren en ramen.',
   white: 'Wit',
   black: 'Zwart',
   name: 'Naam',
@@ -190,6 +190,8 @@ export default {
   path_gravel: 'Grind',
   path_concrete: 'Beton',
   path_pavers: 'Klinkers',
+  path_surfaces: 'Verhardingen',
+  path_modules: 'Losse elementen',
   path_dirt: 'Aarde',
   path_tracks: 'Rijsporen',
   fence_draw: 'Een hek tekenen',
@@ -516,6 +518,9 @@ export default {
   layer_general_hint:
     'Entiteiten van de algemene weergave. Voor die van een kamer klik je op de kamer in de weergave: er wordt op ingezoomd en het bewerken wordt dat van de kamer.',
   openings: 'Deuren en ramen',
+  openings_room_hint:
+    'De openingen van de kamer waarop u hebt ingezoomd. Tik er een aan om die te koppelen; ga terug naar het geheel om het hele huis te zien.',
+  openings_room_none: 'Deze kamer heeft op het plan geen raam en geen deur.',
   openings_hint:
     'Klik op een deur of een raam in de weergave (of in de lijst) om zijn entiteiten te koppelen. Een kamer met één raam of één deur wordt vanzelf gekoppeld aan de entiteiten van zijn HA-gebied.',
   openings_pick: 'Kiezen in de weergave',
@@ -564,6 +569,17 @@ export default {
   opening_window: 'Raam',
   opening_patio: 'Terrasdeur',
   opening_door: 'Deur',
+  opening_garage: 'Garagedeur',
+  opening_is_garage: 'Garagedeur',
+  opening_garage_kind: 'Manier van openen',
+  opening_garage_hint:
+    'De deur volgt haar motor (een cover van klasse garage) of haar contact, en doet er een tiental seconden over zoals de echte. Zonder entiteit blijft ze dicht.',
+  garage_sectional: 'Sectionaal',
+  garage_tilt: 'Kantel',
+  garage_roller: 'Rol',
+  garage_swing: 'Openslaand',
+  garage_slide: 'Zijwaarts',
+  garage_folding: 'Vouw',
   opening_opening: 'Doorgang',
   opening_room: 'Kamer',
   opening_link_contact: 'Open/dicht-sensor',
@@ -652,6 +668,14 @@ export default {
   pool_lamp_depth: 'Diepte van de lamp (m)',
   pool_lamps_hint:
     "Een lamp is een spot in de wand van de gekozen zijde. Een gekleurd licht geeft zijn eigen kleur, een stekker of een wit licht neemt de hier gekozen kleur. Lampen die aan zijn kleuren het water en het bad, 's nachts des te meer.",
+  pool_falls: 'Watervallen',
+  pool_fall: 'Waterval',
+  pool_fall_color: 'Kleur',
+  pool_fall_pos: 'Langs de zijde',
+  pool_fall_len: 'Breedte van de sluier (m)',
+  pool_fall_h: 'Valhoogte (m)',
+  pool_falls_hint:
+    'Een waterval stort in het bad vanaf een lip boven de gekozen zijde. Zonder entiteit stroomt hij altijd; gekoppeld aan een pomp stroomt hij zolang die pomp draait. Een bad kan er meerdere hebben.',
   pool_cover: 'Rolluik',
   pool_cover_color: 'Lamellen',
   pool_cover_invert: 'Open / dicht omwisselen',

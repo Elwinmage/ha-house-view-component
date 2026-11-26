@@ -147,7 +147,7 @@ export const T = {
     area_none: 'aucune',
     rooms: 'Pièces ↔ areas Home Assistant',
     rooms_hint:
-      'Par défaut, une pièce du plan est liée à l’area de même nom (accents et majuscules ignorés). Choisissez ici une autre area, ou aucune. Survolez un nom pour voir la pièce.',
+      'Par défaut, une pièce du plan est liée à l’area de même nom (accents et majuscules ignorés). Choisissez ici une autre area, ou aucune. Survolez un nom pour voir la pièce. Ses fenêtres, portes et portes de garage sont listées dessous : un clic ouvre le même éditeur que le menu Portes et fenêtres.',
     white: 'Blanc',
     black: 'Noir',
     name: 'Nom',
@@ -204,6 +204,8 @@ export const T = {
     path_gravel: 'Gravier',
     path_concrete: 'Béton',
     path_pavers: 'Pavés',
+    path_surfaces: 'Revêtements',
+    path_modules: 'Éléments posés',
     path_dirt: 'Terre',
     path_tracks: 'Bandes de roulement',
     fence_draw: 'Tracer une clôture',
@@ -531,6 +533,9 @@ export const T = {
     layer_general_hint:
       'Entités de la vue générale. Pour celles d’une pièce, cliquez la pièce sur la vue : elle passe en zoom et l’édition devient celle de la pièce.',
     openings: 'Portes et fenêtres',
+    openings_room_hint:
+      'Les ouvertures de la pièce sur laquelle vous avez zoomé. Touchez-en une pour la lier ; revenez à la vue d’ensemble pour voir toute la maison.',
+    openings_room_none: 'Cette pièce n’a ni fenêtre ni porte sur le plan.',
     openings_hint:
       "Cliquez une porte ou une fenêtre sur la vue (ou dans la liste) pour lui lier ses entités. Une pièce qui n'a qu'une fenêtre ou qu'une porte est liée toute seule aux entités de sa zone HA.",
     openings_pick: 'Choisir sur la vue',
@@ -578,6 +583,17 @@ export const T = {
     opening_window: 'Fenêtre',
     opening_patio: 'Baie vitrée',
     opening_door: 'Porte',
+    opening_garage: 'Porte de garage',
+    opening_is_garage: 'Porte de garage',
+    opening_garage_kind: "Type d'ouvrant",
+    opening_garage_hint:
+      "La porte s'ouvre avec son moteur (cover de classe garage) ou son contact, et met une dizaine de secondes comme la vraie. Sans entité, elle reste fermée.",
+    garage_sectional: 'Sectionnelle',
+    garage_tilt: 'Basculante',
+    garage_roller: 'Enroulable',
+    garage_swing: 'Battante',
+    garage_slide: 'Latérale',
+    garage_folding: 'Pliante',
     opening_opening: 'Passage',
     opening_room: 'Pièce',
     opening_link_contact: 'Capteur ouvert / fermé',
@@ -666,6 +682,14 @@ export const T = {
     pool_lamp_depth: 'Profondeur de la lampe (m)',
     pool_lamps_hint:
       'Une lampe est un projecteur encastré dans la paroi du côté choisi. Une lumière de couleur donne la sienne, une prise ou une lumière blanche prend la couleur choisie ici. Les lampes allumées teintent l’eau et le bassin, d’autant plus la nuit.',
+    pool_falls: 'Cascades',
+    pool_fall: 'Cascade',
+    pool_fall_color: 'Couleur',
+    pool_fall_pos: 'Le long du côté',
+    pool_fall_len: 'Longueur de la lame (m)',
+    pool_fall_h: 'Hauteur de chute (m)',
+    pool_falls_hint:
+      'Une cascade verse dans le bassin depuis une lame posée au-dessus du côté choisi. Sans entité elle coule en permanence ; reliée à une pompe, elle coule quand la pompe tourne. Un bassin peut en avoir plusieurs.',
     pool_cover: 'Volet roulant',
     pool_cover_color: 'Lames',
     pool_cover_invert: 'Inverser ouvert / fermé',
@@ -913,7 +937,7 @@ export const T = {
     area_none: 'none',
     rooms: 'Rooms ↔ Home Assistant areas',
     rooms_hint:
-      'By default a room of the plan is linked to the area with the same name (accents and case ignored). Choose another area here, or none. Hover a name to see the room.',
+      'By default a room of the plan is linked to the area with the same name (accents and case ignored). Choose another area here, or none. Hover a name to see the room. Its windows, doors and garage doors are listed under it: a tap opens the very editor of the Doors and windows panel.',
     white: 'White',
     black: 'Black',
     name: 'Name',
@@ -970,6 +994,8 @@ export const T = {
     path_gravel: 'Gravel',
     path_concrete: 'Concrete',
     path_pavers: 'Pavers',
+    path_surfaces: 'Surfaces',
+    path_modules: 'Laid elements',
     path_dirt: 'Dirt',
     path_tracks: 'Wheel tracks',
     fence_draw: 'Draw a fence',
@@ -1294,6 +1320,9 @@ export const T = {
     layer_general_hint:
       'Entities of the general view. For those of a room, click the room on the view: it is zoomed on and the editing becomes that of the room.',
     openings: 'Doors and windows',
+    openings_room_hint:
+      'The openings of the room you zoomed on. Tap one to link it; go back to the whole view to see the rest of the house.',
+    openings_room_none: 'This room has no window and no door on the plan.',
     openings_hint:
       'Click a door or a window on the view (or in the list) to link its entities. A room with a single window or a single door is linked on its own to the entities of its HA area.',
     openings_pick: 'Pick on the view',
@@ -1341,6 +1370,17 @@ export const T = {
     opening_window: 'Window',
     opening_patio: 'Patio door',
     opening_door: 'Door',
+    opening_garage: 'Garage door',
+    opening_is_garage: 'Garage door',
+    opening_garage_kind: 'Way it opens',
+    opening_garage_hint:
+      'The door follows its motor (a cover of class garage) or its contact, and takes a dozen seconds like the real one. Linked to nothing, it stays closed.',
+    garage_sectional: 'Sectional',
+    garage_tilt: 'Up-and-over',
+    garage_roller: 'Roller',
+    garage_swing: 'Side-hinged',
+    garage_slide: 'Sliding',
+    garage_folding: 'Folding',
     opening_opening: 'Passage',
     opening_room: 'Room',
     opening_link_contact: 'Open / closed sensor',
@@ -1429,6 +1469,14 @@ export const T = {
     pool_lamp_depth: 'Depth of the lamp (m)',
     pool_lamps_hint:
       'A lamp is a projector sunk in the wall of the chosen side. A coloured light gives its own colour, a plug or a white light takes the colour chosen here. The lamps that are on tint the water and the basin, all the more at night.',
+    pool_falls: 'Waterfalls',
+    pool_fall: 'Waterfall',
+    pool_fall_color: 'Colour',
+    pool_fall_pos: 'Along the side',
+    pool_fall_len: 'Length of the sheet (m)',
+    pool_fall_h: 'Height of the fall (m)',
+    pool_falls_hint:
+      'A waterfall pours into the basin from a lip over the chosen side. Without an entity it pours all the time; linked to a pump, it pours while that pump runs. A basin may have several.',
     pool_cover: 'Roller cover',
     pool_cover_color: 'Slats',
     pool_cover_invert: 'Swap open / closed',

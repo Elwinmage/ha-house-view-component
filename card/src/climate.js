@@ -68,6 +68,18 @@ export function seasonKey(doy, c) {
   return s.t < 0.5 ? s.from : s.to;
 }
 
+/**
+ * A day of the calendar (1..365) as the value of an <input type="date">, and back. The year has no bearing on the
+ * path the sun takes over a day, so the current one is used throughout.
+ */
+export const doyToDate = (doy) => new Date(Date.UTC(new Date().getFullYear(), 0, doy)).toISOString().slice(0, 10);
+
+export function dateToDoy(value) {
+  const d = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.min(365, Math.max(1, Math.round((d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 86400000)));
+}
+
 /** Day of the calendar showing season `key` at its fullest (preview of a season). */
 export function seasonDay(key, c) {
   if (c.zone === 'tropical') {

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { climateFor, seasonBlend as climateBlend } from '../climate.js';
 import { decodeModel } from './sh3d-models.js';
+import { setPathCatalog } from '../path-art.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BLOSSOM_DENSITY,
@@ -24,7 +25,10 @@ import {
 // ---------------------------------------------------------------- helpers
 
 function hash3(x, y, z) {
-  let h = Math.imul(Math.round(x * 173) | 0, 73856093) ^ Math.imul(Math.round(y * 173) | 0, 19349663) ^ Math.imul(Math.round(z * 173) | 0, 83492791);
+  let h =
+    Math.imul(Math.round(x * 173) | 0, 73856093) ^
+    Math.imul(Math.round(y * 173) | 0, 19349663) ^
+    Math.imul(Math.round(z * 173) | 0, 83492791);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
@@ -93,14 +97,79 @@ export function grassColor(doy, out = new THREE.Color()) {
 // ---------------------------------------------------------------- vegetation catalog
 
 export const SPECIES = {
-  maple: { name: 'Érable', kind: 'round', height: 6.5, crown: 2.7, trunkR: 0.2, trunk: '#6b4f3a', deciduous: true, leaf: { spring: '#a9d86f', summer: '#4f9a3f', autumn: '#d9622b', winter: '#8a6f50' } },
-  oak: { name: 'Chêne', kind: 'round', height: 8.5, crown: 3.5, trunkR: 0.3, trunk: '#5c4636', deciduous: true, leaf: { spring: '#9ccf62', summer: '#3f7f35', autumn: '#c98a2e', winter: '#7a6446' } },
-  birch: { name: 'Bouleau', kind: 'slim', height: 6.2, crown: 1.9, trunkR: 0.12, trunk: '#e8e4da', deciduous: true, leaf: { spring: '#b8e07a', summer: '#6fb54a', autumn: '#f0c43a', winter: '#9a9a8a' } },
+  maple: {
+    name: 'Érable',
+    kind: 'round',
+    height: 6.5,
+    crown: 2.7,
+    trunkR: 0.2,
+    trunk: '#6b4f3a',
+    deciduous: true,
+    leaf: { spring: '#a9d86f', summer: '#4f9a3f', autumn: '#d9622b', winter: '#8a6f50' },
+  },
+  oak: {
+    name: 'Chêne',
+    kind: 'round',
+    height: 8.5,
+    crown: 3.5,
+    trunkR: 0.3,
+    trunk: '#5c4636',
+    deciduous: true,
+    leaf: { spring: '#9ccf62', summer: '#3f7f35', autumn: '#c98a2e', winter: '#7a6446' },
+  },
+  birch: {
+    name: 'Bouleau',
+    kind: 'slim',
+    height: 6.2,
+    crown: 1.9,
+    trunkR: 0.12,
+    trunk: '#e8e4da',
+    deciduous: true,
+    leaf: { spring: '#b8e07a', summer: '#6fb54a', autumn: '#f0c43a', winter: '#9a9a8a' },
+  },
   pine: { name: 'Pin', kind: 'conifer', height: 8, crown: 2.1, trunkR: 0.18, trunk: '#5a4333', deciduous: false, leaf: { all: '#2f6b45' } },
-  olive: { name: 'Olivier', kind: 'round', height: 3.4, crown: 1.5, trunkR: 0.15, trunk: '#7a6a52', deciduous: false, leaf: { all: '#8fa36b' } },
-  bush: { name: 'Arbuste', kind: 'bush', height: 1.2, crown: 0.9, trunkR: 0.05, trunk: '#6b4f3a', deciduous: true, winterScale: 0.45, leaf: { spring: '#8ccf5a', summer: '#4f9a3f', autumn: '#b8742a', winter: '#7d7358' } },
-  hedge: { name: 'Haie', kind: 'hedge', height: 1.5, crown: 0.9, trunkR: 0.05, trunk: '#6b4f3a', deciduous: false, leaf: { all: '#3f7a3a' } },
-  planter: { name: 'Jardinière', kind: 'planter', height: 0.9, crown: 0.4, trunkR: 0.05, trunk: '#8b5a3c', deciduous: true, winterScale: 0.15, leaf: { spring: '#f5b3d1', summer: '#ff6f91', autumn: '#d28a3a', winter: '#8a7a5a' } },
+  olive: {
+    name: 'Olivier',
+    kind: 'round',
+    height: 3.4,
+    crown: 1.5,
+    trunkR: 0.15,
+    trunk: '#7a6a52',
+    deciduous: false,
+    leaf: { all: '#8fa36b' },
+  },
+  bush: {
+    name: 'Arbuste',
+    kind: 'bush',
+    height: 1.2,
+    crown: 0.9,
+    trunkR: 0.05,
+    trunk: '#6b4f3a',
+    deciduous: true,
+    winterScale: 0.45,
+    leaf: { spring: '#8ccf5a', summer: '#4f9a3f', autumn: '#b8742a', winter: '#7d7358' },
+  },
+  hedge: {
+    name: 'Haie',
+    kind: 'hedge',
+    height: 1.5,
+    crown: 0.9,
+    trunkR: 0.05,
+    trunk: '#6b4f3a',
+    deciduous: false,
+    leaf: { all: '#3f7a3a' },
+  },
+  planter: {
+    name: 'Jardinière',
+    kind: 'planter',
+    height: 0.9,
+    crown: 0.4,
+    trunkR: 0.05,
+    trunk: '#8b5a3c',
+    deciduous: true,
+    winterScale: 0.15,
+    leaf: { spring: '#f5b3d1', summer: '#ff6f91', autumn: '#d28a3a', winter: '#8a7a5a' },
+  },
 };
 
 const BUILTIN_SPECIES = { ...SPECIES };
@@ -109,11 +178,12 @@ const CATALOG = { trees: {}, objects: {}, fish: {} };
 /**
  * Take the entries of the house catalog: its trees join the species (an id of the catalog replaces the built-in
  * species of the same name), its objects are drawn in place of the furniture of the plan that names them, its fish
- * swim in the ponds.
+ * swim in the ponds, and its paths join the kinds a drive or an alley may be made of.
  * Entries the engine cannot read (a newer format) are left out. `lang`: language of the names.
  */
-// the sections of house-catalog: `pond_fish` holds the fish of the ponds
-export function setCatalog({ trees = {}, objects = {}, pond_fish: fish = {} } = {}, lang = 'en') {
+// the sections of house-catalog: `pond_fish` holds the fish of the ponds, `paths` what a path is made of
+export function setCatalog({ trees = {}, objects = {}, pond_fish: fish = {}, paths = {} } = {}, lang = 'en') {
+  setPathCatalog(paths, lang);
   for (const key of Object.keys(SPECIES)) delete SPECIES[key];
   Object.assign(SPECIES, BUILTIN_SPECIES);
   CATALOG.trees = {};
@@ -243,7 +313,10 @@ function catalogGeometry(tree, id) {
       return { s, at: [s.at[0] + s.size[0] * ring * Math.cos(a), s.at[1] + s.size[1] * y, s.at[2] + s.size[2] * ring * Math.sin(a)] };
     }
     const up = 0.05 + rand() * 0.85;
-    return { s, at: [s.at[0] + s.size[0] * (1 - up) * Math.cos(a), s.at[1] + s.size[1] * up, s.at[2] + s.size[0] * (1 - up) * Math.sin(a)] };
+    return {
+      s,
+      at: [s.at[0] + s.size[0] * (1 - up) * Math.cos(a), s.at[1] + s.size[1] * up, s.at[2] + s.size[0] * (1 - up) * Math.sin(a)],
+    };
   };
   const has = (key) => Object.values(tree.seasons).some((season) => season[key]);
   const dots = (key) => {
@@ -320,7 +393,11 @@ function speciesGeometry(sp, opts = {}) {
     const trunk = new THREE.CylinderGeometry(sp.trunkR * 0.6, sp.trunkR * 1.1, tH + 1, 6);
     trunk.translate(0, (tH + 1) / 2, 0);
     const cy = tH * 0.9 + c * 1.05;
-    const leaves = merge([blob(c, 0.8, 1.1, 0.8, 0, 0, 0), blob(c * 0.8, 0.8, 1.0, 0.8, 0.3, 1.0, 0.1), blob(c * 0.7, 0.8, 1.0, 0.8, -0.2, -0.9, 0.2)]);
+    const leaves = merge([
+      blob(c, 0.8, 1.1, 0.8, 0, 0, 0),
+      blob(c * 0.8, 0.8, 1.0, 0.8, 0.3, 1.0, 0.1),
+      blob(c * 0.7, 0.8, 1.0, 0.8, -0.2, -0.9, 0.2),
+    ]);
     return { trunk, leaves, leafY: cy };
   }
   if (sp.kind === 'conifer') {
@@ -331,7 +408,7 @@ function speciesGeometry(sp, opts = {}) {
     const n = 4;
     for (let i = 0; i < n; i++) {
       const r = c * (1 - i * 0.2);
-      const h = (sp.height - tH) / n * 1.5;
+      const h = ((sp.height - tH) / n) * 1.5;
       const cone = new THREE.ConeGeometry(r, h, 8);
       jitter(cone, 0.12);
       cone.translate(0, tH + i * ((sp.height - tH) / n) * 0.85 + h / 2, 0);
@@ -341,7 +418,11 @@ function speciesGeometry(sp, opts = {}) {
     return { trunk, leaves, leafY: 0 /* conifers do not scale seasonally */ };
   }
   if (sp.kind === 'bush') {
-    const leaves = merge([blob(c, 1, 0.8, 1, 0, 0, 0), blob(c * 0.7, 1, 0.8, 1, 0.55, -0.1, 0.2), blob(c * 0.65, 1, 0.8, 1, -0.5, -0.1, -0.25)]);
+    const leaves = merge([
+      blob(c, 1, 0.8, 1, 0, 0, 0),
+      blob(c * 0.7, 1, 0.8, 1, 0.55, -0.1, 0.2),
+      blob(c * 0.65, 1, 0.8, 1, -0.5, -0.1, -0.25),
+    ]);
     const trunk = new THREE.CylinderGeometry(0.04, 0.06, 0.3, 5);
     trunk.translate(0, 0.15, 0);
     return { trunk, leaves, leafY: c * 0.75 };
@@ -355,7 +436,11 @@ function speciesGeometry(sp, opts = {}) {
   // planter
   const pot = new THREE.BoxGeometry(0.7, 0.45, 0.7);
   pot.translate(0, 0.225, 0);
-  const blooms = merge([blob(0.22, 1, 0.8, 1, -0.15, 0, 0.05), blob(0.2, 1, 0.8, 1, 0.18, 0, -0.1), blob(0.18, 1, 0.8, 1, 0.02, 0.05, 0.2)]);
+  const blooms = merge([
+    blob(0.22, 1, 0.8, 1, -0.15, 0, 0.05),
+    blob(0.2, 1, 0.8, 1, 0.18, 0, -0.1),
+    blob(0.18, 1, 0.8, 1, 0.02, 0.05, 0.2),
+  ]);
   return { trunk: pot, leaves: blooms, leafY: 0.55 };
 }
 
@@ -739,14 +824,21 @@ export function buildBoxFurnitureMesh(items, baseY, models = null) {
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) col.toArray(colors, i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    g.applyMatrix4(new THREE.Matrix4().makeTranslation(it.at[0], baseY + (it.elevation || 0) + h / 2, it.at[1]).multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0))));
+    g.applyMatrix4(
+      new THREE.Matrix4()
+        .makeTranslation(it.at[0], baseY + (it.elevation || 0) + h / 2, it.at[1])
+        .multiply(new THREE.Matrix4().makeRotationY(-(it.rot || 0))),
+    );
     geos.push(g);
   }
   if (!geos.length && !glass.length) return null;
   const group = new THREE.Group();
   group.name = 'furniture-boxes';
   if (geos.length) {
-    const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => plain(g.index ? g.toNonIndexed() : g))), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(
+      mergeGeometries(geos.map((g) => plain(g.index ? g.toNonIndexed() : g))),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }),
+    );
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -756,7 +848,14 @@ export function buildBoxFurnitureMesh(items, baseY, models = null) {
     const alpha = glass.reduce((s, g) => s + g.alpha, 0) / glass.length;
     const mesh = new THREE.Mesh(
       mergeGeometries(glass.map((g) => plain(g.geo))),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, transparent: true, opacity: Math.max(alpha, 0.2), depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.1,
+        transparent: true,
+        opacity: Math.max(alpha, 0.2),
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
     );
     group.add(mesh);
   }

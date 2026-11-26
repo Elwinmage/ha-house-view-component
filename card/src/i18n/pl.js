@@ -132,7 +132,7 @@ export default {
   area_none: 'brak',
   rooms: 'Pokoje ↔ obszary Home Assistanta',
   rooms_hint:
-    'Domyślnie pokój z planu jest powiązany z obszarem o tej samej nazwie (akcenty i wielkość liter są ignorowane). Wybierz tu inny obszar lub żaden. Najedź na nazwę, aby zobaczyć pokój.',
+    'Domyślnie pokój z planu jest powiązany z obszarem o tej samej nazwie (akcenty i wielkość liter są ignorowane). Wybierz tu inny obszar lub żaden. Najedź na nazwę, aby zobaczyć pokój. Jej okna, drzwi i bramy garażowe są wymienione poniżej: kliknięcie otwiera ten sam edytor co menu Drzwi i okna.',
   white: 'Biały',
   black: 'Czarny',
   name: 'Nazwa',
@@ -189,6 +189,8 @@ export default {
   path_gravel: 'Żwir',
   path_concrete: 'Beton',
   path_pavers: 'Kostka brukowa',
+  path_surfaces: 'Nawierzchnie',
+  path_modules: 'Elementy układane',
   path_dirt: 'Ziemia',
   path_tracks: 'Koleiny',
   fence_draw: 'Narysuj ogrodzenie',
@@ -514,6 +516,9 @@ export default {
   layer_general_hint:
     'Encje widoku ogólnego. Aby edytować encje pokoju, kliknij go w widoku: kamera przybliży się, a edycja stanie się edycją pokoju.',
   openings: 'Drzwi i okna',
+  openings_room_hint:
+    'Otwory pokoju, na który powiększono widok. Dotknij jednego, aby go powiązać; wróć do widoku ogólnego, aby zobaczyć cały dom.',
+  openings_room_none: 'Ten pokój nie ma na planie ani okna, ani drzwi.',
   openings_hint:
     'Kliknij drzwi lub okno w widoku (albo na liście), aby powiązać jego encje. Pokój z jednym oknem lub jednymi drzwiami łączy się sam z encjami swojego obszaru HA.',
   openings_pick: 'Wybierz w widoku',
@@ -561,6 +566,17 @@ export default {
   opening_window: 'Okno',
   opening_patio: 'Drzwi tarasowe',
   opening_door: 'Drzwi',
+  opening_garage: 'Brama garażowa',
+  opening_is_garage: 'Brama garażowa',
+  opening_garage_kind: 'Sposób otwierania',
+  opening_garage_hint:
+    'Brama podąża za swoim napędem (encja cover klasy garage) lub kontaktronem i potrzebuje kilkunastu sekund jak prawdziwa. Bez encji pozostaje zamknięta.',
+  garage_sectional: 'Segmentowa',
+  garage_tilt: 'Uchylna',
+  garage_roller: 'Roletowa',
+  garage_swing: 'Dwuskrzydłowa',
+  garage_slide: 'Boczna',
+  garage_folding: 'Składana',
   opening_opening: 'Przejście',
   opening_room: 'Pokój',
   opening_link_contact: 'Czujnik otwarte / zamknięte',
@@ -649,6 +665,14 @@ export default {
   pool_lamp_depth: 'Głębokość lampy (m)',
   pool_lamps_hint:
     'Lampa to reflektor wpuszczony w ścianę wybranego boku. Kolorowe światło daje własny kolor, gniazdko lub białe światło przyjmuje kolor wybrany tutaj. Zapalone lampy barwią wodę i nieckę, tym bardziej nocą.',
+  pool_falls: 'Kaskady',
+  pool_fall: 'Kaskada',
+  pool_fall_color: 'Kolor',
+  pool_fall_pos: 'Wzdłuż boku',
+  pool_fall_len: 'Szerokość strugi (m)',
+  pool_fall_h: 'Wysokość spadku (m)',
+  pool_falls_hint:
+    'Kaskada wlewa się do niecki z wylewki umieszczonej nad wybranym bokiem. Bez encji płynie bez przerwy; powiązana z pompą płynie, gdy pompa pracuje. Niecka może mieć ich kilka.',
   pool_cover: 'Roleta basenowa',
   pool_cover_color: 'Lamele',
   pool_cover_invert: 'Zamień otwarte / zamknięte',

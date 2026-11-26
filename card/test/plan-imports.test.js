@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { decodeStepString, footprint, minRect, parseIfc, parseStep } from '../src/engine/ifc-import.js';
 import { parseSvgRooms, parseTransform, pathPoints, roomName, svgLevels, xmlTags } from '../src/engine/svg-import.js';
+import { classifyOpening, inGarage } from '../src/engine/sh3d-import.js';
 import { robotMapsWithRooms, robotPlanRooms, robotRooms } from '../src/robot-plan.js';
 import { builderFromLevels, rectOf, sceneFromLevels } from '../src/plan-builder.js';
 import { normalizeScene } from '../src/engine/scene-model.js';
@@ -372,5 +373,33 @@ describe('plan from the map of a robot', () => {
       [0, 0],
     ]);
     expect(robotPlanRooms({})).toEqual([]);
+  });
+});
+
+describe('what an opening of a Sweet Home 3D plan is', () => {
+  const kind = (name, elevation, height, width) => classifyOpening(name, '', elevation, height, width);
+
+  it('reads a garage door by its name, or by a width no other door has', () => {
+    expect(kind('Porte de garage sectionnelle', 0, 2.1, 2.5)).toBe('garage');
+    expect(kind('Basculante', 0, 2, 2.4)).toBe('garage');
+    expect(kind('Porte', 0, 2.1, 3)).toBe('garage');
+    expect(kind('Porte', 0, 2.1, 0.9)).toBe('door'); // an ordinary one
+    expect(kind('Porte double', 0, 2.1, 1.6)).toBe('door'); // wide, but not that wide
+  });
+
+  it('does not take a wide patio door for one', () => {
+    expect(kind('Baie vitrée coulissante', 0, 2.15, 3)).toBe('patio');
+    expect(kind('Porte-fenêtre', 0, 2.15, 2.6)).toBe('patio');
+    expect(kind('Fenêtre', 0.95, 1.25, 1.2)).toBe('window');
+    expect(kind('Ouverture', 0, 2.1, 2.5)).toBe('opening');
+  });
+
+  it('and a door wide enough in a room called a garage is one', () => {
+    expect(inGarage('door', 2.4, 'Garage')).toBe('garage');
+    expect(inGarage('door', 2.4, 'Carport')).toBe('garage');
+    expect(inGarage('door', 0.9, 'Garage')).toBe('door'); // the service door of the garage
+    expect(inGarage('door', 2.4, 'Salon')).toBe('door');
+    expect(inGarage('patio', 3, 'Garage')).toBe('patio');
+    expect(inGarage('door', 2.4, null)).toBe('door');
   });
 });

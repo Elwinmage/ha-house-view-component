@@ -1,5 +1,5 @@
-// Pools, spas and ponds drawn on the ground (top view): outline, colour, depth, height over the ground, a cleaning robot, the lamps
-// and a roller cover. Pure helpers, no three / HA knowledge: polygon tests, outline of a rectangle, frame of a side
+// Pools, spas and ponds drawn on the ground (top view): outline, colour, depth, height over the ground, a cleaning robot, the lamps,
+// a roller cover and the waterfalls pouring into the water. Pure helpers, no three / HA knowledge: polygon tests, outline of a rectangle, frame of a side
 // of the outline, the wandering of the robot on the bottom, and the reading of the entities of a pool.
 
 // `up`: how high the rim stands over the ground (m). 0 digs the basin in, as a pool is; a spa stands on the
@@ -217,6 +217,53 @@ export function poolLight(lamps, lightOf) {
   out.color = rgbToHex(sum.map((v) => v / lit.length));
   out.level = Math.min(lit.reduce((a, l) => a + l.level, 0) / lit.length, 1.3);
   return out;
+}
+
+// ---------------------------------------------------------------- waterfalls
+
+/** How high a waterfall pours from, over the rim of the basin (m): a spill stone .. a wall of water. */
+export const FALL_H = [0.1, 3];
+/** How long the sheet of water is, along the side (m). */
+export const FALL_L = [0.1, 8];
+/** Colour of the sheet when none was chosen: clear water catching the light. */
+export const FALL_COLOR = '#cfe9f5';
+
+/** Defaults of a waterfall: a sheet half a meter high pouring in the middle of side `side`. */
+export function newFall(id, side = 0) {
+  return { id, side, t: 0.5, length: 0.6, height: 0.5, color: FALL_COLOR, entity: '' };
+}
+
+const within = (value, [low, high], fallback) => {
+  const v = Number(value);
+  return Number.isFinite(v) ? Math.min(Math.max(v, low), high) : fallback;
+};
+
+/** One waterfall, within its bounds: a basin may hold as many as it likes. */
+export function normalizeFall(f) {
+  const raw = f || {};
+  return {
+    id: raw.id || '',
+    side: Math.max(0, Math.round(Number(raw.side) || 0)),
+    t: within(raw.t, [0, 1], 0.5),
+    length: within(raw.length, FALL_L, 0.6),
+    height: within(raw.height, FALL_H, 0.5),
+    color: /^#[0-9a-fA-F]{6}$/.test(raw.color || '') ? raw.color : FALL_COLOR,
+    entity: raw.entity ? String(raw.entity) : '',
+  };
+}
+
+/** The waterfalls of a basin, each within its bounds. */
+export function fallsOf(p) {
+  return (p && Array.isArray(p.falls) ? p.falls : []).filter(Boolean).map(normalizeFall);
+}
+
+/**
+ * Is a waterfall pouring? One linked to no entity always is (it is only decoration); one linked to a pump pours
+ * while that pump says it is on, and nothing is read from an entity that is away.
+ */
+export function fallRunning(cfg, st) {
+  if (!cfg || !cfg.entity) return true;
+  return robotRunning(st);
 }
 
 /** Defaults of the roller cover of a pool: rolled on the deck, at the side `side` of the outline. */

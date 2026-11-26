@@ -6,7 +6,7 @@
 //   { version: 1, roof: 'auto' | 'gable' | 'flat', north: deg,
 //     levels:   [{ id, name, height }],                       // from the lowest to the highest
 //     rooms:    [{ id, level, name, area?, x, z, w, d }],      // w along x (east), d along z (south)
-//     openings: [{ id, room, side: 'n'|'e'|'s'|'w', pos, type: 'window'|'patio'|'door', width, height, sill }] }
+//     openings: [{ id, room, side: 'n'|'e'|'s'|'w', pos, type: 'window'|'patio'|'door'|'garage', width, height, sill }] }
 // `pos` is the distance from the start of the side (west end of n / s, north end of e / w) to the centre of the opening.
 import { SLAB_T, WALL_T } from './engine/scene-data.js';
 import { buildWallSegments, centroid } from './engine/geometry.js';
@@ -17,6 +17,7 @@ export const OPENING_DEFAULTS = {
   window: { width: 1.2, height: 1.25, sill: 0.95 },
   patio: { width: 2.4, height: 2.15, sill: 0 },
   door: { width: 0.9, height: 2.1, sill: 0 },
+  garage: { width: 2.5, height: 2.1, sill: 0 },
 };
 const TILE = /cuisine|kitchen|salle de bain|sdb|bain|bath|douche|shower|wc|toilet|buanderie|laundry|cellier|garage|entree|hall/;
 
@@ -327,7 +328,7 @@ export function builderScene(model, latitude) {
 export function builderReport(b) {
   const n = (t) => b.openings.filter((o) => o.type === t).length;
   return {
-    counts: { niveaux: b.levels.length, pièces: b.rooms.length, fenêtres: n('window') + n('patio'), portes: n('door') },
+    counts: { niveaux: b.levels.length, pièces: b.rooms.length, fenêtres: n('window') + n('patio'), portes: n('door') + n('garage') },
     warnings: [],
   };
 }

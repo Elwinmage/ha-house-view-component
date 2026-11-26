@@ -260,10 +260,10 @@ export function buildLevelWalls(level, openings, mats) {
         );
         frameGeos.push(g);
       }
-      if (o.type === 'window' || o.type === 'patio' || (o.type === 'door' && wall.exterior)) {
+      if (o.type === 'window' || o.type === 'patio' || ((o.type === 'door' || o.type === 'garage') && wall.exterior)) {
         panes.push({
           key: openingKey(o),
-          kind: o.type === 'door' ? 'leaf' : 'glass',
+          kind: o.type === 'door' ? 'leaf' : o.type === 'garage' ? 'garage' : 'glass',
           room: o.room || null,
           exterior: wall.exterior,
           type: o.type,

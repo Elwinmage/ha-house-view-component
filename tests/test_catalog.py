@@ -64,7 +64,7 @@ def _release(aioclient_mock, section, kind, version, entries):
 
 
 def test_the_specs_read_the_house_catalog():
-    assert [spec.section for spec in catalog.CATALOGS] == ["trees", "objects", "pond_fish"]
+    assert [spec.section for spec in catalog.CATALOGS] == ["trees", "objects", "pond_fish", "paths"]
     assert {spec.repository for spec in catalog.CATALOGS} == {"Elwinmage/house-catalog"}
     # the client knows no house: its sections are declared from what house-catalog says of itself
     assert dict.fromkeys(house_catalog_sections.SECTIONS, house_catalog_sections.REPO) == catalog_pack.SECTION_REPOS
@@ -72,11 +72,14 @@ def test_the_specs_read_the_house_catalog():
     assert catalog_pack.SECTION_KINDS["objects"] == frozenset({"object"})
     assert catalog_pack.repo_of("equipment") == catalog_pack.REPO
     assert (catalog.TREES.suffix, catalog.OBJECTS.suffix, catalog.FISH.suffix) == ("", "_objects", "_pond_fish")
+    assert catalog.PATHS.suffix == "_paths"
     assert catalog_pack.SECTION_KINDS["pond_fish"] == frozenset({"pond_fish"})
+    assert catalog_pack.SECTION_KINDS["paths"] == frozenset({"path"})
     # the built-in snapshots are where the client looks for them
     assert (BUILTIN / "catalog_builtin/items/oak/tree.json").is_file()
     assert (BUILTIN / "catalog_builtin_objects/items/chair/object.json").is_file()
     assert (BUILTIN / "catalog_builtin_pond_fish/items/koi/pond_fish.json").is_file()
+    assert (BUILTIN / "catalog_builtin_paths/items/gravel/path.json").is_file()
 
 
 async def test_offline_the_builtin_catalog_is_served(hass, hass_ws_client, hass_client):
@@ -97,6 +100,11 @@ async def test_offline_the_builtin_catalog_is_served(hass, hass_ws_client, hass_
     assert (chair["source"], len(chair["parts"])) == ("builtin", 7)
     assert chair["image"].startswith("/house_view_catalog_objects/builtin/items/chair/image.webp")
 
+    paths = await _catalog(ws, "paths")
+    gravel = paths["data"]["items"]["gravel"]
+    assert (gravel["source"], gravel["kind"], gravel["surface"]["color"]) == ("builtin", "surface", "#bdb29c")
+    assert paths["data"]["items"]["stepping-stones"]["module"]["shapes"] == ["round", "half-moon"]
+
     # the pictures are public catalog data, served without a session
     client = await hass_client()
     for url in (oak["thumb"], chair["image"]):
@@ -107,7 +115,7 @@ async def test_offline_the_builtin_catalog_is_served(hass, hass_ws_client, hass_
     # one device: an update per section, one automatic update switch, one "update now" button
     registry = er.async_get(hass)
     entities = sorted(e.entity_id.split(".")[0] for e in er.async_entries_for_config_entry(registry, entry.entry_id))
-    assert entities == ["button", "switch", "update", "update", "update"]
+    assert entities == ["button", "switch", *["update"] * len(catalog.CATALOGS)]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -121,6 +129,7 @@ async def test_a_release_and_the_entries_of_the_user_are_merged(hass, hass_ws_cl
     _release(aioclient_mock, "trees", "tree", "2026.12.0", {"birch": birch})
     _release(aioclient_mock, "objects", "object", "2026.12.0", {"table": {"name": {"en": "Table"}, "parts": []}})
     aioclient_mock.get(f"{HOUSE_RELEASES}/pond_fish-latest/manifest.json", status=404)
+    aioclient_mock.get(f"{HOUSE_RELEASES}/paths-latest/manifest.json", status=404)
     # an entry saved with the catalog editor: the shared user layer
     mine = Path(hass.config.path("reeftech_catalog/user/trees/items/my-fig/tree.json"))
     await hass.async_add_executor_job(lambda: mine.parent.mkdir(parents=True))

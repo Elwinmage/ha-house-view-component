@@ -43,7 +43,7 @@ import { autoCalibrate, parseTerrain } from './engine/terrain.js';
 import { normalizeEdits, emptyEdits } from './engine/edits.js';
 import { WEATHER_PRESETS } from './engine/environment.js';
 import { SPECIES } from './engine/catalog.js';
-import { climateFor, seasonsOf, seasonKey, seasonDay } from './climate.js';
+import { climateFor, seasonsOf, seasonKey, seasonDay, doyToDate, dateToDoy } from './climate.js';
 import { houseParcel } from './engine/terrain.js';
 import { compassIndex } from './wind.js';
 import { makeT } from './i18n.js';
@@ -52,10 +52,10 @@ import pkg from '../package.json';
 import { autoOpeningLinks, openingStates } from './openings.js';
 import { gatesOf, gateOpenness } from './gates.js';
 import { normalizeFence } from './fences.js';
-import { renderOpenings } from './ui-openings.js';
+import { renderOpenings, renderRoomOpenings, renderRoomOpeningWindow } from './ui-openings.js';
 import { renderSea } from './ui-sea.js';
 import { renderPools } from './ui-pools.js';
-import { POOL_ROOM, editTarget, robotRunning, poolLight, coverClosed } from './pools.js';
+import { POOL_ROOM, editTarget, robotRunning, poolLight, coverClosed, fallsOf, fallRunning } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
 import {
   addRoom,
@@ -135,6 +135,7 @@ const OP_FIELDS = {
 const fmtHour = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
 const fmtDoy = (doy, lang) =>
   new Date(Date.UTC(2026, 0, doy)).toLocaleDateString(lang || 'en', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const DAY_STEP = 0.1; // hours added at every tick of the day run: an hour every 2 s, a day in 48 s
 
 class HouseViewCard extends LitElement {
   static properties = {
@@ -183,6 +184,8 @@ class HouseViewCard extends LitElement {
     this._rev = 0;
     this._outSel = '';
     this._opSel = -1;
+    this._opDemo = new Set(); // openings the editor holds open to show how they move
+    this._opRoomSel = null; // the opening opened from the editor of the rooms
     this._focus = null;
     this._preview = null;
     this._vacMode = false;
@@ -321,6 +324,7 @@ class HouseViewCard extends LitElement {
     if (this._year) cancelAnimationFrame(this._year.raf);
     this._year = null;
     clearTimeout(this._previewTimer);
+    clearInterval(this._dayTimer);
     clearTimeout(this._fetchTimer);
     for (const v of (this._vacs || new Map()).values()) v.pause();
     this._irrDemoStop();
@@ -409,14 +413,14 @@ class HouseViewCard extends LitElement {
   }
 
   /**
-   * Trees, objects and pond fish of the house catalog. The integration downloads them and merges the entries saved with the
+   * Trees, objects, pond fish and kinds of path of the house catalog. The integration downloads them and merges the entries saved with the
    * catalog editor; the card only asks it (never the network) and draws them. Without them (an older integration)
    * the built-in species stay.
    */
   async _loadCatalog() {
     const h = this._hass;
     if (!h || !h.callWS || !this._engine) return;
-    this._catalog = this._catalog || { trees: {}, objects: {}, pond_fish: {} };
+    this._catalog = this._catalog || { trees: {}, objects: {}, pond_fish: {}, paths: {} };
     // each section on its own: one that cannot be read keeps what it had, and does not hide the other
     await Promise.all(
       Object.keys(this._catalog).map(async (section) => {
@@ -442,7 +446,7 @@ class HouseViewCard extends LitElement {
   _watchCatalog() {
     const h = this._hass;
     if (this._catalogUnsub || !h || !h.connection || !h.connection.subscribeMessage) return;
-    this._catalogUnsub = ['trees', 'objects', 'pond_fish'].map((section) =>
+    this._catalogUnsub = ['trees', 'objects', 'pond_fish', 'paths'].map((section) =>
       h.connection.subscribeMessage(() => this._loadCatalog(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
     );
   }
@@ -536,6 +540,7 @@ class HouseViewCard extends LitElement {
     const robots = {};
     const lights = {};
     const covers = {};
+    const falls = {};
     for (const p of this._data.edits.pools) {
       robots[p.id] = robotRunning(p.robot ? states[p.robot] : null);
       const mine = test && test.id === p.id ? test : null;
@@ -547,14 +552,17 @@ class HouseViewCard extends LitElement {
       const cover = p.cover && p.cover.entity ? coverClosed(p.cover, states[p.cover.entity]) : null;
       if (mine && mine.cover !== null) covers[p.id] = { closed: mine.cover, moving: true };
       else if (cover) covers[p.id] = cover;
+      const pouring = fallsOf(p);
+      if (pouring.length) falls[p.id] = Object.fromEntries(pouring.map((f) => [f.id, fallRunning(f, f.entity ? states[f.entity] : null)]));
     }
-    const sig = JSON.stringify([robots, lights, covers]);
+    const sig = JSON.stringify([robots, lights, covers, falls]);
     if (sig === this._poolSig && eng.world === this._poolWorld) return;
     this._poolSig = sig;
     this._poolWorld = eng.world;
     eng.setPoolRobots(robots);
     eng.setPoolLights(lights, !!(test && test.lamps.size));
     eng.setPoolCovers(covers);
+    eng.setPoolFalls(falls);
   }
 
   /**
@@ -651,6 +659,8 @@ class HouseViewCard extends LitElement {
     const eng = this._engine;
     if (!eng || !eng.world || !this._data || !this._hass) return;
     const map = openingStates(eng.world.sd.openings, this._openingAuto(), this._data.edits.openings, this._hass.states);
+    // the editor may hold one open to watch it move, whatever its entity says
+    if (this._panel === 'edit') for (const key of this._opDemo) if (map[key]) map[key] = { ...map[key], open: 1 };
     const sig = JSON.stringify(map);
     if (sig === this._opSig && eng.world === this._opWorld) return;
     this._opSig = sig;
@@ -959,13 +969,65 @@ class HouseViewCard extends LitElement {
     this._applyPreview();
   }
 
+  /**
+   * Day simulation of the preview: a date, and an hour that can be scrubbed or played over the 24 hours, to see
+   * the house as it will be at that moment of that day. In simulation mode the sliders of the simulator are moved
+   * instead, as the chips above already do — there is only one set of values there.
+   */
+  _setPreviewDay(patch) {
+    if (this._simMode) return this._setSim('at' in patch ? { hour: patch.at } : patch);
+    if (!this._preview) {
+      const env = this._engine.env;
+      this._beforePreview = { ...env.state, snowCover: env.snowCover };
+    }
+    this._preview = { ...(this._preview || {}), ...patch };
+    clearTimeout(this._previewTimer);
+    // the preview is plainly in use while the day runs: it starts timing out again once the run is stopped
+    this._previewTimer = setTimeout(() => this._endPreview(), PREVIEW_MS);
+    this._applyPreview();
+    this.requestUpdate();
+  }
+
+  /** Hour the day run goes on from: the one being previewed, or the hour it is now. */
+  get _previewHour() {
+    if (this._simMode) return this._sim.hour;
+    const p = this._preview || {};
+    if (p.at != null) return p.at;
+    if (p.hour) return PREVIEW.hour[p.hour];
+    const env = this._engine && this._engine.env;
+    return (env && env.state.hour) || 0;
+  }
+
+  /** Day of the calendar being previewed: the date chosen, the season of a chip, or the day it is now. */
+  get _previewDoy() {
+    if (this._simMode) return this._sim.doy;
+    const p = this._preview || {};
+    if (p.doy != null) return p.doy;
+    if (p.season) return seasonDay(p.season, this._climate);
+    const env = this._engine && this._engine.env;
+    return (env && env.state.doy) || 1;
+  }
+
+  get _dayPlaying() {
+    return this._simMode ? this._sim.play : !!this._dayTimer;
+  }
+
+  _togglePreviewDay(on) {
+    if (this._simMode) return this._togglePlay(on);
+    clearInterval(this._dayTimer);
+    this._dayTimer = on ? setInterval(() => this._setPreviewDay({ at: (this._previewHour + DAY_STEP) % 24 }), 200) : null;
+    this.requestUpdate();
+  }
+
   _applyPreview() {
     const p = this._preview;
     const b = this._beforePreview || {};
     const live = { doy: b.doy, hour: b.hour, weather: b.weather };
     if (p.season) live.doy = seasonDay(p.season, this._climate);
     if (this._year) live.doy = this._year.doy;
+    if (p.doy != null) live.doy = p.doy; // a date chosen outright wins over the season of a chip
     if (p.hour) live.hour = PREVIEW.hour[p.hour];
+    if (p.at != null) live.hour = p.at;
     if (p.weather) live.weather = p.weather;
     live.snowCover = p.weather === 'snow' ? 0.9 : p.season === 'winter' && b.snowCover > 0.3 ? b.snowCover : 0;
     this._engine.setLive(live);
@@ -973,6 +1035,8 @@ class HouseViewCard extends LitElement {
 
   _endPreview() {
     clearTimeout(this._previewTimer);
+    clearInterval(this._dayTimer);
+    this._dayTimer = null;
     this._preview = null;
     const b = this._beforePreview;
     this._beforePreview = null;
@@ -2597,6 +2661,8 @@ class HouseViewCard extends LitElement {
       .label=${t('entity_add')}
       @value-changed=${(e) => add(e.detail.value)}
     ></house-view-entity-picker>`;
+    // the doors and windows of the room being edited: this is where a tap on a room lands
+    const roomOpenings = layer ? renderRoomOpenings(this, layer) : nothing;
     const iconPicker = (s) => this._iconInput(s.icon, (icon) => ed.editEntity(s.id, { icon }));
     const select = (s, key, values, def) =>
       html`<select @change=${(e) => ed.editEntity(s.id, { [key]: e.target.value })}>
@@ -2614,6 +2680,12 @@ class HouseViewCard extends LitElement {
       </div>
       ${entityPicker}
       ${ed.placing ? html`<div class="hint">${t(this._ent(ed.placing)?.mount === 'wall' ? 'entity_place_wall' : 'entity_place_hint')}</div>` : nothing}
+      ${
+        layer
+          ? html`<div class="sub">${t('openings')}</div>
+              ${roomOpenings === nothing ? html`<div class="hint">${t('openings_room_none')}</div>` : roomOpenings}`
+          : nothing
+      }
       ${list.map((s) => {
         const open = this._entSel === s.id;
         const st = hass.states[s.entity];
@@ -2955,11 +3027,14 @@ class HouseViewCard extends LitElement {
     const t = this._t;
     // entities of the layer being edited: the room zoomed on, or the general view
     const inLayer = this._entities.filter((s) => (this._focus ? s.scope === 'room' && entityRoom(s) === this._focus : s.scope !== 'room'));
+    // zoomed on a room, the doors and windows of that room are the ones the panel offers
+    const ops = this._engine.world.sd.openings.filter((o) => o.type !== 'opening' && (!this._focus || o.room === this._focus));
     return html`${this._sec('entities', `${t('entities')} (${inLayer.length})`, () => this._renderEntities())}
     ${this._sec('general', `${t('general')} (${this._data.edits.panel.length})`, () => renderGeneralEditor(this))}
     ${this._sec('alarms', t('alarms'), () => renderAlarmsEditor(this))}
     ${this._sec('zones', `${t('zones')} (${this._data.edits.zones.length})`, () => renderZonesEditor(this))}
-    ${this._sec('rooms', t('rooms'), () => renderRooms(this))} ${this._sec('openings', t('openings'), () => renderOpenings(this))}
+    ${this._sec('rooms', t('rooms'), () => renderRooms(this))}
+    ${this._sec('openings', `${t('openings')} (${ops.length})`, () => renderOpenings(this))} ${renderRoomOpeningWindow(this)}
     ${this._sec('pools', `${t('pools')} (${this._data.edits.pools.length})`, () => renderPools(this))}
     ${this._sec('sea', t('sea'), () => renderSea(this))}
     ${this._vacuum ? this._sec('vacuum', t('vac_setup'), () => renderVacuumSetup(this)) : nothing}
@@ -3048,6 +3123,21 @@ class HouseViewCard extends LitElement {
       <div class="chips">${PREVIEW.weather.map((k) => chip('weather', k, t(`weather_${k}`)))}</div>
       <label>${t('preview_hour')}</label>
       <div class="chips">${Object.keys(PREVIEW.hour).map((k) => chip('hour', k, t(`hour_${k}`)))}</div>
+      <label>${t('simulation')}</label>
+      <div class="row">
+        <input
+          type="date"
+          .value=${doyToDate(this._previewDoy)}
+          @change=${(e) => {
+            const doy = dateToDoy(e.target.value);
+            if (doy) this._setPreviewDay({ doy });
+          }}
+        />
+        <button class=${this._dayPlaying ? 'on' : ''} @click=${() => this._togglePreviewDay(!this._dayPlaying)}>
+          ${this._dayPlaying ? '⏸' : '▶'} 24 h
+        </button>
+      </div>
+      ${this._range(t('sim_hour'), this._previewHour, 0, 24, 0.05, (v) => this._setPreviewDay({ at: v }), fmtHour, true)}
       ${this._preview ? html`<button @click=${() => this._endPreview()}>${t('preview_live')}</button>` : nothing}
     `;
   }
@@ -3901,6 +3991,20 @@ class HouseViewCard extends LitElement {
       margin-right: 5px;
       vertical-align: middle;
     }
+    :is(.panel, .win) .roomblk {
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--divider-color, #0002);
+    }
+    :is(.panel, .win) .roomblk .row-btn {
+      margin-left: 10px;
+      width: calc(100% - 10px);
+    }
+    :is(.panel, .win) .ell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     :is(.panel, .win) .grid.rooms {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
     }
@@ -4276,7 +4380,18 @@ class HouseViewCard extends LitElement {
       grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
       gap: 4px;
     }
-    :is(.panel, .win) :is(.fishpick, .treepick) button:not(.x) {
+    .pathpick {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+      gap: 4px;
+    }
+    .pathpick img {
+      width: 42px;
+      height: 42px;
+      border-radius: 5px;
+      object-fit: cover;
+    }
+    :is(.panel, .win) :is(.fishpick, .treepick, .pathpick) button:not(.x) {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -4297,7 +4412,7 @@ class HouseViewCard extends LitElement {
       height: 56px;
       object-fit: contain;
     }
-    :is(.fishpick, .treepick) span {
+    :is(.fishpick, .treepick, .pathpick) span {
       max-width: 100%;
       text-align: center;
       overflow-wrap: anywhere;
