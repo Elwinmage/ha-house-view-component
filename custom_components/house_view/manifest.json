@@ -16,5 +16,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/elwinmage/ha-house-view-component/issues",
   "requirements": [],
-  "version": "1.2.0"
+  "version": "1.3.0"
 }
