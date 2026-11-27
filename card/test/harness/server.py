@@ -16,13 +16,25 @@ JOBS = {}  # documents of a home -> simulated terrain fetch of the demo: {"t0", 
 STEPS = (("locate", 1.0), ("dtm", 2.5), ("dsm", 2.0), ("vectors", 1.5))
 PASSWORD = sys.argv[2] if len(sys.argv) > 2 else ""  # edit lock, as set in the options of the integration
 TOKENS = set()
+STAMPS = {}  # documents of a home -> when each was last written ({key: ISO time}), as `updated` of the integration
 # built-in snapshots of the house catalog: what the integration answers to `house_view/catalog` before any download
 BUILTIN = {
     "trees": ("catalog_builtin", "tree.json"),
     "objects": ("catalog_builtin_objects", "object.json"),
     "pond_fish": ("catalog_builtin_pond_fish", "pond_fish.json"),
     "paths": ("catalog_builtin_paths", "path.json"),
+    "terraces": ("catalog_builtin_terraces", "terrace.json"),
+    "walls": ("catalog_builtin_walls", "wall.json"),
+    "copings": ("catalog_builtin_copings", "coping.json"),
+    "fences": ("catalog_builtin_fences", "fence.json"),
 }
+
+
+def stamp(db, key, remove=False):
+    """Note that a document was written (or removed): the card tells a stale scene by these times."""
+    when = None if remove else f"{time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime())}.{time.time_ns() % 10**9:09d}+00:00"
+    STAMPS.setdefault(id(db), {})[key] = when
+    return when
 
 
 def catalog(section):
@@ -94,6 +106,7 @@ class H(SimpleHTTPRequestHandler):
             terrain = json.loads((DEMO / "demo-terrain.json").read_text())
             terrain["center"] = job["center"]
             DB["terrain"] = json.dumps(terrain).encode()
+            stamp(DB, "terrain")
             JOBS.pop(id(DB))
             return self._send(200, b'{"state": "done", "message": "demo"}')
         if k == "info":
@@ -109,6 +122,7 @@ class H(SimpleHTTPRequestHandler):
                         "github": None,
                         "locked": bool(PASSWORD),
                         "demo": demo,
+                        "updated": STAMPS.get(id(DB), {}),
                         **({"latitude": 45.0, "longitude": 2.0} if demo else {}),
                     }
                 ).encode(),
@@ -129,6 +143,7 @@ class H(SimpleHTTPRequestHandler):
             HOMES["demo"] = {
                 "edits": (DEMO / "demo-edits.json").read_bytes(),
             }
+            stamp(HOMES["demo"], "edits")
             return self._send(200, b'{"home": "demo"}')
         if self._locked():
             return self._send(423, b'{"message": "Editing is locked"}')
@@ -136,7 +151,7 @@ class H(SimpleHTTPRequestHandler):
             JOBS[id(self._db)] = {"t0": time.time(), "center": json.loads(body)["center"]}
             return self._send(202, b'{"state": "running", "step": "start"}')
         self._db[k] = body
-        self._send(200)
+        self._send(200, json.dumps({"ok": True, "updated": stamp(self._db, k)}).encode())
 
     def do_DELETE(self):
         k = self._key()
@@ -146,6 +161,7 @@ class H(SimpleHTTPRequestHandler):
             return self._send(423, b'{"message": "Editing is locked"}')
         else:
             self._db.pop(k, None)
+            stamp(self._db, k, remove=True)
         self._send(200)
 
     def log_message(self, *a):

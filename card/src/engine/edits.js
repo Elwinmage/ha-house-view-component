@@ -13,7 +13,11 @@ export function emptyEdits() {
     fences: [], // { pts (grid frame, closed), h, color, style: mesh|wood|wall, open: [segment index], parcel }
     gates: [], // gates set on the fences: { id, f (fence index), at: [x, z], w, open, fill, top, entity, ... } (see gates.js)
     paths: [], // drives and paths: { id, pts (centre line), frame, w, surface, edge, hidden } (see paths.js)
+    // terraces, patios and decks: { id, pts (outline), frame, shape, surface, c, alt, h, feather, rot, hidden } (see terraces.js)
+    terraces: [],
     beds: [], // flower beds: { pts (closed polygon), frame, count, colors: [{ c, w }], h, seed, hidden } (see flowerbeds.js)
+    // roofs read from the surface model of the terrain (LiDAR): { id, pts (outline), frame, dy, c, name, hidden } (see roofs.js)
+    roofs: [],
     // entities placed on the plan (sensors, lights, switches...):
     // { id, entity, at: [x, z], base, y, level, room, scope: general|level|room, display: badge|icon, color, label, icon,
     //   tap: toggle|more-info, kind / radius (lights: fixture and reach of the light source) }
@@ -54,7 +58,9 @@ export function normalizeEdits(raw) {
   if (Array.isArray(raw.fences)) e.fences = raw.fences;
   if (Array.isArray(raw.gates)) e.gates = raw.gates.filter((g) => g && typeof g === 'object' && Array.isArray(g.at));
   if (Array.isArray(raw.paths)) e.paths = raw.paths.filter((p) => p && typeof p === 'object' && Array.isArray(p.pts));
+  if (Array.isArray(raw.terraces)) e.terraces = raw.terraces.filter((t) => t && typeof t === 'object' && Array.isArray(t.pts));
   if (Array.isArray(raw.beds)) e.beds = raw.beds.filter((b) => b && typeof b === 'object' && Array.isArray(b.pts));
+  if (Array.isArray(raw.roofs)) e.roofs = raw.roofs.filter((r) => r && typeof r === 'object' && Array.isArray(r.pts));
   if (Array.isArray(raw.entities)) e.entities = raw.entities;
   else if (Array.isArray(raw.sensors)) e.entities = raw.sensors; // first name of the list (0.2 previews)
   if (raw.room_areas && typeof raw.room_areas === 'object') e.room_areas = raw.room_areas;

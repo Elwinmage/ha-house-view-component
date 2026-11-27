@@ -40,11 +40,12 @@ Terenu (rzeźba, sąsiednie budynki, drogi, kataster, zdjęcie lotnicze) nie mus
 
 ### 2.1 Instalacja integracji
 
-**Przez HACS** (zalecane):
+**Z Marketplace** (zalecane): House View jest w jego katalogu, nie trzeba dodawać żadnego repozytorium.
 
-1. HACS → menu ⋮ → *Niestandardowe repozytoria* → dodaj `https://github.com/elwinmage/ha-house-view-component`, typ *Integracja*.
-2. Wyszukaj **House View** w HACS i zainstaluj.
-3. Uruchom ponownie Home Assistant.
+1. Otwórz repozytorium w Marketplace tym przyciskiem: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Elwinmage&repository=ha-house-view-component&category=integration), albo wyszukaj **House View** w *Ustawienia → Marketplace*.
+2. Kliknij „Zainstaluj”.
+
+W Home Assistant starszym niż 2026.11 te same kroki działają w HACS; potem uruchom ponownie Home Assistant.
 
 **Ręcznie**: rozpakuj `house_view.zip` z najnowszego wydania (zawiera zbudowaną kartę) do `config/custom_components/house_view/`, a potem uruchom ponownie.
 
@@ -111,13 +112,17 @@ Nie masz planu? *Create a simple plan* (w sekcji **Plan of the house**) otwiera 
 - **Poziomy**: *＋ Level* dodaje kondygnację kopiującą obrys pomieszczeń poniżej, do przemianowania i ponownego podziału; wysokość ustawia się dla każdego poziomu. Obrys poziomu poniżej pozostaje widoczny jako linia przerywana.
 - **Dach i orientacja**: dach automatyczny, dwuspadowy lub płaski; kąt północy (dopasowanie do terenu poprawia go później).
 
-Plan zapisuje się sam i otwiera ponownie przyciskiem *Edit the simple plan*. Prosty plan zastępuje zaimportowany plan po potwierdzeniu; umieszczone encje, nawadnianie, ogrodzenia… zostają zachowane.
+Plan zapisuje się sam i otwiera ponownie przyciskiem *Edit the simple plan*. Prosty plan zastępuje zaimportowany plan po potwierdzeniu; umieszczone encje, nawadnianie, ogrodzenia… zostają zachowane. **Ctrl+Z** i strzałki **↶ ↷** u góry panelu cofają i ponawiają zmiany planu.
 
 ### 4.3 Start od mapy robota
 
 Jeśli robot sprzątający zmapował dom, a ekstraktor map (Xiaomi Cloud Map Extractor, Roborock Custom Map…) podaje jego pomieszczenia (atrybut `rooms`), przycisk *Plan from the robot's map* tworzy prosty plan z tymi pomieszczeniami, w ich rozmiarze i miejscu. To przybliżone prostokąty, i tylko z poziomu robota: dopasuj je, a potem dodaj drzwi, okna i inne poziomy w prostym planie.
 
 ### 4.4 Pobieranie terenu
+
+Terenu nie trzeba ani mierzyć, ani rysować: integracja pobiera go z publicznych, bezpłatnych danych, zebranych z samolotów (skaning laserowy LiDAR i zdjęcia lotnicze IGN we Francji, otwarte pomiary LiDAR wielu krajów) lub z satelitów (światowy model Copernicus 30 m).
+
+![Ogród na zboczu odtworzony w karcie: mury oporowe, schody, tarasy, podjazd, ogrodzenia i bramy, basen, staw i zraszacze, na prawdziwej rzeźbie terenu](../images/vitrine.jpg)
 
 W sekcji **Terrain (DTM)**:
 
@@ -132,6 +137,8 @@ W sekcji **Terrain (DTM)**:
 Na koniec plan jest **automatycznie dopasowany** do terenu (obrót, przesunięcie, wysokość), znalezione drzewa zostają posadzone, a rzeźba, drogi i zdjęcie się pojawiają.
 
 Możesz też wczytać plik terenu (*Load a terrain .json*) albo ręcznie poprawić dopasowanie (obrót, przesunięcie, wysokość) w tej samej sekcji.
+
+Wokół domu teren kończy się na zewnętrznym licu ścian i pozostaje pod podłogami, niezależnie od nadanej mu wysokości: piwnica albo kondygnacja na wpół zagłębiona w zboczu ma pomieszczenia wolne od ziemi, która opiera się o jej ściany. Wynika to z pomieszczeń planu i otaczających je ścian, kondygnacja po kondygnacji; gdy piwnica zajmuje tylko część domu, teren zostaje pod resztą parteru.
 
 ## 5. Korzystanie z widoku
 
@@ -201,17 +208,23 @@ Czujniki dymu, gazu, tlenku węgla, wycieku wody, problemu, ciepła, zimna i sab
 
 **Simulate a year** przewija cały rok (domyślnie 10 s, od 5 do 60 s) od wyświetlanej daty; etykieta pokazuje datę. Na koniec widok wraca do wcześniejszej daty.
 
+<p align="center"><img src="../images/anim-journee.webp" alt="Słońce i cienie" width="290"> <img src="../images/anim-saisons.webp" alt="Pory roku" width="290"> <img src="../images/anim-meteo.webp" alt="Pogoda" width="290"></p>
+
 ### 5.7 Światła, rolety i okna
 
 Światła każdego pomieszczenia oświetlają je i jego okna. **Rolety** opuszczają się do swojego rzeczywistego położenia, **okna** się otwierają, **drzwi przesuwne** się przesuwają, **drzwi** obracają się na zawiasach.
 
 ![Wieczorem: rolety zamknięte, światła włączone](../images/14-soiree-volets-lumieres.jpg)
 
+<p align="center"><img src="../images/anim-lumieres.webp" alt="Światła" width="290"> <img src="../images/anim-volets.webp" alt="Rolety" width="290"> <img src="../images/anim-fenetres.webp" alt="Okna" width="290"></p>
+
 ### 5.8 Robot sprzątający
 
 Dotknięcie przycisku robota otwiera wybór pomieszczeń: wybierz je na planie, potem *Clean* (także *Start*, *Pause*, *Dock*). Podczas sprzątania porusza się robot 3D, bieżące pomieszczenie jest kolorowane wraz z procentem, pomieszczenia oczekujące są lekko zabarwione, skończone pomieszczenie migocze, a pierścień wokół przycisku pokazuje ogólny postęp. Przy błędzie pomieszczenie i robot migają na czerwono.
 
 ![Robot w trakcie sprzątania](../images/15-aspirateur.jpg)
+
+<p align="center"><img src="../images/anim-aspirateur.webp" alt="Robot odkurzający" width="440"></p>
 
 ### 5.9 Nawadnianie, basen i oczko wodne
 
@@ -221,9 +234,11 @@ Gdy zawór się otwiera, **linie kroplujące** świecą na niebiesko i rośnie m
 |---|---|
 | ![Zraszacze o świcie](../images/16-arrosage.jpg) | ![Basen i oczko wodne](../images/17-piscine-etang.jpg) |
 
+<p align="center"><img src="../images/anim-arrosage.webp" alt="Podlewanie" width="290"> <img src="../images/anim-piscine.webp" alt="Basen" width="290"> <img src="../images/anim-etang.webp" alt="Staw" width="290"></p>
+
 ## 6. Edytor
 
-Tylko dla administratorów: **menu ⋮ → Editor**. Edytor to **menu sekcji**. Sekcja otwiera się we własnym oknie, nad menu; element listy (linia kroplująca, strefa, encja…) otwiera się nad sekcją. Strzałka **←** wraca do okna pod spodem. Wszystko zapisuje się samo; **Esc** anuluje bieżące rysowanie.
+Tylko dla administratorów: **menu ⋮ → Editor**. Edytor to **menu sekcji**. Sekcja otwiera się we własnym oknie, nad menu; element listy (linia kroplująca, strefa, encja…) otwiera się nad sekcją. Strzałka **←** wraca do okna pod spodem. Wszystko zapisuje się samo; **Esc** anuluje bieżące rysowanie. Punkty tego, co jest właśnie edytowane, pojawiają się w widoku jako kropki: **przeciągnij jeden, aby go przesunąć**. **Ctrl+Z** cofa ostatnią zmianę, w dowolnej sekcji, a **Ctrl+Y** ją ponawia (podczas rysowania Ctrl+Z najpierw zabiera ostatni punkt); na tablecie to samo robią strzałki **↶ ↷** u góry każdego okna.
 
 ![Menu edytora](../images/18-editeur.jpg)
 
@@ -286,6 +301,8 @@ Pomieszczenie, które ma **tylko jedno okno**, samo łączy się z czujnikiem ok
 
 ![Drzwi przesuwne salonu i ich połączenia](../images/24-portes-fenetres.jpg)
 
+<p align="center"><img src="../images/anim-porte.webp" alt="Drzwi" width="300"> <img src="../images/anim-garage.webp" alt="Bramy garażowe" width="660"></p>
+
 ### 6.7 Baseny i oczka wodne
 
 *＋ Pool* lub *＋ Pond*, potem narysuj obrys widziany z góry: **Rectangle** (dwa przeciwległe narożniki) lub **Free shape** (punkt po punkcie, potem *Finish*). Ustaw nazwę, kolor wody, głębokość (0,2 do 6 m) i, jeśli masz, **robota czyszczącego** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` lub `sensor` — a także dowolną inną encję, wpisując jej identyfikator w selektorze; wartość powyżej zera liczy się jako aktywna). Teren zostaje wykopany: pionowe ściany, płaskie dno i obrzeże dla basenu; opadające dno i brzeg z kamyków dla oczka.
@@ -329,22 +346,27 @@ Dla każdego robota (lista *Robot*):
 
 ### 6.10 Ogrodzenia
 
-*Fence from the cadastre* (działki domu są wstępnie zaznaczone; **tylko we Francji**, bo kataster pochodzi z usług IGN: gdzie indziej narysuj ogrodzenie ręcznie) lub *Draw a fence* punkt po punkcie. Każdy bok ma swój typ (siatka, drewno, mur, żywopłot lub otwarty tam, gdzie nie ma ogrodzenia; bramę dodaje się w *Gates*, a ogrodzenie otwiera się samo) i wysokość; *Edit the sides* zmienia bok, dzieli go na dwa lub usuwa punkt.
+*Fence from the cadastre* (działki domu są wstępnie zaznaczone; **tylko we Francji**, bo kataster pochodzi z usług IGN: gdzie indziej narysuj ogrodzenie ręcznie) lub *Draw a fence* punkt po punkcie. Każdy bok ma swój typ (siatka, drewno, mur, żywopłot lub otwarty tam, gdzie nie ma ogrodzenia; bramę dodaje się w *Gates*, a ogrodzenie otwiera się samo) i wysokość; *Edit the sides* zmienia bok, dzieli go na dwa lub usuwa punkt. Typy pochodzą z katalogu domu: paleta pokazuje podgląd każdego z nich obok koloru, który oznacza jego boki w widoku podczas edycji. Mur lub mur ceglany może dostać **zwieńczenie** (kamień, cegły na rąb, dachówki, gięta blacha…), w Twoim kolorze: wybiera się je w palecie, pod wysokością, i układa bok po boku.
 
 ![Ogrodzenia](../images/27-clotures.jpg)
+
+<p align="center"><img src="../images/anim-portails.webp" alt="Bramy" width="440"></p>
 
 ### 6.11 Drzewa, obiekty zewnętrzne i poprawki gruntu
 
 - **Drzewa**: usuń błędnie wykryte, posadź nowe (gatunek z katalogu i wysokość), cofnij, przywróć wszystkie.
 - **Obiekty zewnętrzne** (szopa, brama…): ukrycie, wysokość, przesunięcie, obrót.
-- **Poprawki gruntu**: murek, taras, pędzle (podnieś, wykop, wygładź), przekrój terenu.
+- **Tarasy** (*Terraces*): narysuj prostokąt lub dowolny kształt, a następnie wybierz nawierzchnię na podstawie podglądów (drewno, płytki, kamień, beton, jednolity kolor), własny kolor, wysokość i grubość. Grunt pod tarasem jest wyrównywany, basen w jego wnętrzu zostaje wycięty, a punkty pozostają edytowalne (przesuwanie, dodawanie, usuwanie).
+- **Schody zewnętrzne** (*Drives and paths* → *As a flight of steps*): ścieżka narysowana między punktem niskim a wysokim staje się schodami w nawierzchni ścieżki; grunt pod nimi jest otwierany, a mur oporowy, przez który przechodzą, zostaje przerwany.
+- **Dachy z LiDAR-u**: dach zbyt złożony dla planu jest odczytywany z modelu powierzchni terenu. Podaj jego obrys (narysowany punkt po punkcie, wzięty ze ścian planu z okapem albo z budynku na mapie), a połacie zostaną w nim znalezione i przycięte wzdłuż kalenic, naroży i koszy; przesuwaj, dodawaj lub usuwaj punkty obrysu, aby przykryć tylko część domu — dach z planu zostaje wszędzie indziej.
+- **Poprawki gruntu**: każda istniejąca poprawka jest obrysowana i podpisana w widoku, a dotknięcie zaznacza ją na liście. Mur oporowy — z okładziną wybieraną na podstawie podglądów (tynk, kamień, cegła…), kolorem oraz koroną i podstawą, które mogą się różnić na obu końcach —, niepokryta platforma, pędzle (podnieś, wykop, wygładź), których efekt widać przed kliknięciem, przekrój terenu. Narzędzie rysujące jeden rodzaj pokazuje tylko ten rodzaj (*Shown on the view* przywraca pozostałe). Obowiązują w kolejności, w jakiej zostały narysowane; mur nie działa za innym murem, a platforma narysowana wzdłuż muru zostaje po swojej stronie. Mur dostaje wybrane zwieńczenie (płyty kamienne, cegły na rąb, dachówki, gięta blacha…) w Twoim kolorze, a *＋ Add a point* / *− Remove a point* u góry sekcji zmieniają kształt dowolnej linii lub obrysu.
 - **Widoki**: zapisz bieżącą kamerę jako widok, zmień nazwę, usuń.
 
 ![Drzewa](../images/28-arbres.jpg)
 
 ### 6.12 Katalog drzew i obiektów
 
-Gatunki drzew (z wyglądem w każdej porze roku), obiekty ogrodowe i meble rysowane zamiast zwykłych prostopadłościanów oraz ryby oczek pochodzą z [katalogu domu](https://github.com/Elwinmage/house-catalog). Integracja aktualizuje go sama z GitHuba (urządzenie *House view catalog*: jedna encja aktualizacji na sekcję, przełącznik automatycznej aktualizacji, przycisk natychmiastowej aktualizacji) i działa offline z dołączoną kopią.
+Gatunki drzew (z wyglądem w każdej porze roku), obiekty ogrodowe i meble rysowane zamiast zwykłych prostopadłościanów oraz ryby oczek pochodzą z [katalogu domu](https://github.com/Elwinmage/house-catalog). To samo dotyczy nawierzchni ścieżek i tarasów, okładzin murów oraz rodzajów ogrodzeń — każdy z podglądem tam, gdzie się go wybiera. Integracja aktualizuje go sama z GitHuba (urządzenie *House view catalog*: jedna encja aktualizacji na sekcję, przełącznik automatycznej aktualizacji, przycisk natychmiastowej aktualizacji) i działa offline z dołączoną kopią.
 
 Aby stworzyć **własne drzewo lub obiekt**, użyj [edytora katalogu](https://github.com/Elwinmage/catalog-editor): karty Home Assistant, w której ustawia się kształt, kolory i pory roku, widząc wynik. To, co zapiszesz, widok wykorzystuje od razu, a potem możesz to zaproponować do wspólnego katalogu (pull request na GitHubie), aby wszyscy mogli z tego korzystać.
 
@@ -356,7 +378,7 @@ Aby stworzyć **własne drzewo lub obiekt**, użyj [edytora katalogu](https://gi
 - **Plan** i **teren**: zob. [pierwsze uruchomienie](#4-pierwsze-uruchomienie-plan-i-teren).
 - **GitHub backup**: ustaw **prywatne** repozytorium w opcjach integracji (*Ustawienia → Urządzenia oraz usługi → House View → Konfiguruj → kopia zapasowa GitHub*: repozytorium `właściciel/nazwa`, token *fine-grained* z *Contents: read and write*, gałąź, folder), potem *Back up to GitHub* / *Restore from GitHub*. Repozytorium publiczne jest odrzucane: zawierałoby plan Twojego domu. Nad dwoma przyciskami **Zapisane w Home Assistant** wymienia to, co ma integracja (plan, teren, zmiany, zdjęcie lotnicze) z datą ostatniego zapisu: kopia może wysłać tylko to, co jest tam wymienione, a jej komunikat mówi, co zostało zapisane, co było już aktualne, czego tu nie ma i co odrzucił GitHub. Zmiany wciąż oczekujące są zapisywane przed kopią.
 - **Edit protection**: przed otwarciem edytora i konfiguracji może być wymagane hasło (opcje integracji → ochrona edycji). Karta prosi o nie ponownie po 10 minutach bez zmian; przycisk 🔒 blokuje od razu. Oglądanie, przybliżanie, sterowanie światłami czy odkurzaczem pozostają wolne.
-- **Edits file**: eksport lub import wszystkich edycji (encje, nawadnianie, ogrodzenia…) w pliku JSON.
+- **Edits file**: eksport lub import wszystkich edycji (encje, nawadnianie, ogrodzenia…) w pliku JSON. *Export the corrected terrain* zapisuje dodatkowo rzeźbę terenu taką, jaką pokazuje widok, z zastosowanymi poprawkami gruntu, jako plik terenu dla innego narzędzia: poprawki pozostają w edycjach, więc nie wczytuj go jako terenu tego domu.
 
 ## 8. Kilka domów
 
@@ -409,6 +431,9 @@ Ustawia się je w edytorze wizualnym karty (pulpit w trybie edycji → *Edytuj* 
 | `movable_camera` | Ruchoma kamera | tak |
 | `height`, `min_height` | Wysokość karty (`fill`, `aspect`, w px lub `vh`) | `fill`, 320 |
 | `fps_cap` | Maksymalna liczba klatek na sekundę (tablet ścienny) | 30 |
+| `quality` | Jakość obrazu: `auto` (lżejszy podczas ruchu kamery, gdy ekran nie nadąża), `low` (słaby ekran), `high` (nigdy nie obniżany) | `auto` |
+| `keep_scene` | Minuty, przez które scena pozostaje gotowa po zniknięciu karty z ekranu (0: zwalniana od razu) | 10 |
+| `auto_reload` | Przeładuj stronę samoczynnie po aktualizacji karty, gdy tylko nikt z niej nie korzysta (ekran ścienny); w przeciwnym razie proponuje to przycisk | `false` |
 | `year_seconds` | Czas trwania „Simulate a year” (5 do 60 s) | 10 |
 | `toolbar_buttons` | Narzędzia pozostające na pasku (`preview`, `year`, `camera`, `sim`, `edit`, `setup`) | brak |
 | `hide_menu` | Ukrycie menu ⋮ przed osobami niebędącymi administratorami | nie |
@@ -441,3 +466,12 @@ W ⚙ → *Terrain (DTM)* sprawdź, czy *Aerial photo on the ground* jest zaznac
 
 **Chcę pokazać widok bez pokazywania swojego domu.**
 Użyj [trybu demo](#9-tryb-demo).
+
+**Widok przycina się na Raspberry Pi lub tablecie ściennym.**
+W opcjach karty ustaw *Rendering quality* (`quality`) na `low` i obniż `fps_cap`; pomaga też niższa rozdzielczość ekranu. W trybie `auto` obraz sam staje się lżejszy podczas ruchu kamery, gdy ekran nie nadąża, a w spoczynku odzyskuje pełną szczegółowość.
+
+**Widok wczytuje się od nowa, gdy wracam z innego pulpitu.**
+Scena pozostaje gotowa przez dziesięć minut po zniknięciu z ekranu, potem jej pamięć jest zwalniana: po tym czasie jest przy powrocie odczytywana i budowana od nowa. Zwiększ `keep_scene` (w minutach), aby trzymać ją dłużej.
+
+**Czy po aktualizacji wyświetlana karta jest tą nową?**
+Tak: karta jest zawsze ładowana pod odciskiem pliku, który jest na serwerze, więc wystarczy odświeżyć przeglądarkę (bez czyszczenia pamięci podręcznej). Strony pozostawione otwarte pokazują na pasku niebieski przycisk *Nowa wersja karty*; z opcją `auto_reload` tablet ścienny przeładowuje się sam, gdy nikt z niego nie korzysta. Uruchom ponownie Home Assistant, gdy o to poprosi po aktualizacji integracji; karta jedynie zbudowana ponownie (rozwój) tego nie wymaga.

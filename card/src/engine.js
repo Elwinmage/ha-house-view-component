@@ -19,11 +19,13 @@ import {
 import { normalizeEdits, outdoorEdit, isDsmRemoved } from './engine/edits.js';
 import { LightSystem } from './engine/lighting.js';
 import { Environment, WEATHER_PRESETS } from './engine/environment.js';
-import { buildTerrain, treesFromDsm, gridToPlan } from './engine/terrain.js';
+import { buildTerrain, correctedTerrain, terrainSign, treesFromDsm, gridToPlan, planToGrid } from './engine/terrain.js';
 import { buildFence, normalizeFence } from './fences.js';
 import { buildIrrigation } from './irrigation.js';
 import { buildBeds } from './flowerbeds.js';
+import { buildRoofs, topWalls, uncoveredRoof } from './roofs.js';
 import { buildPaths } from './paths.js';
+import { buildTerraces, walkLevel } from './terraces.js';
 import { buildGates, gatesOf, cutFence } from './gates.js';
 import { buildRobot, buildDock } from './vacuum.js';
 import { rectCorners, rectSamples, facesEye, onFloor, pickFurniture } from './zones.js';
@@ -35,8 +37,11 @@ import { tideLevel, simMs } from './engine/tide.js';
 import { SeaSound } from './engine/sea-sound.js';
 import { poolValid, islandsOf, poolRoomsOf, roomFocus } from './pools.js';
 import { pondFish } from './fish.js';
+import { QUALITY, MotionScale, castersSign, qualityOf } from './engine/pace.js';
 
 const VIEW_H = 30; // world height visible at zoom 1
+const SHADOW_EVERY = 1000; // ms: the shadows are drawn again at least this often (safety net of _watchShadows)
+const SHADOW_MIN = 100; // ms: and at most this often while something keeps moving (a robot at work, a gate, the sun)
 
 function radialTexture() {
   const c = document.createElement('canvas');
@@ -92,10 +97,21 @@ export class HouseEngine {
   constructor(container, opts = {}) {
     this.container = container;
     this.opts = { movable: true, fpsCap: 0, ...opts };
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // quality of the picture (pace.js): what cannot change on a live renderer is settled here
+    const q = QUALITY[qualityOf(this.opts.quality)];
+    this.quality = q;
+    this.renderer = new THREE.WebGLRenderer({ antialias: q.antialias, powerPreference: 'high-performance' });
+    this.pace = new MotionScale(this._restRatio(), q.move);
+    this.renderer.setPixelRatio(this.pace.rest);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // the shadows only depend on the sun and on what casts them, not on the camera: drawn again on demand (_frame)
+    this.renderer.shadowMap.autoUpdate = false;
+    this._shadowSign = null;
+    this._shadowAt = 0;
+    this._cam = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), zoom: 0 };
+    this.lost = 0; // when the graphics context was lost (ms, performance.now()), 0 while the view can be drawn
+    this.onContext = null; // (lost: boolean) => void: the graphics context was lost, or given back
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
@@ -108,6 +124,7 @@ export class HouseEngine {
     this.controls.maxZoom = 9;
     this.controls.screenSpacePanning = false;
     this.picker = null; // editor click handler: takes over the clicks (and keeps the orbit controls usable)
+    this.pickerWheel = null; // editor wheel handler, with the picker: returns true when it used the event
     // handles of the move tool of an editor, dragged on the ground: { pick(ev), y(h), start(h, x, z), move(h, x,
     // z), tap(h), end(h) }. A press that misses every handle is left alone (the camera turns as usual).
     this.moveGrab = null;
@@ -132,10 +149,13 @@ export class HouseEngine {
       center: [10, 0, 4],
       plot: { x0: -8, z0: -8, x1: 24, z1: 16 },
     });
+    this.env.sun.shadow.mapSize.set(q.shadow, q.shadow);
     this.spillTex = radialTexture();
     this.black = new THREE.Color(0, 0, 0);
     this.world = null;
     this.visibility = { roof: true, levels: {} };
+    this._terrainKept = null; // the ground kept from one rebuild to the next: { sign, terrain, looks, uses }
+    this._catalogRev = 0;
     this.views = [];
     this.tween = null;
     this.running = false;
@@ -159,13 +179,47 @@ export class HouseEngine {
     el.addEventListener('pointerup', (ev) => this._click(ev));
     el.addEventListener('pointermove', (ev) => this._hover(ev));
     el.addEventListener('pointerleave', (ev) => this._hover(ev, true));
+    // The graphics context may be taken back by the browser (memory of the graphics processor, driver restarted).
+    // three.js sets its own state up again when the context comes back; the drawing stops meanwhile, and whoever
+    // shows the view is told (the card starts a new scene when the context does not come back).
+    el.addEventListener('webglcontextlost', (ev) => {
+      ev.preventDefault(); // without it the browser never gives the context back
+      if (this.disposed) return;
+      this.lost = performance.now();
+      if (this.onContext) this.onContext(true);
+    });
+    el.addEventListener('webglcontextrestored', () => {
+      if (this.disposed) return;
+      this.lost = 0;
+      this._shadowSign = null; // the shadow map went with the context
+      this.renderer.shadowMap.needsUpdate = true;
+      this._last = performance.now();
+      if (this.onContext) this.onContext(false);
+    });
+    // a tool of the editor may take the wheel (shift + wheel sizes the ground brush): captured on the container, so
+    // the event never reaches the orbit controls on the canvas and the view does not zoom at the same time
+    container.addEventListener(
+      'wheel',
+      (ev) => {
+        if (!this.picker || !this.pickerWheel || !this.pickerWheel(ev)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+      },
+      true,
+    );
     this._frame = this._frame.bind(this);
     this.resize();
+  }
+
+  /** Pixels of the still picture per pixel of the screen: those of the screen, up to what the quality allows. */
+  _restRatio() {
+    return Math.min(window.devicePixelRatio || 1, this.quality.ratio);
   }
 
   resize() {
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 600;
+    this.pace.setRest(this._restRatio()); // the window may have moved to another screen, or the page been zoomed
     this.renderer.setSize(w, h);
     const aspect = w / h;
     const c = this.camera;
@@ -184,6 +238,50 @@ export class HouseEngine {
       if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m !== null) m.dispose();
     });
     this.scene.remove(w.root);
+  }
+
+  /** What buildTerrain() is given for a world: the registration and layers of the terrain, and what the edits add. */
+  _groundCfg(terr, edits) {
+    return { ...terr, ops: edits.terrain, pools: edits.pools, terraces: edits.terraces, paths: edits.paths, sea: activeSea(edits.sea) };
+  }
+
+  /**
+   * The ground of a world. It is the long part of a rebuild (about a second on a garden with pools and retaining
+   * walls) and most edits do not touch it: it is kept from one rebuild to the next, and built again only when what
+   * it is made from changed (terrainSign). load() takes the kept one out of the old world before that one is disposed.
+   */
+  _ground(sd, terr, edits) {
+    if (!terr) {
+      this._terrainKept = null;
+      return null;
+    }
+    const cfg = this._groundCfg(terr, edits);
+    const sign = terrainSign(terr.data, sd, cfg, this._catalogRev);
+    const kept = this._terrainKept;
+    if (kept && kept.sign === sign) {
+      // (the weather tints its materials: back to their own colours, which the new world takes as the plain ones)
+      for (const look of kept.looks) {
+        look.material.color.copy(look.color);
+        if (look.emissive) look.material.emissive.copy(look.emissive);
+      }
+      kept.uses++;
+      return kept.terrain;
+    }
+    const terrain = buildTerrain(terr.data, sd, cfg);
+    const looks = [terrain.material, terrain.roadMaterial]
+      .filter(Boolean)
+      .map((material) => ({ material, color: material.color.clone(), emissive: material.emissive ? material.emissive.clone() : null }));
+    this._terrainKept = { sign, terrain, looks, uses: 0 };
+    return terrain;
+  }
+
+  /**
+   * The terrain document with the ground as the view shows it (corrections applied, see correctedTerrain), to be
+   * saved as a file; null without a terrain.
+   */
+  correctedTerrain() {
+    const w = this.world;
+    return w && w.terrain && this.terrainData && this.terrainCfg ? correctedTerrain(this.terrainData, this.terrainCfg, w.terrain) : null;
   }
 
   _buildWorld(sd, terr, edits, lightsOverride = null) {
@@ -208,7 +306,7 @@ export class HouseEngine {
         const k = lightsOverride && lightsOverride.find((x) => x.id === l.id);
         return k ? { ...l, on: k.on, color: k.color, brightness: k.brightness } : { ...l };
       }),
-      terrain: terr ? buildTerrain(terr.data, sd, { ...terr, ops: edits.terrain, pools: edits.pools, sea: activeSea(edits.sea) }) : null,
+      terrain: this._ground(sd, terr, edits),
       levelsById: {},
       roof: null,
       site: null,
@@ -401,10 +499,69 @@ export class HouseEngine {
     root.add(w.gates.group);
     w.beds = buildBeds(edits.beds || [], w.anchor, w.groundAt);
     root.add(w.beds.group);
+    // what one walks on: the top of a terrace, else the ground (a flight of steps starts and arrives there)
+    const altToY = w.terrain && terr ? (alt) => alt - w.terrain.zRef + terr.base : null;
+    w.walkAt = walkLevel(edits.terraces || [], w.anchor, w.groundAt, { altToY });
     // drives and paths draped on the ground: snow and rain on them like on the roads
-    w.paths = buildPaths(edits.paths || [], w.anchor, w.groundAt);
+    w.paths = buildPaths(edits.paths || [], w.anchor, w.groundAt, { levelAt: w.walkAt, wallAt: w.terrain ? w.terrain.wallAt : null });
     root.add(w.paths.group);
     for (const material of w.paths.materials) surfaces.push({ material, key: 'road', snow: 0.75, wet: 0.6 });
+    // terraces: flat over the ground levelled for them, cut out around the pools that lie in them
+    const planPool = sd.site.pool;
+    w.terraces = buildTerraces(edits.terraces || [], w.anchor, w.groundAt, {
+      altToY,
+      holes: [
+        ...digs.map((d) => d.poly),
+        ...(planPool
+          ? [
+              [
+                [planPool.x0, planPool.z0],
+                [planPool.x1, planPool.z0],
+                [planPool.x1, planPool.z1],
+                [planPool.x0, planPool.z1],
+              ],
+            ]
+          : []),
+      ],
+    });
+    root.add(w.terraces.group);
+    for (const material of w.terraces.materials) surfaces.push({ material, key: 'deck', snow: 0.95, wet: 0.35 });
+    // roofs read from the surface model of the terrain (roofs.js): part of the roof, shown and hidden with it
+    w.roofsRead = null;
+    if (w.terrain && terr && Array.isArray(terr.data.s) && (edits.roofs || []).length) {
+      const p2g = planToGrid(terr.data, terr);
+      const tinted = new Map();
+      const material = (r) => {
+        if (!r.c) return roofMat;
+        if (!tinted.has(r.c)) {
+          const m = roofMat.clone();
+          m.color.set(r.c);
+          tinted.set(r.c, m);
+          surfaces.push({ material: m, key: 'roof', snow: 0.92, wet: 0.25 });
+        }
+        return tinted.get(r.c);
+      };
+      w.roofsRead = buildRoofs(edits.roofs, terr.data, {
+        toGrid: (r) => (r.frame === 'plan' ? p2g : (x, z) => [x, z]),
+        toPlan: g2p,
+        altToY,
+        walls: topWalls(sd.levels),
+        material,
+        edgeMaterial: gableMat,
+      });
+      // the roof of the plan gives way under them: what is left of it is built again
+      if (w.roof && w.roofsRead.outlines.length) {
+        root.remove(w.roof);
+        w.roof = buildRoof(uncoveredRoof(sd.roof, w.roofsRead.outlines), roofMat, gableMat);
+        if (w.roof) root.add(w.roof);
+      }
+      if (!w.roof) {
+        w.roof = new THREE.Group();
+        w.roof.name = 'roof';
+        root.add(w.roof);
+      }
+      w.roof.add(w.roofsRead.group);
+    }
 
     // watering: drip lines and sprinklers (animated in _frame from the valve states)
     w.irrigation = buildIrrigation(edits.irrigation || {}, w.anchor, w.groundAt);
@@ -549,6 +706,7 @@ export class HouseEngine {
    * @param {{keepLights?: boolean}} [opts]
    */
   load(data, opts = {}) {
+    if (this.disposed) return this; // a document read after the scene was released
     // commit() passes the edits object back: keep it (the card and the editors hold a reference to it)
     const edits = data.edits && data.edits === this.edits ? this.edits : normalizeEdits(data.edits);
     this.edits = edits;
@@ -575,12 +733,16 @@ export class HouseEngine {
     }
     const keptLights = opts.keepLights && this.world ? this.world.lights : null;
     const keptVis = opts.keepLights && this.world ? { roof: this.visibility.roof, levels: { ...this.visibility.levels } } : null;
+    this.orthoData = data.ortho || null;
+    const terr = terrainConfig(data.terrain, edits, sd, this._orthoTexture(this.orthoData));
+    // the ground that will serve again is taken out of the old world, which is about to be disposed of
+    const kept = this._terrainKept;
+    if (kept && terr && kept.sign === terrainSign(terr.data, sd, this._groundCfg(terr, edits), this._catalogRev))
+      kept.terrain.group.removeFromParent();
     if (this.world) this._disposeWorld(this.world);
     this.tween = null;
     this.env.setSite(sd.site);
     setClimate(sd.site.latitude ?? 43.6);
-    this.orthoData = data.ortho || null;
-    const terr = terrainConfig(data.terrain, edits, sd, this._orthoTexture(this.orthoData));
     this.sceneData = data.scene;
     this.terrainData = data.terrain || null;
     this.terrainCfg = terr;
@@ -601,6 +763,8 @@ export class HouseEngine {
       this.focus = null;
       this.goToView(0, true);
     }
+    this._shadowSign = null; // new world, and a new shadow map (env.setSite)
+    this.renderer.shadowMap.needsUpdate = true;
     if (this.onLoaded) this.onLoaded();
     return this;
   }
@@ -616,6 +780,7 @@ export class HouseEngine {
    */
   setCatalog(catalog, lang = 'en') {
     setCatalog(catalog, lang);
+    this._catalogRev++; // (the facings of the retaining walls, the thickness of the terraces: the ground is built again)
     if (this.world && this.sceneData) this.commit();
   }
 
@@ -1470,7 +1635,7 @@ export class HouseEngine {
     this._mg = null;
     if (this.renderer.domElement.hasPointerCapture(ev.pointerId)) this.renderer.domElement.releasePointerCapture(ev.pointerId);
     this._updateControls();
-    if (Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) <= 4) return this.moveGrab.tap(h);
+    if (Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) <= 4) return this.moveGrab.tap(h, ev);
     this._down = null; // a drag, not a click: the click handlers are left out of it
     this.moveGrab.end(h);
   }
@@ -1775,10 +1940,11 @@ export class HouseEngine {
     requestAnimationFrame(this._frame);
     const minDt = this.opts.fpsCap ? 1000 / this.opts.fpsCap : 0;
     if (now - this._last < minDt - 1) return;
-    const realDt = Math.min((now - this._last) / 1000, 1.5); // the robot keeps its real speed on a slow display
-    const dt = Math.min((now - this._last) / 1000, 0.1);
+    const sinceMs = now - this._last;
+    const realDt = Math.min(sinceMs / 1000, 1.5); // the robot keeps its real speed on a slow display
+    const dt = Math.min(sinceMs / 1000, 0.1);
     this._last = now;
-    if (!this.world) return;
+    if (!this.world || this.lost) return;
     const tw = this.tween;
     if (tw) {
       tw.t += Math.min(realDt, 0.3) / tw.dur; // real time: a camera move does not drag on a slow display
@@ -1801,8 +1967,42 @@ export class HouseEngine {
     this._animateRobot(realDt, now / 1000);
     if (this._slots) for (const s of this._slots.values()) this._animateRobot.call(s, realDt, now / 1000);
     this.controls.update();
+    // a lighter picture while the camera moves, the full one as soon as it rests (pace.js)
+    const ratio = this.pace.next(now, this._cameraMoved(), sinceMs, minDt || 1000 / 60);
+    if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.render(this.scene, this.camera);
+    this._watchShadows(now);
     if (this.onFrame) this.onFrame();
+  }
+
+  /** Did the camera move since the previous frame (dragged, zoomed, still gliding, or led to a view)? */
+  _cameraMoved() {
+    const c = this.camera;
+    const k = this._cam;
+    const moved = !k.pos.equals(c.position) || !k.quat.equals(c.quaternion) || k.zoom !== c.zoom;
+    if (moved) {
+      k.pos.copy(c.position);
+      k.quat.copy(c.quaternion);
+      k.zoom = c.zoom;
+    }
+    return moved;
+  }
+
+  /**
+   * Shadows on demand: the shadow map is drawn again at the next frame when the sun or something that casts a shadow
+   * has changed since it was drawn (ten times a second at most while it keeps moving), and once in a while as a
+   * safety net (a change this watch would not see). Turning or zooming the view never needs it. Called after a frame
+   * is drawn: the world matrices are up to date.
+   */
+  _watchShadows(now) {
+    const sun = this.env.sun;
+    const p = sun.position;
+    const sign = sun.castShadow ? castersSign(this.scene) + p.x * 31.7 + p.y * 57.3 + p.z * 91.1 : 0;
+    const since = now - this._shadowAt;
+    if (sign === this._shadowSign ? since < SHADOW_EVERY : this._shadowSign !== null && since < SHADOW_MIN) return;
+    this._shadowSign = sign;
+    this._shadowAt = now;
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   /** Waves, glint and tide of the sea: the tide follows the moon (two high waters a day), the wind raises and steers the swell. */
@@ -1828,14 +2028,24 @@ export class HouseEngine {
     } else if (this.seaSound) this.seaSound.stop();
   }
 
+  /**
+   * The end of the scene: nothing is drawn any more and the memory of the graphics processor is given back right away
+   * (the browser would otherwise only free it when it cleans up, which a small device may not survive).
+   */
   dispose() {
+    if (this.disposed) return;
     if (this.seaSound) this.seaSound.dispose();
     this.disposed = true;
     this.running = false;
     this._ro.disconnect();
     if (this.world) this._disposeWorld(this.world);
+    this.world = null;
+    this._terrainKept = null;
+    if (this._ortho) this._ortho.texture.dispose();
+    this._ortho = null;
     this.controls.dispose();
     this.renderer.dispose();
+    if (!this.renderer.getContext().isContextLost()) this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 }

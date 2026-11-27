@@ -40,11 +40,12 @@ You do not provide the terrain (relief, neighbouring buildings, roads, cadastre,
 
 ### 2.1 Installing the integration
 
-**With HACS** (recommended):
+**From the Marketplace** (recommended): House View is in its catalog, there is no repository to add.
 
-1. HACS → ⋮ menu → *Custom repositories* → add `https://github.com/elwinmage/ha-house-view-component`, type *Integration*.
-2. Search for **House View** in HACS and install it.
-3. Restart Home Assistant.
+1. Open the repository in the Marketplace with this button: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Elwinmage&repository=ha-house-view-component&category=integration), or search for **House View** in *Settings → Marketplace*.
+2. Click "Install".
+
+On a Home Assistant older than 2026.11, the same steps work in HACS; restart Home Assistant afterwards.
 
 **By hand**: unzip `house_view.zip` of the latest release (it holds the built card) into `config/custom_components/house_view/`, then restart.
 
@@ -111,13 +112,17 @@ No plan? *Create a simple plan* (in **Plan of the house**) opens an editor of re
 - **Levels**: *＋ Level* adds a floor that copies the outline of the rooms below, to rename and to cut up again; the ceiling height is set per level. The outline of the level below stays shown dashed.
 - **Roof and orientation**: automatic, gable or flat roof; angle of north (the registration on the terrain corrects it afterwards).
 
-The plan saves itself and opens again with *Edit the simple plan*. A simple plan replaces an imported plan, after a confirmation; placed entities, watering, fences… are kept.
+The plan saves itself and opens again with *Edit the simple plan*. A simple plan replaces an imported plan, after a confirmation; placed entities, watering, fences… are kept. **Ctrl+Z** and the **↶ ↷** arrows at the top of the panel undo and redo the changes of the plan.
 
 ### 4.3 Starting from the robot's map
 
 If a robot vacuum has mapped the house and a map extractor (Xiaomi Cloud Map Extractor, Roborock Custom Map…) gives its rooms (`rooms` attribute), the *Plan from the robot's map* button creates a simple plan with these rooms, at their size and place. They are rough rectangles, and only those of the robot's level: adjust them, then add doors, windows and other levels in the simple plan.
 
 ### 4.4 Fetching the terrain
+
+The terrain is neither measured nor drawn by you: the integration downloads it from public, free data, surveyed from aircraft (the LiDAR laser scanning and the aerial photographs of the IGN in France, the open LiDAR surveys of many countries) or from satellites (the worldwide Copernicus 30 m model).
+
+![A sloping garden rebuilt in the card: retaining walls, steps, terraces, drive, fences and gates, pool, pond and sprinklers, on the real relief](../images/vitrine.jpg)
 
 In **Terrain (DTM)**:
 
@@ -132,6 +137,8 @@ In **Terrain (DTM)**:
 At the end, the plan is **registered on the terrain automatically** (rotation, offset, height), the trees found are planted, and the relief, the roads and the photo appear.
 
 You can also load a terrain file (*Load a terrain .json*) or adjust the registration by hand (rotation, offset, height) in the same section.
+
+Around the house, the ground stops at the outer face of the walls and stays under the floors, whatever the height you give it: a basement, or a level half sunk in a slope, keeps its rooms clear of the earth that stands against its walls. This follows the rooms of the plan and the walls around them, level by level; where the basement lies under a part of the house only, the ground is kept under the rest of the ground floor.
 
 ## 5. Using the view
 
@@ -201,17 +208,23 @@ Smoke, gas, carbon monoxide, water leak, problem, heat, cold and tamper sensors,
 
 **Simulate a year** plays a whole year (10 s by default, 5 to 60 s) from the date shown; a chip shows the date. At the end, the view goes back to the date before.
 
+<p align="center"><img src="../images/anim-journee.webp" alt="Sun and shadows" width="290"> <img src="../images/anim-saisons.webp" alt="Seasons" width="290"> <img src="../images/anim-meteo.webp" alt="Weather" width="290"></p>
+
 ### 5.7 Lights, shutters and windows
 
 The lights of each room light the room and its windows. **Roller shutters** go down to their real position, **windows** open, **patio doors** slide, **doors** swing.
 
 ![In the evening: shutters closed and lights on](../images/14-soiree-volets-lumieres.jpg)
 
+<p align="center"><img src="../images/anim-lumieres.webp" alt="Lights" width="290"> <img src="../images/anim-volets.webp" alt="Roller shutters" width="290"> <img src="../images/anim-fenetres.webp" alt="Windows" width="290"></p>
+
 ### 5.8 Robot vacuum
 
 A tap on the button of the robot opens the room selection: choose the rooms on the plan, then *Clean* (also *Start*, *Pause*, *Dock*). While it cleans, a 3D robot moves, the room being cleaned is coloured with its percentage, the rooms still to do are tinted, a finished room sparkles, and a ring around the button gives the overall progress. On an error, the room and the robot blink in red.
 
 ![The robot cleaning](../images/15-aspirateur.jpg)
+
+<p align="center"><img src="../images/anim-aspirateur.webp" alt="Robot vacuum" width="440"></p>
 
 ### 5.9 Watering, pool and pond
 
@@ -221,9 +234,11 @@ When a valve opens, the **drip lines** light up in blue and a wet patch grows; t
 |---|---|
 | ![Sprinklers at dawn](../images/16-arrosage.jpg) | ![Pool and pond](../images/17-piscine-etang.jpg) |
 
+<p align="center"><img src="../images/anim-arrosage.webp" alt="Watering" width="290"> <img src="../images/anim-piscine.webp" alt="Pool" width="290"> <img src="../images/anim-etang.webp" alt="Pond" width="290"></p>
+
 ## 6. The editor
 
-For administrators only: **⋮ menu → Editor**. The editor is a **menu of sections**. A section opens in its own window, over the menu; an item of a list (a drip line, a zone, an entity…) opens over the section. The **←** arrow goes back to the window below. Everything is saved on its own; **Esc** cancels the drawing in progress.
+For administrators only: **⋮ menu → Editor**. The editor is a **menu of sections**. A section opens in its own window, over the menu; an item of a list (a drip line, a zone, an entity…) opens over the section. The **←** arrow goes back to the window below. Everything is saved on its own; **Esc** cancels the drawing in progress. The points of what is being edited show as dots in the view: **drag one to move it**. **Ctrl+Z** undoes the last change, whatever the section, and **Ctrl+Y** does it again (while a shape is being drawn, Ctrl+Z first takes back the last point); on a tablet, the **↶ ↷** arrows at the top of each window do the same.
 
 ![The editor menu](../images/18-editeur.jpg)
 
@@ -286,6 +301,8 @@ A room with **only one window** is linked on its own to the window sensor, the o
 
 ![The patio door of the living room and its links](../images/24-portes-fenetres.jpg)
 
+<p align="center"><img src="../images/anim-porte.webp" alt="Doors" width="300"> <img src="../images/anim-garage.webp" alt="Garage doors" width="660"></p>
+
 ### 6.7 Pools and ponds
 
 *＋ Pool* or *＋ Pond*, then draw the outline seen from above: **Rectangle** (two opposite corners) or **Free shape** (point by point, then *Finish*). Set the name, the water colour, the depth (0.2 to 6 m) and, if you have one, the **cleaning robot** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` or `sensor` — and any other entity by typing its id in the picker; a reading above zero counts as on). The terrain is dug: vertical walls, flat bottom and coping for a pool; sloping bottom and a pebble bank for a pond. A pool or a pond counts as a **room**: a tap zooms the camera on it (the view can be saved like that of a room), entities and links can be placed in it, and it can be linked to a Home Assistant area like a room of the plan.
@@ -329,22 +346,27 @@ For each robot (*Robot* list):
 
 ### 6.10 Fences
 
-*Fence from the cadastre* (the parcels of the house are preselected; **in France only**, as the cadastre comes from the services of the IGN: elsewhere, draw the fence by hand) or *Draw a fence* point by point. Each side has its type (wire mesh, wood, wall, hedge, or open where there is no fence; a gate is added in *Gates* and opens the fence by itself) and its height; *Edit the sides* changes a side, cuts it in two or removes a point.
+*Fence from the cadastre* (the parcels of the house are preselected; **in France only**, as the cadastre comes from the services of the IGN: elsewhere, draw the fence by hand) or *Draw a fence* point by point. Each side has its type (wire mesh, wood, wall, hedge, or open where there is no fence; a gate is added in *Gates* and opens the fence by itself) and its height; *Edit the sides* changes a side, cuts it in two or removes a point. The types come from the house catalog: the palette shows a picture of each one beside the colour that marks its sides on the view while the fence is edited. A wall or a brick wall can carry a **coping** (stone, bricks on edge, tiles, folded sheet…), in your own colour: it is chosen in the palette, under the height, and laid side by side.
 
 ![Fences](../images/27-clotures.jpg)
+
+<p align="center"><img src="../images/anim-portails.webp" alt="Gates" width="440"></p>
 
 ### 6.11 Trees, outdoor objects and ground corrections
 
 - **Trees**: delete those found by mistake, plant some (species of the catalog and height), undo, restore all.
 - **Outdoor objects** (shed, gate…): hide, height, offset, rotation.
-- **Ground corrections**: low wall, terrace, brushes (raise, dig, smooth), cut of the terrain.
+- **Terraces** (*Terraces*): draw a rectangle or a free shape, then choose its covering from pictures (wood, tiles, stone, concrete, a plain colour), a colour of your own, its altitude and its thickness. The ground is levelled under it, a pool inside it is cut out, and its points stay editable (move, add, remove).
+- **Outdoor steps** (*Drives and paths* → *As a flight of steps*): a path drawn between a low point and a high one becomes a flight of steps in the surface of the path; the ground is opened under it and a retaining wall it goes through is cut.
+- **Roofs from the LiDAR**: a roof too intricate for the plan is read from the surface model of the terrain. Give its outline (drawn point by point, taken from the walls of the plan with its eaves, or from the building of the map), and the slopes are found inside it, cut along their ridges, hips and valleys; move, add or remove the points of the outline to cover only a part of the house, the roof of the plan staying everywhere else.
+- **Ground corrections**: every correction in place is outlined and named on the view, and a tap selects it in the list. Retaining wall — with a facing chosen from pictures (render, stone, brick…), a colour, and a top and a foot that can differ between its two ends —, bare platform, brushes (raise, dig, smooth) whose effect shows before the click, cross-section of the terrain. A tool that draws one kind shows that kind alone (*Shown on the view* brings the others back). They apply in the order they were drawn; a wall has no hold behind another wall, and a platform drawn along a wall keeps to its side. A wall takes the coping you choose (stone slabs, bricks on edge, tiles, a folded metal sheet…) in your own colour, and *＋ Add a point* / *− Remove a point*, at the top of a section, reshape a free line or outline.
 - **Views**: save the current camera as a view, rename, delete.
 
 ![Trees](../images/28-arbres.jpg)
 
 ### 6.12 The catalog of trees and objects
 
-The species of trees (with their look in each season), the garden objects or pieces of furniture drawn instead of plain boxes, and the fish of the ponds come from the [house catalog](https://github.com/Elwinmage/house-catalog). The integration updates it on its own from GitHub (device *House view catalog*: one update entity per section, an *Automatic update* switch, an *Update now* button) and works offline with the copy it ships.
+The species of trees (with their look in each season), the garden objects or pieces of furniture drawn instead of plain boxes, and the fish of the ponds come from the [house catalog](https://github.com/Elwinmage/house-catalog). So do the coverings of the paths and terraces, the facings of the retaining walls and the types of fences, each shown with its picture where it is chosen. The integration updates it on its own from GitHub (device *House view catalog*: one update entity per section, an *Automatic update* switch, an *Update now* button) and works offline with the copy it ships.
 
 To create **your own tree or object**, use the [catalog editor](https://github.com/Elwinmage/catalog-editor): a Home Assistant card where you set the shape, the colours and the seasons while seeing the result. What you save is used by the view at once, and you can then propose it to the shared catalog (a pull request on GitHub), so that everyone benefits.
 
@@ -370,7 +392,7 @@ The settings are saved in the `sea` key of the edits. Known limits: a single wat
 - **Plan** and **Terrain**: see [the first setup](#4-first-setup-the-plan-and-the-terrain).
 - **GitHub backup**: set a **private** repository in the integration options (*Settings → Devices & services → House View → Configure → GitHub backup*: repository `owner/name`, *fine-grained* token with *Contents: read and write*, branch, folder), then *Back up to GitHub* / *Restore from GitHub*. A public repository is refused: it would hold the plan of your house. Above the two buttons, **Stored in Home Assistant** lists what the integration holds (plan, terrain, edits, aerial photo) with the date of the last write: a backup can only send what is listed there, and its message says what was written, what was already up to date, what is not stored here and what GitHub refused. Edits still pending are saved before the backup.
 - **Edit protection**: a password can be asked before the editor and the setup open (integration options → *Edit protection*). The card asks for it again after 10 minutes without any change; the 🔒 button locks at once. Looking at the view, zooming, controlling the lights or the vacuum stay free.
-- **Edits file**: export or import all your edits (entities, watering, fences…) as a JSON file.
+- **Edits file**: export or import all your edits (entities, watering, fences…) as a JSON file. *Export the corrected terrain* also saves the relief as the view shows it, ground corrections applied, as a terrain file for another tool: the corrections stay in the edits, so do not load it back as the terrain of this home.
 
 ## 8. Several homes
 
@@ -423,6 +445,9 @@ They are set in the visual editor of the card (dashboard in edit mode → *Edit*
 | `movable_camera` | Movable camera | yes |
 | `height`, `min_height` | Height of the card (`fill`, `aspect`, in px or `vh`) | `fill`, 320 |
 | `fps_cap` | Maximum frames per second (wall tablet) | 30 |
+| `quality` | Rendering quality: `auto` (lighter while the camera moves if the display cannot keep up), `low` (slow display), `high` (never lightened) | `auto` |
+| `keep_scene` | Minutes the scene stays ready once the card left the screen (0: released at once) | 10 |
+| `auto_reload` | Reload the page by itself when the card is updated, as soon as nobody is using it (wall display); without it, a button offers it | `false` |
 | `year_seconds` | Length of "Simulate a year" (5 to 60 s) | 10 |
 | `toolbar_buttons` | Tools kept in the toolbar (`preview`, `year`, `camera`, `sim`, `edit`, `setup`) | none |
 | `hide_menu` | Hide the ⋮ menu from non-administrators | no |
@@ -455,3 +480,12 @@ In ⚙ → *Terrain (DTM)*, check that *Aerial photo on the ground* is ticked. I
 
 **I want to show the view without showing my house.**
 Use [demo mode](#9-demo-mode).
+
+**The view is jerky on a Raspberry Pi or a wall tablet.**
+In the options of the card, set *Rendering quality* (`quality`) to `low` and lower `fps_cap`; a lower screen resolution helps too. With `auto`, the picture is already lightened on its own while the camera moves when the display cannot keep up, and gets all its detail back when it rests.
+
+**The view loads again when I come back from another dashboard.**
+The scene stays ready for ten minutes after it left the screen, then its memory is released: past that delay it is read and built again on the way back. Raise `keep_scene` (minutes) to keep it longer.
+
+**After an update, is the card on screen the new one?**
+Yes: the card is always loaded under the fingerprint of the file that is on the server, so a plain refresh of the browser is enough (no cache to clear). The pages left open show a blue *New version of the card* button in the toolbar; with the `auto_reload` option, a wall tablet reloads by itself when nobody is using it. Restart Home Assistant when it asks to after an update of the integration; a card that was only built again (development) does not need it.

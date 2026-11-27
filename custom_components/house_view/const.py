@@ -32,8 +32,10 @@ EVENT_UPDATED = f"{DOMAIN}_updated"
 # Upper bound of an uploaded document, in bytes (the HA web server itself caps requests at 16 MiB)
 MAX_BODY_BYTES = 15 * 1024 * 1024
 
-# The Lovelace card is bundled with the integration (built from /card): served at CARD_URL and loaded on every dashboard
+# The Lovelace card is bundled with the integration (built from /card). Every dashboard loads LOADER_URL, a line
+# that imports the bundle (CARD_URL) under the fingerprint of the file of the moment: see card_bundle.py
 CARD_URL = f"/{DOMAIN}/house-view-card.js"
+LOADER_URL = f"/api/{DOMAIN}/card.js"
 # Picture of the card (card picker, home without a plan), next to the bundle
 PREVIEW_URL = f"/{DOMAIN}/preview.jpg"
 

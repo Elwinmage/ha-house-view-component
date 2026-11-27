@@ -99,6 +99,16 @@ export class HouseViewApi {
     this.home = home || '';
     this.onLocked = null; // async () => boolean: ask the password (the card shows its dialog); true once unlocked
     this.lockedMessage = '';
+    // when the integration last wrote each document the card shows ({ scene, terrain, edits, ortho }: set by the
+    // card when it reads them, kept up to date here when it writes one): tells whether a scene kept aside is stale
+    this.stamps = null;
+  }
+
+  /** A document written (`res.updated`) or removed by this card: its copy is the current one. */
+  async _wrote(key, sending) {
+    const res = await sending;
+    if (this.stamps && res) this.stamps[key] = res.updated ?? null;
+    return res;
   }
 
   get _a() {
@@ -238,22 +248,22 @@ export class HouseViewApi {
   }
 
   setScene(scene) {
-    return this._send('scene', 'POST', scene);
+    return this._wrote('scene', this._send('scene', 'POST', scene));
   }
 
   setTerrain(terrain) {
-    return this._send('terrain', 'POST', terrain);
+    return this._wrote('terrain', this._send('terrain', 'POST', terrain));
   }
 
   clearTerrain() {
-    return this._send('terrain', 'DELETE');
+    return this._wrote('terrain', this._send('terrain', 'DELETE'));
   }
 
   clearOrtho() {
-    return this._send('ortho', 'DELETE');
+    return this._wrote('ortho', this._send('ortho', 'DELETE'));
   }
 
   setEdits(edits) {
-    return this._send('edits', 'POST', edits);
+    return this._wrote('edits', this._send('edits', 'POST', edits));
   }
 }

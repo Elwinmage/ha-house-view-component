@@ -1,16 +1,24 @@
 // Editor sections of the card: fences, rooms <-> areas, robot vacuum, watering. Plain functions of the card instance
 // (they read card._t, card._editors and the feature tools) so that the card file stays readable.
 import { html, nothing } from 'lit';
-import { FENCE_TYPES, normalizeFence, sideCount } from './fences.js';
+import { fenceThumb, fenceType, normalizeFence, sideCount } from './fences.js';
+import { fenceBounds, fenceGroups, fenceKindName } from './fence-art.js';
+import { colorRow, kindLabel, kindPicker } from './ui-terraces.js';
+import { copingKindName, copingKinds } from './coping-art.js';
+import { copingThumb } from './walls.js';
 import { SPRINKLERS, SOILS, LINE_COLORS, sprinklerModel, smoothPath, isOn } from './irrigation.js';
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
-import { PATH_W, normalizePath, pathLength, pathThumb } from './paths.js';
+import { PATH_W, normalizePath, pathLength, pathThumb, stairsKind } from './paths.js';
+import { STEPS_MAX } from './stairs.js';
 import { pathKind, pathKindName, pathKinds, pathWidth } from './path-art.js';
 import { renderRoomOpenings } from './ui-openings.js';
 import { GATE_OPEN, GATE_FILL, GATE_TOP, GATE_DOMAINS, normalizeGate } from './gates.js';
 import { mapRoomsToAreas } from './ha-bridge.js';
 import { renderMove } from './ui-pools.js';
+import { ROOF_DY, normalizeRoof } from './roofs.js';
 
+/** Name of a kind of fence: the one of the catalog, else the translation of the kinds the card knows, else its id. */
+const fenceLabel = (id, t) => kindLabel('fence', id, fenceKindName, t);
 /** Colour a kind of path is drawn in on the overlay; grey when the kind is gone from the catalog. */
 const pathDraft = (id) => (pathKind(id) || {}).draft || '#9aa0a6';
 /** Its name: the one of the catalog, else the translation of the kinds the card knows, else the id. */
@@ -202,7 +210,129 @@ export function renderBeds(card) {
   `;
 }
 
+// ---------------------------------------------------------------------------- roofs read from the surface model
+
+export function renderRoofs(card) {
+  const t = card._t;
+  const ed = card._editors;
+  const rt = card._roofTools;
+  const drawing = !!rt.draw && tool(ed, 'roof-draw');
+  const world = card._engine && card._engine.world;
+  const read = (world && world.roofsRead && world.roofsRead.info) || [];
+  const planColor = '#b5563c';
+  if (!rt.hasModel) return html`<div class="hint">${t('roof_none')}</div>`;
+  return html`
+    <div class="hint">${t('roof_hint')}</div>
+    <div class="row">
+      <button class=${drawing ? 'on' : ''} @click=${() => (drawing ? rt.cancel() : rt.startDraw())}>${t('roof_draw')}</button>
+    </div>
+    <div class="row">
+      <button @click=${() => rt.fromPlan()}>${t('roof_from_plan')}</button>
+      <span>${t('roof_overhang')}</span>${num(rt.overhang, (v) => rt.setOverhang(v), 0.05, 0, 1.5)}
+    </div>
+    <div class="row">${rt.building() ? html`<button @click=${() => rt.fromBuilding()}>${t('roof_from_building')}</button>` : nothing}</div>
+    ${
+      drawing
+        ? html`<div class="hint">${t('roof_draw_hint')}</div>
+            <div class="row">
+              <button class="on" ?disabled=${rt.draw.pts.length < 3} @click=${() => rt.finishDraw()}>
+                ${t('finish')} (${rt.draw.pts.length})
+              </button>
+              <button ?disabled=${!rt.draw.pts.length} @click=${() => rt.undoPoint()}>${t('undo_point')}</button>
+            </div>`
+        : nothing
+    }
+    ${rt.roofs.map((raw, i) => {
+      const r = normalizeRoof(raw);
+      const on = rt.sel === i;
+      const info = read[i];
+      return html`<div class=${`ent ${on ? 'open' : ''}`}>
+        <div @click=${() => rt.select(i)}>
+          <b>${r.name || `${t('roof')} ${i + 1}`}</b>
+          <span class="hint"
+            >${
+              info
+                ? t('roof_info')
+                    .replace('{n}', String(info.planes))
+                    .replace('{slope}', String(Math.round(info.slope)))
+                    .replace('{rise}', info.rise.toFixed(1))
+                : t('roof_unread')
+            }</span
+          >
+        </div>
+        ${
+          on
+            ? html`<div class="row">
+                  <span>${t('name')}</span
+                  ><input type="text" .value=${r.name} @change=${(e) => rt.edit(i, { name: e.target.value.trim() })} />
+                </div>
+                <div class="row">
+                  <span>${t('roof_dy')}</span>${num(r.dy, (v) => rt.edit(i, { dy: v }), 0.05, ROOF_DY[0], ROOF_DY[1])}
+                  <span>${t('color')}</span
+                  ><input type="color" .value=${r.c || planColor} @change=${(e) => rt.edit(i, { c: e.target.value })} />
+                  ${r.c ? html`<button @click=${() => rt.edit(i, { c: '' })}>${t('roof_color_plan')}</button>` : nothing}
+                </div>
+                ${
+                  info && Number.isFinite(info.seat)
+                    ? html`<div class="row">
+                        <button ?disabled=${Math.abs(info.seat - r.dy) < 0.005} @click=${() => rt.edit(i, { dy: info.seat })}>
+                          ${t('roof_seat')}
+                        </button>
+                      </div>`
+                    : nothing
+                }
+                <div class="hint">${t('roof_edit_hint')}</div>`
+            : nothing
+        }
+        <div class="row">
+          <button @click=${() => rt.toggleHidden(i)}>${r.hidden ? t('show') : t('hide')}</button>
+          <button @click=${() => rt.remove(i)}>${t('delete')}</button>
+        </div>
+      </div>`;
+    })}
+  `;
+}
+
 // ---------------------------------------------------------------------------- drives and paths
+
+/** A path laid as a flight of steps: the tick, then the number of steps and what each one comes to on the ground. */
+function renderStairs(card, i, p) {
+  const t = card._t;
+  const pt = card._pathTools;
+  const can = stairsKind(p.surface);
+  const size = p.stairs ? pt.flight(i) : null;
+  const cm = (v) => String(Math.round(v * 100));
+  return html`<div class="row">
+      <label class="chk" title=${can ? '' : t('path_stairs_only')}
+        ><input type="checkbox" .checked=${p.stairs} ?disabled=${!can} @change=${(e) => pt.edit(i, { stairs: e.target.checked })} />
+        ${t('path_stairs')}</label
+      >
+    </div>
+    ${
+      p.stairs
+        ? html`<div class="row">
+              <span>${t('path_steps')}</span
+              ><input
+                type="number"
+                min="1"
+                max=${STEPS_MAX}
+                step="1"
+                placeholder=${t('path_steps_auto')}
+                .value=${p.steps ? String(p.steps) : ''}
+                @change=${(e) => pt.edit(i, { steps: e.target.value })}
+              />
+              ${
+                size
+                  ? html`<span class="hint"
+                      >${t('path_steps_info').replace('{n}', String(size.n)).replace('{rise}', cm(size.rise)).replace('{going}', cm(size.going))}</span
+                    >`
+                  : nothing
+              }
+            </div>
+            <div class="hint">${t('path_stairs_hint')}</div>`
+        : nothing
+    }`;
+}
 
 export function renderPaths(card) {
   const t = card._t;
@@ -234,7 +364,9 @@ export function renderPaths(card) {
         <div @click=${() => pt.select(i)}>
           <i class="sw" style=${`background:${pathDraft(p.surface)}`}></i>
           <b>${p.name || `${t('path')} ${i + 1}`}</b>
-          <span class="hint">${pathLabel(p.surface, t)} · ${p.w} m · ${Math.round(pathLength(p.pts))} m</span>
+          <span class="hint"
+            >${pathLabel(p.surface, t)} · ${p.w} m · ${Math.round(pathLength(p.pts))} m${p.stairs ? ` · ${t('path_stairs_tag')}` : ''}</span
+          >
         </div>
         ${
           on
@@ -263,11 +395,16 @@ export function renderPaths(card) {
                   <span>${t('path_w')}</span
                   >${num(p.w, (v) => pt.edit(i, { w: v }), 0.25, pathBounds(p.surface)[0], pathBounds(p.surface)[1])}
                   <label class="chk"
-                    ><input type="checkbox" .checked=${p.edge} @change=${(e) => pt.edit(i, { edge: e.target.checked })} />
+                    ><input
+                      type="checkbox"
+                      .checked=${p.edge}
+                      ?disabled=${p.stairs}
+                      @change=${(e) => pt.edit(i, { edge: e.target.checked })}
+                    />
                     ${t('path_edge')}</label
                   >
                 </div>
-                ${drawing && drawing.i === i ? draw : nothing}
+                ${renderStairs(card, i, p)} ${drawing && drawing.i === i ? draw : nothing}
                 <div class="row">
                   <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i, true)}>${t('path_extend')}</button>
                   <button ?disabled=${!!drawing} @click=${() => pt.startDraw(i)}>${t('path_redraw')}</button>
@@ -286,6 +423,23 @@ export function renderPaths(card) {
 
 // ---------------------------------------------------------------------------- fences
 
+/** The coping laid on the walls the brush draws: none, or one of the catalog with a colour of the user's own. */
+function fenceCoping(t, ft) {
+  const kinds = copingKinds();
+  const label = (k) => (k ? kindLabel('coping', k, copingKindName, t) : t('wall_coping_none'));
+  const ids = Object.keys(kinds).sort((a, b) => label(a).localeCompare(label(b)));
+  const on = kinds[ft.brush.cap] ? ft.brush.cap : '';
+  return html`<div class="sub">${t('fence_coping')}</div>
+    ${kindPicker(['', ...ids], {
+      on,
+      thumb: (k) => (k ? copingThumb(k) : null),
+      draft: (k) => (k ? kinds[k].surface.color : 'transparent'),
+      label,
+      pick: (k) => ft.setBrush({ cap: k }),
+    })}
+    ${on ? colorRow(t, ft.brush.capc, kinds[on].surface.color, (c) => ft.setBrush({ capc: c })) : nothing}`;
+}
+
 export function renderFences(card) {
   const t = card._t;
   const ed = card._editors;
@@ -293,27 +447,31 @@ export function renderFences(card) {
   const picking = !!ed.parcelSel;
   const drawing = !!ft.draw && tool(ed, 'fence-draw');
   const editing = ft.edit && tool(ed, 'fence-edit') ? ft.edit : null;
+  // every kind is shown by a picture of it; the dot beside its name is the colour its sides take on the view while
+  // the fence is edited, which is how they are told apart there
   const palette = () =>
-    html`<div class="chips">
-        ${Object.keys(FENCE_TYPES).map(
-          (k) =>
-            html`<button class=${ft.brush.s === k ? 'on' : ''} @click=${() => ft.setBrush({ s: k })}>
-              <i class="sw" style=${`background:${FENCE_TYPES[k].draft}`}></i>${t(`fence_${k}`)}
-            </button>`,
-        )}
-      </div>
-      ${
-        ft.brush.s === 'none'
-          ? nothing
-          : html`<div class="row">
-              <span>${t('fence_h')}</span>${num(ft.brush.h, (v) => ft.setBrush({ h: v }), 0.1, 0.3, 4)} <span>${t('color')}</span
-              ><input
-                type="color"
-                .value=${ft.brush.c || FENCE_TYPES[ft.brush.s].color}
-                @change=${(e) => ft.setBrush({ c: e.target.value })}
-              />
-            </div>`
-      }`;
+    html`${fenceGroups((k) => fenceLabel(k, t)).map(
+      ([family, ids]) =>
+        html`<div class="sub">${t(`fence_family_${family}`)}</div>
+          ${kindPicker(ids, {
+            on: ft.brush.s,
+            thumb: fenceThumb,
+            draft: (k) => fenceType(k).draft,
+            label: (k) => fenceLabel(k, t),
+            pick: (k) => ft.setBrush({ s: k }),
+            dot: true,
+          })}`,
+    )}
+    ${
+      ft.brush.s === 'none'
+        ? nothing
+        : html`<div class="row">
+            <span>${t('fence_h')}</span>${num(ft.brush.h, (v) => ft.setBrush({ h: v }), 0.1, ...fenceBounds(fenceType(ft.brush.s)))}
+            <span>${t('color')}</span
+            ><input type="color" .value=${ft.brush.c || fenceType(ft.brush.s).color} @change=${(e) => ft.setBrush({ c: e.target.value })} />
+          </div>`
+    }
+    ${fenceType(ft.brush.s).cap && ft.brush.s !== 'none' ? fenceCoping(t, ft) : nothing}`;
   const create = () =>
     card._try(() => {
       const n = ed.fenceSelected();
@@ -362,7 +520,7 @@ export function renderFences(card) {
       const f = normalizeFence(raw);
       const on = !!editing && editing.i === i;
       const ids = f.parcels && f.parcels.length ? ` · ${f.parcels.join(', ')}` : '';
-      const kinds = [...new Set(f.segs.map((s) => s.s))].map((k) => t(`fence_${k}`)).join(', ');
+      const kinds = [...new Set(f.segs.map((s) => s.s))].map((k) => fenceLabel(k, t)).join(', ');
       return html`<div class=${`ent ${on ? 'open' : ''}`}>
         <div><b>${t('fence')} ${i + 1}${ids}</b> <span class="hint">${sideCount(f)} ${t('fence_sides')} · ${kinds}</span></div>
         <div class="row">

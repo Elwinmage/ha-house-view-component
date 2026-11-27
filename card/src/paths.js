@@ -4,34 +4,51 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { smoothPath } from './irrigation.js';
-import { elementOutline, pathElements, pathKind, pathKinds, pointAt, shadeHex } from './path-art.js';
+import { elementOutline, pathElements, pathKind, pathKinds, pointAt } from './path-art.js';
+import { hashString, noise, shadeHex } from './surface-lib.js';
+import { TEX_M, TEX_N, canvasOf, surfaceSwatch, surfaceTexture } from './surface-art.js';
+import { STEPS_MAX, stairFlight } from './stairs.js';
+import { WALL_T } from './engine/terrain-edit.js';
 
 export const PATH_DEFAULT = { w: 3, surface: 'gravel' };
 export const PATH_W = [0.5, 12]; // narrowest footpath .. widest yard
-const TEX_N = 256; // side of a texture tile, in pixels
-const TEX_M = 2; // meters covered by one tile when the kind does not say
 const THUMB_RUN = 2.6; // elements of a modular path shown on its thumbnail
-const GRAIN_SPREAD = 0.17; // how strongly `grain` lightens and darkens the pixels of a surface
 const LIFT = 0.05; // height of the strip above the ground (no z-fighting with the terrain)
 const EDGE_W = 0.15; // width of a kerb
 const EDGE_H = 0.08; // its height above the strip
+const CLEAR = WALL_T / 2 + 0.03; // how far from the line of a wall a strip stops: at the face of its masonry
+const END_REACH = 1; // a path that goes less than this past a wall, at one of its ends, was drawn a little too far (m)
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
-/** Current model: { id, pts (centre line, 2 points at least), frame, w, surface, edge, name?, hidden }. */
+/** A kind of path that can be laid as a flight of steps: an unbroken surface (not elements set one by one). */
+export const stairsKind = (id) => {
+  const def = pathKind(id);
+  return !!def && def.kind !== 'module';
+};
+
+/**
+ * Current model: { id, pts (centre line, 2 points at least), frame, w, surface, edge, stairs (a flight of steps
+ * between the ground at its first point and at its last one: see stairs.js), steps? (their number, when it is not
+ * the one its height calls for), name?, hidden }.
+ */
 export function normalizePath(p) {
   const raw = p || {};
   const pts = (raw.pts || []).filter((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1])).map((q) => [q[0], q[1]]);
   const w = Number.isFinite(+raw.w) && raw.w !== null && raw.w !== '' ? +raw.w : PATH_DEFAULT.w;
+  const surface = pathKind(raw.surface) ? raw.surface : PATH_DEFAULT.surface;
   const out = {
     id: raw.id || '',
     pts,
     frame: raw.frame || 'grid',
     w: r2(Math.min(PATH_W[1], Math.max(PATH_W[0], w))),
-    surface: pathKind(raw.surface) ? raw.surface : PATH_DEFAULT.surface,
+    surface,
     edge: !!raw.edge,
+    stairs: !!raw.stairs && stairsKind(surface),
     hidden: !!raw.hidden,
   };
+  const steps = raw.steps === null || raw.steps === '' ? NaN : +raw.steps;
+  if (Number.isFinite(steps) && steps >= 1) out.steps = Math.min(STEPS_MAX, Math.round(steps));
   if (raw.name) out.name = String(raw.name);
   return out;
 }
@@ -44,12 +61,44 @@ export function pathLength(pts) {
 }
 
 /**
+ * A centre line less what goes past a wall near one of its ends: a path drawn a little too far, through a wall, ends
+ * at the face of that wall instead of climbing it. `stop(ax, az, bx, bz)` tells where a move first meets a wall
+ * (a share of the move, null when it meets none). A wall met further than `reach` meters from the end is one the
+ * path really goes across: it is left alone.
+ */
+export function clipEnds(center, stop, reach = END_REACH) {
+  if (!stop || center.length < 2) return center;
+  let line = center;
+  for (const last of [false, true]) {
+    // from the end inwards: the first wall met on the way cuts off what lies before it
+    const pts = last ? [...line].reverse() : [...line];
+    let run = 0;
+    for (let i = 0; i < pts.length - 1 && run < reach; i++) {
+      const [ax, az] = pts[i];
+      const [bx, bz] = pts[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      const t = L > 0 ? stop(bx, bz, ax, az) : null; // seen from the inside of the path
+      if (t !== null && run + L * (1 - t) <= reach) {
+        const keep = Math.max(0, t * L - CLEAR) / L;
+        pts.splice(0, i + 1, [bx + (ax - bx) * keep, bz + (az - bz) * keep]);
+        break;
+      }
+      run += L;
+    }
+    line = last ? pts.reverse() : pts;
+  }
+  return line;
+}
+
+/**
  * Strip of a centre line (plan frame, already smoothed): positions, uvs and triangles, draped on `heightAt` with
  * `lift` above it; subdivided across (about every meter) so that it follows a side slope too.
  * `across`: u runs 0..1 over the width; otherwise u and v are in tiles of `tile` meters.
+ * `stop(ax, az, bx, bz)`: where a move first meets a retaining wall (a share of the move, null when it meets none):
+ * the strip then stops at the face of the wall on each side, instead of taking the level of the ground behind it.
  * Returns { pos, uv, idx } (flat arrays) or null when the line is too short.
  */
-export function pathStrip(center, w, heightAt, { lift = LIFT, across = false, from = -0.5, to = 0.5, tile = TEX_M } = {}) {
+export function pathStrip(center, w, heightAt, { lift = LIFT, across = false, from = -0.5, to = 0.5, tile = TEX_M, stop = null } = {}) {
   const P = center.filter((p, i) => i === 0 || Math.hypot(p[0] - center[i - 1][0], p[1] - center[i - 1][1]) > 1e-3);
   if (P.length < 2) return null;
   const cols = Math.max(1, Math.ceil((w * (to - from)) / 1));
@@ -65,12 +114,20 @@ export function pathStrip(center, w, heightAt, { lift = LIFT, across = false, fr
     // normal of the line (left hand side), the strip spreading from `from` to `to` (shares of the width)
     const nx = -(b[1] - a[1]) / L;
     const nz = (b[0] - a[0]) / L;
+    // how far the strip may go on each side of the line here: up to a wall standing across it
+    const reach = (off) => {
+      const t = stop && off ? stop(P[i][0], P[i][1], P[i][0] + nx * off, P[i][1] + nz * off) : null;
+      return t === null ? off : Math.sign(off) * Math.max(0, Math.abs(off) * t - CLEAR);
+    };
+    const left = from < 0 ? reach(from * w) : 0;
+    const right = to > 0 ? reach(to * w) : 0;
     for (let k = 0; k <= cols; k++) {
       const s = from + ((to - from) * k) / cols;
-      const x = P[i][0] + nx * s * w;
-      const z = P[i][1] + nz * s * w;
+      const off = s < 0 ? Math.max(s * w, left) : Math.min(s * w, right);
+      const x = P[i][0] + nx * off;
+      const z = P[i][1] + nz * off;
       pos.push(x, heightAt(x, z) + lift, z);
-      uv.push(across ? s + 0.5 : (s * w) / tile, across ? run / (tile * 2) : run / tile);
+      uv.push(across ? off / w + 0.5 : off / tile, across ? run / (tile * 2) : run / tile);
     }
     if (i) {
       const r0 = (i - 1) * (cols + 1);
@@ -81,130 +138,7 @@ export function pathStrip(center, w, heightAt, { lift = LIFT, across = false, fr
   return { pos, uv, idx };
 }
 
-// ---------------------------------------------------------------------------- textures (browser only)
-
-const textures = new Map();
-
-/** A number from a text, so that a kind or a path keeps the same look. */
-function hashString(text) {
-  let h = 2166136261;
-  for (const ch of String(text)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return h >>> 0;
-}
-
-/** Seeded noise for the textures: the same picture every time. */
-function noise(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-/** Grains, chippings or pebbles of a surface, scattered over the whole tile or over one band of it. */
-function paintSpeckles(g, speckles, px, rand, { x = 0, w = TEX_N } = {}) {
-  for (const grain of speckles || []) {
-    const stretch = grain.stretch > 1 ? grain.stretch : 1;
-    const radius = Math.max(0.6, (grain.size * px) / 2);
-    const count = Math.round((grain.amount * w * TEX_N) / (Math.PI * radius * radius));
-    g.fillStyle = grain.color;
-    for (let i = 0; i < count; i++) {
-      const cx = x + rand() * w;
-      const cy = rand() * TEX_N;
-      const r = (radius * (0.6 + rand() * 0.8)) / Math.sqrt(stretch);
-      g.beginPath();
-      if (stretch === 1) g.arc(cx, cy, r, 0, Math.PI * 2);
-      else g.ellipse(cx, cy, r * stretch, r, rand() * Math.PI, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-}
-
-/** The units of a laid surface (pavers, slabs, boards) over their bed of mortar. */
-function paintJoints(g, joints, color, px, rand) {
-  g.fillStyle = joints.color;
-  g.fillRect(0, 0, TEX_N, TEX_N);
-  const along = joints.cell[0] * px;
-  const across = joints.cell[1] * px;
-  const gap = Math.max(1, (joints.width > 0 ? joints.width : 0.015) * px);
-  const stagger = (joints.stagger || 0) * across;
-  const spread = Number.isFinite(joints.shade) ? joints.shade : 0.08;
-  for (let row = 0, y = -along; y < TEX_N; row++, y += along)
-    for (let x = -across + (row % 2) * stagger; x < TEX_N; x += across) {
-      g.fillStyle = shadeHex(color, 1 + (rand() * 2 - 1) * spread);
-      g.fillRect(x + gap / 2, y + gap / 2, across - gap, along - gap);
-    }
-}
-
-/** Two tracks worn by wheels across the width, the surface showing between and beside them. */
-function paintWheels(g, wheels, px, rand) {
-  const bands = (wheels.bands || [])
-    .map(([low, high]) => [Math.round(low * TEX_N), Math.round(high * TEX_N)])
-    .filter(([x0, x1]) => x1 > x0);
-  for (const [x0, x1] of bands) {
-    g.fillStyle = wheels.color;
-    g.fillRect(x0, 0, x1 - x0, TEX_N);
-  }
-  for (const [x0, x1] of bands) {
-    g.save();
-    g.beginPath();
-    g.rect(x0, 0, x1 - x0, TEX_N);
-    g.clip();
-    paintSpeckles(g, wheels.speckles, px, rand, { x: x0, w: x1 - x0 });
-    g.restore();
-  }
-}
-
-/** The speckled noise over the base colour of a surface (skipped where the pixels cannot be read back). */
-function paintGrain(g, grain, rand) {
-  const image = typeof g.getImageData === 'function' ? g.getImageData(0, 0, TEX_N, TEX_N) : null;
-  const data = image && image.data;
-  if (!data || !data.length) return;
-  for (let i = 0; i < data.length; i += 4) {
-    const factor = 1 + (rand() * 2 - 1) * grain * GRAIN_SPREAD;
-    data[i] = Math.min(255, data[i] * factor);
-    data[i + 1] = Math.min(255, data[i + 1] * factor);
-    data[i + 2] = Math.min(255, data[i + 2] * factor);
-  }
-  g.putImageData(image, 0, 0);
-}
-
-/** A square of surface, painted from the numbers of its entry alone: base, units, grains, ruts, then the noise. */
-function paintSurface(g, S, px, rand) {
-  g.fillStyle = S.color;
-  g.fillRect(0, 0, TEX_N, TEX_N);
-  if (S.joints) paintJoints(g, S.joints, S.color, px, rand);
-  paintSpeckles(g, S.speckles, px, rand);
-  if (S.wheels) paintWheels(g, S.wheels, px, rand);
-  if (S.grain > 0) paintGrain(g, S.grain, rand);
-}
-
-/** A canvas of TEX_N pixels a side, or null outside a browser. */
-function square() {
-  if (typeof document === 'undefined') return null;
-  const c = document.createElement('canvas');
-  c.width = c.height = TEX_N;
-  const g = c.getContext('2d');
-  return g ? { c, g } : null;
-}
-
-/**
- * Tile of a surface drawn on a canvas from the numbers of its entry, so a kind added to the catalog looks like
- * itself without a line of code here (null outside a browser: plain colours then).
- */
-function surfaceTexture(id, S) {
-  if (textures.has(id)) return textures.get(id);
-  const made = square();
-  if (!made) return null;
-  const { c, g } = made;
-  paintSurface(g, S, TEX_N / (S.tile > 0 ? S.tile : TEX_M), noise(hashString(id)));
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  textures.set(id, tex);
-  return tex;
-}
+// ---------------------------------------------------------------------------- thumbnails (browser only)
 
 const swatches = new Map();
 
@@ -236,15 +170,15 @@ function paintModule(g, def, rand) {
  * lays, so the picker shows what will be drawn. Null outside a browser (and in the tests).
  */
 export function pathThumb(id) {
-  if (swatches.has(id)) return swatches.get(id);
   const def = pathKind(id);
-  const made = def && square();
+  if (!def) return null;
+  // a surface: its own tile, painted from the entry (a kind changed in the catalog is painted again)
+  if (def.kind !== 'module') return surfaceSwatch(def.surface, id);
+  if (swatches.has(id)) return swatches.get(id);
+  const made = canvasOf();
   if (!made) return null;
-  const { c, g } = made;
-  const rand = noise(hashString(id));
-  if (def.kind === 'module') paintModule(g, def, rand);
-  else paintSurface(g, def.surface, TEX_N / (def.surface.tile > 0 ? def.surface.tile : TEX_M), rand);
-  const url = c.toDataURL('image/png');
+  paintModule(made.g, def, noise(hashString(id)));
+  const url = made.c.toDataURL('image/png');
   swatches.set(id, url);
   return url;
 }
@@ -260,6 +194,18 @@ function stripMesh(strip, material) {
   const m = new THREE.Mesh(geo, material);
   m.receiveShadow = true;
   m.renderOrder = 2;
+  return m;
+}
+
+/** Faces given as flat arrays (6 points a face, see stairs.js) as a mesh that casts its shadow. */
+function facesMesh(faces, material) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(faces.pos, 3));
+  if (faces.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(faces.uv, 2));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, material);
+  m.castShadow = true;
+  m.receiveShadow = true;
   return m;
 }
 
@@ -303,10 +249,13 @@ export function modulePath(def, center, width, heightAt, seed) {
 
 /**
  * 3D drives and paths: one strip per path (and its kerbs), or its elements one after another, draped on the
- * ground. `anchor(path)` gives the conversion of its frame to the plan. Returns { group, count, materials }
- * (materials: for snow and rain).
+ * ground; a path laid as a flight of steps is built of treads, risers and a cheek wall on each side instead.
+ * `anchor(path)` gives the conversion of its frame to the plan, `levelAt` what one walks on where a flight starts
+ * and arrives (the top of a terrace; the ground when it is not given), `wallAt` where a move on the ground first
+ * meets a retaining wall (terrain.js): a path stops at the walls it was drawn up to, a flight of steps goes
+ * through them. Returns { group, count, materials } (materials: for snow and rain).
  */
-export function buildPaths(paths, anchor, heightAt) {
+export function buildPaths(paths, anchor, heightAt, { levelAt = heightAt, wallAt = null } = {}) {
   const group = new THREE.Group();
   group.name = 'paths';
   const mats = new Map();
@@ -321,10 +270,13 @@ export function buildPaths(paths, anchor, heightAt) {
     const def = pathKind(p.surface);
     if (!def) continue;
     const toPlan = anchor(raw);
-    const center = smoothPath(
+    const drawn = smoothPath(
       p.pts.map(([x, z]) => toPlan(x, z)),
       0.5,
     );
+    // (a flight of steps is what goes through a wall: it keeps its whole line)
+    const stop = p.stairs ? null : wallAt;
+    const center = clipEnds(drawn, stop);
     const g = new THREE.Group();
     g.name = 'path';
     if (def.kind === 'module') {
@@ -341,10 +293,11 @@ export function buildPaths(paths, anchor, heightAt) {
     } else {
       const S = def.surface;
       const tile = S.tile > 0 ? S.tile : TEX_M;
-      const strip = pathStrip(center, p.w, heightAt, { across: !!S.wheels, tile });
-      if (!strip) continue;
+      const flight = p.stairs ? stairFlight(center, p.w, heightAt, { steps: p.steps, tile, levelAt }) : null;
+      const strip = p.stairs ? null : pathStrip(center, p.w, heightAt, { across: !!S.wheels, tile, stop });
+      if (!strip && !flight) continue;
       const mat = material(p.surface, () => {
-        const map = surfaceTexture(p.surface, S);
+        const map = surfaceTexture(S, p.surface);
         return new THREE.MeshStandardMaterial({
           color: map ? '#ffffff' : S.color,
           map,
@@ -354,6 +307,19 @@ export function buildPaths(paths, anchor, heightAt) {
           polygonOffsetFactor: -3,
         });
       });
+      if (flight) {
+        g.name = 'stairs';
+        g.add(facesMesh(flight.steps, mat));
+        // the cheek walls: the colour of the steps, darker
+        const cheek = material(
+          `cheek:${S.color}`,
+          () => new THREE.MeshStandardMaterial({ color: shadeHex(S.color, 0.72), roughness: 0.95, side: THREE.DoubleSide }),
+        );
+        g.add(facesMesh(flight.cheeks, cheek));
+        group.add(g);
+        count++;
+        continue;
+      }
       g.add(stripMesh(strip, mat));
       if (p.edge) {
         const kerb = material('kerb', () => new THREE.MeshStandardMaterial({ color: '#d4d1ca', roughness: 0.8, side: THREE.DoubleSide }));
@@ -362,7 +328,7 @@ export function buildPaths(paths, anchor, heightAt) {
           [-0.5, -0.5 + half],
           [0.5 - half, 0.5],
         ]) {
-          const k = pathStrip(center, p.w, heightAt, { lift: LIFT + EDGE_H, from, to, tile });
+          const k = pathStrip(center, p.w, heightAt, { lift: LIFT + EDGE_H, from, to, tile, stop });
           if (k) g.add(stripMesh(k, kerb));
         }
       }

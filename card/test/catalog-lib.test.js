@@ -342,3 +342,43 @@ describe('species of the catalog', async () => {
     expect(SPECIES['apple-tree:gala']).toBeUndefined();
   });
 });
+
+describe('sections of the catalog', async () => {
+  const { setCatalog } = await import('../src/engine/catalog.js');
+  const { pathKind } = await import('../src/path-art.js');
+  const { terraceKind, terraceKindName } = await import('../src/terrace-art.js');
+  const { hasWallKind, wallKindName } = await import('../src/wall-art.js');
+  const { copingKind, copingKindName } = await import('../src/coping-art.js');
+  const { fenceKind, fenceKindName } = await import('../src/fence-art.js');
+  const { FENCE_TYPES } = await import('../src/fences.js');
+
+  it('hands each section to what draws it, in the language of the user', () => {
+    const surface = { color: '#808080' };
+    setCatalog(
+      {
+        paths: { cinder: { name: { en: 'Cinder' }, kind: 'surface', draft: '#111111', surface } },
+        terraces: { marble: { name: { en: 'Marble', fr: 'Marbre' }, draft: '#222222', surface } },
+        walls: { flint: { name: { en: 'Flint', fr: 'Silex' }, draft: '#333333', surface } },
+        copings: { lead: { name: { en: 'Lead sheet', fr: 'Feuille de plomb' }, surface, drop: 0.04 } },
+        fences: { paling: { name: { en: 'Paling', fr: 'Ganivelle' }, draft: '#444444', height: { default: 1 }, surface } },
+      },
+      'fr',
+    );
+    expect(pathKind('cinder')).toBeTruthy();
+    expect(terraceKindName('marble')).toBe('Marbre');
+    expect(wallKindName('flint')).toBe('Silex');
+    expect(copingKindName('lead')).toBe('Feuille de plomb');
+    expect(fenceKindName('paling')).toBe('Ganivelle');
+    expect(FENCE_TYPES.paling).toBe(fenceKind('paling')); // the palette and the views read the same kinds
+    // a catalog without these sections (an older one): the card's own kinds only
+    setCatalog({});
+    expect(pathKind('cinder')).toBeNull();
+    expect(terraceKind('marble')).toBeNull();
+    expect(hasWallKind('flint')).toBe(false);
+    expect(copingKind('lead')).toBeNull();
+    expect(copingKind('brick')).toBeTruthy();
+    expect(fenceKind('paling')).toBeNull();
+    expect(FENCE_TYPES.mesh).toBeTruthy();
+    setCatalog();
+  });
+});

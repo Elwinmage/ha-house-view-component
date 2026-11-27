@@ -4,6 +4,10 @@ import * as THREE from 'three';
 import { climateFor, seasonBlend as climateBlend } from '../climate.js';
 import { decodeModel } from './sh3d-models.js';
 import { setPathCatalog } from '../path-art.js';
+import { setTerraceCatalog } from '../terrace-art.js';
+import { setWallCatalog } from '../wall-art.js';
+import { setCopingCatalog } from '../coping-art.js';
+import { setFenceCatalog } from '../fence-art.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   BLOSSOM_DENSITY,
@@ -181,9 +185,15 @@ const CATALOG = { trees: {}, objects: {}, fish: {} };
  * swim in the ponds, and its paths join the kinds a drive or an alley may be made of.
  * Entries the engine cannot read (a newer format) are left out. `lang`: language of the names.
  */
-// the sections of house-catalog: `pond_fish` holds the fish of the ponds, `paths` what a path is made of
-export function setCatalog({ trees = {}, objects = {}, pond_fish: fish = {}, paths = {} } = {}, lang = 'en') {
+// the sections of house-catalog: `pond_fish` holds the fish of the ponds, `paths` what a path is made of,
+// `terraces` and `walls` what a terrace and a low wall are covered and faced with, `copings` what caps a wall,
+// `fences` the kinds of fences
+export function setCatalog({ trees = {}, objects = {}, pond_fish: fish = {}, paths = {}, terraces = {}, walls = {}, copings = {}, fences = {} } = {}, lang = 'en') {
   setPathCatalog(paths, lang);
+  setTerraceCatalog(terraces, lang);
+  setWallCatalog(walls, lang);
+  setCopingCatalog(copings, lang);
+  setFenceCatalog(fences, lang);
   for (const key of Object.keys(SPECIES)) delete SPECIES[key];
   Object.assign(SPECIES, BUILTIN_SPECIES);
   CATALOG.trees = {};

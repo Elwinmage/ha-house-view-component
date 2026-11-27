@@ -1,12 +1,19 @@
 // Feature editors built on the click tool of WorldEditors: fences (free drawing, type per side, cutting), watering
 // (drip lines, sprinklers) and the robot vacuum dock. They only change `ed.edits` and ask for a rebuild.
-import { FENCE_TYPES, normalizeFence, nearestSide, nearestPoint, splitSide, removePoint } from './fences.js';
+import { fenceType, normalizeFence, nearestSide, nearestPoint, splitSide, removePoint } from './fences.js';
 import { normalizeBed, polygonArea, BED_MAX } from './flowerbeds.js';
 import { normalizeGate, placeGate } from './gates.js';
 import { smoothPath, headDefaults, sprinklerModel, bearing } from './irrigation.js';
 import { normalizePath } from './paths.js';
+import { flightSize } from './stairs.js';
 import { pathKind } from './path-art.js';
+import { MIN_SIDE, dropPoint, insertPoint, normalizeTerrace, outlineAngle, rotateOutline } from './terraces.js';
+import { terraceLook } from './terrace-art.js';
+import { centroidOf, inPolygon, rectFromCorners, resizeRect } from './pools.js';
 import { movedPts } from './move.js';
+import { ROOF_DY, buildingOutline, normalizeRoof, roofAltitude } from './roofs.js';
+import { planToGrid } from './engine/terrain.js';
+import { houseOutline, unionOutline } from './engine/footprint.js';
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 
@@ -18,10 +25,44 @@ const ringPts = (x, z, r, n = 28) =>
   Array.from({ length: n + 1 }, (_, i) => [x + r * Math.cos((i * 2 * Math.PI) / n), z + r * Math.sin((i * 2 * Math.PI) / n)]);
 const r2 = (v) => Math.round(v * 100) / 100;
 
+/**
+ * The points of an object drawn on the ground (`pts`, in its own frame) as handles in the view: what the move tool
+ * works on, and the handles dragged right away while the object is being edited (editors.js, setHandles).
+ */
+function pointsSpec(ed, key, o, more = {}) {
+  const pts = () => {
+    const toPlan = ed.toPlan(o);
+    return o.pts.map(([x, z]) => toPlan(x, z));
+  };
+  return {
+    key,
+    points: pts,
+    move: (h, x, z, from) => {
+      const store = ed.fromPlan(o);
+      o.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
+    },
+    commit: () => ed.commit(),
+    ...more,
+  };
+}
+
+/**
+ * The same handles for an object that is nothing but its points (a path, a flower bed, a drip line): a point can be
+ * added on one of its sides or removed (editors.js, setPointsTool). A fence and a terrace have tools of their own
+ * for that: their sides carry a type, their outline a shape.
+ */
+const freePointsSpec = (ed, key, o, more = {}) =>
+  pointsSpec(ed, key, o, {
+    insert: (i, x, z) => o.pts.splice(i + 1, 0, ed.fromPlan(o)(x, z)),
+    remove: (i) => o.pts.splice(i, 1),
+    ...more,
+  });
+
 export class FenceTools {
   constructor(ed) {
     this.ed = ed;
-    this.brush = { s: 'mesh', h: FENCE_TYPES.mesh.h, c: '' }; // type / height / color given to the next sides
+    // what the next sides are given: kind, height, colour, and for a wall its coping with a colour of its own
+    this.brush = { s: 'mesh', h: fenceType('mesh').h, c: '', cap: '', capc: '' };
     this.draw = null; // { pts, segs } of the fence being drawn
     this.edit = null; // { i, tool: paint | cut | unpoint }
   }
@@ -31,12 +72,16 @@ export class FenceTools {
   }
 
   _side() {
-    return { s: this.brush.s, h: this.brush.h, ...(this.brush.c ? { c: this.brush.c } : {}) };
+    const B = this.brush;
+    // the coping goes with a wall only; it stays in the brush for the next wall
+    const cap = B.cap && fenceType(B.s).cap ? { cap: B.cap, ...(B.capc ? { capc: B.capc } : {}) } : {};
+    return { s: B.s, h: B.h, ...(B.c ? { c: B.c } : {}), ...cap };
   }
 
   setBrush(patch) {
     Object.assign(this.brush, patch);
-    if ('s' in patch) Object.assign(this.brush, { h: FENCE_TYPES[patch.s].h || this.brush.h, c: '' });
+    if ('s' in patch) Object.assign(this.brush, { h: fenceType(patch.s).h || this.brush.h, c: '' });
+    if ('cap' in patch) this.brush.capc = ''; // another coping: its own colour again
     this.ed.drawDraft();
     this.ed.onChange(false);
   }
@@ -45,7 +90,12 @@ export class FenceTools {
   startDraw() {
     this.edit = null;
     this.draw = { pts: [], segs: [] };
-    this.ed.setClickTool({ key: 'fence-draw', click: (hit) => this._drawClick(hit), draft: (d) => this._draft(d) });
+    this.ed.setClickTool({
+      key: 'fence-draw',
+      click: (hit) => this._drawClick(hit),
+      draft: (d) => this._draft(d),
+      undo: () => this.undoPoint(),
+    });
   }
 
   _drawClick(hit) {
@@ -56,13 +106,15 @@ export class FenceTools {
     this.ed.onChange(false);
   }
 
+  /** Take back the last point of the fence being drawn; false when it has none. */
   undoPoint() {
     const D = this.draw;
-    if (!D || !D.pts.length) return;
+    if (!D || !D.pts.length) return false;
     D.pts.pop();
     D.segs.pop();
     this.ed.drawDraft();
     this.ed.onChange(false);
+    return true;
   }
 
   /** End the drawing; `closed` joins the last point to the first one. */
@@ -82,6 +134,16 @@ export class FenceTools {
     this.draw = null;
     this.edit = null;
     this.ed.setClickTool(null);
+  }
+
+  /**
+   * The corrections were put back as they were (undo, redo): `lists` names the lists where an entry came or went.
+   * A fence came or went: the one being edited, known by its rank, may be another one now.
+   */
+  restored(lists) {
+    if (!lists.includes('fences')) return;
+    this.draw = null;
+    this.edit = null;
   }
 
   /** Edit fence i with a click tool: paint (give the current type to a side), cut (a side in two), unpoint. */
@@ -122,20 +184,15 @@ export class FenceTools {
     this.draw = null;
     this.edit = null;
     const f = (this.fences[i] = normalizeFence(this.fences[i]));
-    const pts = () => {
-      const toPlan = this.ed.toPlan(f);
-      return f.pts.map(([x, z]) => toPlan(x, z));
-    };
-    this.ed.setMoveTool({
-      key: `fence:${i}`,
-      closed: f.closed,
-      points: pts,
-      move: (h, x, z, from) => {
-        const store = this.ed.fromPlan(f);
-        f.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
-      },
-      commit: () => this.ed.commit(),
-    });
+    this.ed.setMoveTool(pointsSpec(this.ed, `fence:${i}`, f, { closed: f.closed }));
+  }
+
+  /** The points of the fence whose sides are being edited, dragged right away in the view; null without one. */
+  handles() {
+    const f = this.edit ? this.fences[this.edit.i] : null;
+    return f && Array.isArray(f.pts) && f.pts.length > 1
+      ? pointsSpec(this.ed, `fence-pts:${this.edit.i}`, f, { closed: !!f.closed })
+      : null;
   }
 
   toggleHidden(i) {
@@ -160,7 +217,7 @@ export class FenceTools {
       const n = f.closed ? P.length : P.length - 1;
       for (let i = 0; i < n; i++) {
         const s = (f.segs[i] && f.segs[i].s) || 'mesh';
-        d.ribbon([P[i], P[(i + 1) % P.length]], FENCE_TYPES[s].draft, s === 'none' ? 0.12 : 0.3);
+        d.ribbon([P[i], P[(i + 1) % P.length]], fenceType(s).draft, s === 'none' ? 0.12 : 0.3);
       }
       for (const [x, z] of P) d.dot(x, z, '#ffffff');
     };
@@ -270,6 +327,13 @@ export class GateTools {
     if (redraw) this.ed.onChange(false);
   }
 
+  /** After an undo or a redo (see FenceTools): a gate or a fence came or went, the gate unfolded is folded. */
+  restored(lists) {
+    if (!lists.includes('gates') && !lists.includes('fences')) return;
+    this.sel = null;
+    this.mode = null;
+  }
+
   select(i) {
     this.sel = this.sel === i ? null : i;
     this.ed.onChange(false);
@@ -336,7 +400,12 @@ export class BedTools {
 
   startDraw() {
     this.draw = { pts: [] };
-    this.ed.setClickTool({ key: 'bed-draw', click: (hit) => this._click(hit), draft: (d) => this._draft(d) });
+    this.ed.setClickTool({
+      key: 'bed-draw',
+      click: (hit) => this._click(hit),
+      draft: (d) => this._draft(d),
+      undo: () => this.undoPoint(),
+    });
   }
 
   _click(hit) {
@@ -345,11 +414,13 @@ export class BedTools {
     this.ed.onChange(false);
   }
 
+  /** Take back the last point of the shape being drawn; false when it has none. */
   undoPoint() {
-    if (!this.draw || !this.draw.pts.length) return;
+    if (!this.draw || !this.draw.pts.length) return false;
     this.draw.pts.pop();
     this.ed.drawDraft();
     this.ed.onChange(false);
+    return true;
   }
 
   /** Close the polygon: the bed gets about 20 flowers per m² (to adjust afterwards). */
@@ -371,9 +442,22 @@ export class BedTools {
     this.ed.setClickTool(null);
   }
 
+  /** After an undo or a redo (see FenceTools): an entry came or went, the one unfolded is folded. */
+  restored(lists) {
+    if (!lists.includes('beds')) return;
+    this.sel = null;
+    this.draw = null;
+  }
+
   select(i) {
     this.sel = this.sel === i ? null : i;
     this.ed.onChange(false);
+  }
+
+  /** The points of the flower bed unfolded in the panel, dragged right away in the view; null without one. */
+  handles() {
+    const b = this.sel !== null && !this.draw ? this.beds[this.sel] : null;
+    return b && Array.isArray(b.pts) && b.pts.length > 2 ? freePointsSpec(this.ed, `bed-pts:${this.sel}`, b, { closed: true }) : null;
   }
 
   /** Change count / height / name / seed of bed i. */
@@ -426,6 +510,181 @@ export class BedTools {
 }
 
 /**
+ * Roofs read from the surface model of the terrain (roofs.js): the outline of a roof is drawn from above, point by
+ * point, or taken from the building of the map; its slopes are then found inside it at every rebuild.
+ */
+export class RoofTools {
+  constructor(ed) {
+    this.ed = ed;
+    this.sel = null; // index of the roof unfolded in the panel
+    this.draw = null; // { pts } of the outline being drawn
+    this.overhang = 0.3; // eaves given to an outline taken from the walls of the plan (m)
+  }
+
+  get roofs() {
+    return this.ed.edits.roofs;
+  }
+
+  /** The terrain comes with a surface model: roofs can be read. */
+  get hasModel() {
+    return !!(this.ed.cfg && Array.isArray(this.ed.cfg.data.s));
+  }
+
+  /** The outline of the building of the map standing where the house is (grid frame), null without one. */
+  building() {
+    const cfg = this.ed.cfg;
+    const sd = this.ed.engine.world && this.ed.engine.world.sd;
+    if (!cfg || !sd) return null;
+    const b = sd.bbox;
+    const [gx, gz] = planToGrid(cfg.data, cfg)((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
+    return buildingOutline(cfg.data, gx, gz);
+  }
+
+  startDraw() {
+    this.draw = { pts: [] };
+    this.ed.setClickTool({
+      key: 'roof-draw',
+      click: (hit) => this._click(hit),
+      draft: (d) => this._draft(d),
+      undo: () => this.undoPoint(),
+    });
+  }
+
+  _click(hit) {
+    this.draw.pts.push(this.ed.toStore(hit.point.x, hit.point.z));
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  /** Take back the last point of the shape being drawn; false when it has none. */
+  undoPoint() {
+    if (!this.draw || !this.draw.pts.length) return false;
+    this.draw.pts.pop();
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+    return true;
+  }
+
+  _add(pts, frame) {
+    this.roofs.push(normalizeRoof({ id: uid('r'), pts, frame }));
+    this.sel = this.roofs.length - 1;
+    this.draw = null;
+    this.ed.clickTool = null;
+    this.ed._syncPicker();
+    this.ed.commit();
+    return true;
+  }
+
+  /** Close the outline: the roof is read inside it. */
+  finishDraw() {
+    const D = this.draw;
+    return !!D && D.pts.length >= 3 && this._add(D.pts, this.ed.frame);
+  }
+
+  /**
+   * A roof over the building of the map standing where the house is. The map is seldom right to the metre, and the
+   * plan is set on it by eye: where the walls of the plan stand out of the building, the roof covers them too, or
+   * rooms would be left open to the sky along its edges. Its points are then moved, added or removed as needed.
+   */
+  fromBuilding() {
+    const pts = this.building();
+    if (!pts) return false;
+    const house = this._houseOutline();
+    const toGrid = house ? planToGrid(this.ed.cfg.data, this.ed.cfg) : null;
+    return this._add((house && unionOutline([pts, house.map(([x, z]) => toGrid(x, z))])) || pts, 'grid');
+  }
+
+  setOverhang(v) {
+    this.overhang = Math.min(1.5, Math.max(0, r2(v)));
+    this.ed.onChange(false);
+  }
+
+  /**
+   * The outline of the house of the plan (plan frame, null without rooms): the outer face of its walls, pushed out
+   * by the eaves. Where the walls step back under the roof (an entrance set in the facade, a porch), the surface
+   * model shows the roof going across: the outline does the same.
+   */
+  _houseOutline() {
+    const sd = this.ed.engine.world && this.ed.engine.world.sd;
+    if (!sd) return null;
+    const cfg = this.ed.cfg;
+    let roofAt = null;
+    if (this.hasModel) {
+      const toGrid = planToGrid(cfg.data, cfg);
+      const altitude = roofAltitude(cfg.data);
+      // (a flat roof of the plan standing beside the house, over a terrace, is a roof of its own: what the surface
+      // model shows there is not the roof of the house going on)
+      const walls = houseOutline(sd.levels, 0);
+      const middle = (p) => [p.reduce((a, q) => a + q[0], 0) / p.length, p.reduce((a, q) => a + q[1], 0) / p.length];
+      const beside = ((sd.roof && sd.roof.type === 'flat' && sd.roof.polys) || []).filter((p) => walls && !inPolygon(walls, ...middle(p)));
+      roofAt = (x, z) => (beside.some((p) => inPolygon(p, x, z)) ? null : altitude(...toGrid(x, z)));
+    }
+    return houseOutline(sd.levels, this.overhang, roofAt);
+  }
+
+  /** A roof over the house of the plan (_houseOutline). */
+  fromPlan() {
+    const pts = this._houseOutline();
+    return (
+      !!pts &&
+      this._add(
+        pts.map(([x, z]) => this.ed.toStore(x, z)),
+        this.ed.frame,
+      )
+    );
+  }
+
+  cancel() {
+    this.draw = null;
+    this.ed.setClickTool(null);
+  }
+
+  /** After an undo or a redo (see FenceTools): an entry came or went, the one unfolded is folded. */
+  restored(lists) {
+    if (!lists.includes('roofs')) return;
+    this.sel = null;
+    this.draw = null;
+  }
+
+  select(i) {
+    this.sel = this.sel === i ? null : i;
+    this.ed.onChange(false);
+  }
+
+  /** The points of the roof unfolded in the panel, dragged right away in the view; null without one. */
+  handles() {
+    const r = this.sel !== null && !this.draw ? this.roofs[this.sel] : null;
+    return r && Array.isArray(r.pts) && r.pts.length > 2 ? freePointsSpec(this.ed, `roof-pts:${this.sel}`, r, { closed: true }) : null;
+  }
+
+  /** Change the height, the colour or the name of roof i. */
+  edit(i, patch) {
+    const dy = 'dy' in patch ? Math.min(ROOF_DY[1], Math.max(ROOF_DY[0], patch.dy)) : null;
+    this.roofs[i] = normalizeRoof({ ...this.roofs[i], ...patch, ...(dy === null ? {} : { dy: r2(dy) }) });
+    this.ed.commit();
+  }
+
+  toggleHidden(i) {
+    this.roofs[i].hidden = !this.roofs[i].hidden;
+    this.ed.commit();
+  }
+
+  remove(i) {
+    this.roofs.splice(i, 1);
+    this.sel = null;
+    this.ed.commit();
+  }
+
+  _draft(d) {
+    if (!this.draw) return;
+    const toPlan = this.ed.toPlan({ frame: this.ed.frame });
+    const P = this.draw.pts.map(([x, z]) => toPlan(x, z));
+    for (let i = 0; i < P.length - 1; i++) d.ribbon([P[i], P[i + 1]], '#ff7a3d', 0.3);
+    for (const [x, z] of P) d.dot(x, z, '#ffffff');
+  }
+}
+
+/**
  * Drives and paths: draw a centre line (every click adds a point, the strip is rounded through them), then set its
  * width and surface. A path can be drawn again or extended from its last point.
  */
@@ -448,7 +707,12 @@ export class PathTools {
       pts: old && keep ? old.pts.map((q) => [...q]) : [],
       frame: old && keep ? old.frame || 'grid' : this.ed.frame,
     };
-    this.ed.setClickTool({ key: 'path-draw', click: (hit) => this._click(hit), draft: (d) => this._draft(d) });
+    this.ed.setClickTool({
+      key: 'path-draw',
+      click: (hit) => this._click(hit),
+      draft: (d) => this._draft(d),
+      undo: () => this.undoPoint(),
+    });
   }
 
   _click(hit) {
@@ -462,11 +726,13 @@ export class PathTools {
     this.ed.onChange(false);
   }
 
+  /** Take back the last point of the shape being drawn; false when it has none. */
   undoPoint() {
-    if (!this.draw || !this.draw.pts.length) return;
+    if (!this.draw || !this.draw.pts.length) return false;
     this.draw.pts.pop();
     this.ed.drawDraft();
     this.ed.onChange(false);
+    return true;
   }
 
   finishDraw() {
@@ -488,34 +754,56 @@ export class PathTools {
     this.ed.setClickTool(null);
   }
 
+  /** After an undo or a redo (see FenceTools): an entry came or went, the one unfolded is folded. */
+  restored(lists) {
+    if (!lists.includes('paths')) return;
+    this.sel = null;
+    this.draw = null;
+  }
+
   select(i) {
     this.sel = this.sel === i ? null : i;
     this.ed.onChange(false);
+  }
+
+  /** The points of the path unfolded in the panel, dragged right away in the view; null without one. */
+  handles() {
+    const p = this.sel !== null && !this.draw ? this.paths[this.sel] : null;
+    return p && Array.isArray(p.pts) && p.pts.length > 1 ? freePointsSpec(this.ed, `path-pts:${this.sel}`, p) : null;
   }
 
   /** Move the points of path `i` in the view, or the whole path. */
   startMove(i) {
     this.draw = null;
     const p = (this.paths[i] = normalizePath(this.paths[i]));
-    const pts = () => {
-      const toPlan = this.ed.toPlan(p);
-      return p.pts.map(([x, z]) => toPlan(x, z));
-    };
-    this.ed.setMoveTool({
-      key: `path:${i}`,
-      points: pts,
-      move: (h, x, z, from) => {
-        const store = this.ed.fromPlan(p);
-        p.pts = movedPts(pts(), h, x, z, from).map(([a, b]) => store(a, b));
-      },
-      commit: () => this.ed.commit(),
-    });
+    this.ed.setMoveTool(pointsSpec(this.ed, `path:${i}`, p));
   }
 
-  /** Change width / surface / kerbs / name of path i. */
+  /** Change width / surface / kerbs / steps / name of path i. */
   edit(i, patch) {
     this.paths[i] = normalizePath({ ...this.paths[i], ...patch });
     this.ed.commit();
+  }
+
+  /**
+   * What the flight of steps of path i comes to on the ground as it is: { n, rise, going } (steps, then the
+   * height and the depth of one, in m); null for a path that is not a flight, or before the view is built.
+   */
+  flight(i) {
+    const p = normalizePath(this.paths[i]);
+    const world = this.ed.engine && this.ed.engine.world;
+    const levelAt = world && (world.walkAt || world.groundAt);
+    if (!p.stairs || p.pts.length < 2 || !levelAt) return null;
+    const toPlan = this.ed.toPlan(p);
+    const size = flightSize(
+      smoothPath(
+        p.pts.map(([x, z]) => toPlan(x, z)),
+        0.5,
+      ),
+      levelAt,
+      p.steps,
+    );
+    return size ? { n: size.n, rise: Math.abs(size.rise), going: size.going } : null;
   }
 
   toggleHidden(i) {
@@ -542,6 +830,220 @@ export class PathTools {
   }
 }
 
+/**
+ * Terraces, patios and decks: an outline drawn as a rectangle (two opposite corners, square with the plan) or as a
+ * free shape (a point per click), then its covering, its altitude and its thickness. Its points stay editable:
+ * moved by their handles, added on a side, removed; a rectangle is also sized and turned by typing.
+ */
+export class TerraceTools {
+  constructor(ed) {
+    this.ed = ed;
+    this.sel = null; // index of the terrace unfolded in the panel
+    this.draw = null; // { i (null: a new terrace), shape, pts (store frame), hover (plan point), frame } while drawing
+    this.pts = null; // { i, tool: 'add' | 'del' } while points are added to or removed from an outline
+  }
+
+  get terraces() {
+    return this.ed.edits.terraces;
+  }
+
+  /** Draw a new terrace (i = null) or the outline of terrace i again, as a rectangle or a free shape. */
+  startDraw(shape, i = null) {
+    this.pts = null;
+    const D = (this.draw = { i, shape: shape === 'rect' ? 'rect' : 'free', pts: [], hover: null, frame: this.ed.frame });
+    this.ed.setClickTool({
+      key: 'terrace-draw',
+      hover: (hit) => {
+        D.hover = hit && hit.point ? [hit.point.x, hit.point.z] : null;
+        this.ed.drawDraft();
+      },
+      click: (hit) => this._click(hit),
+      draft: (d) => this._draft(d),
+      undo: () => this.undoPoint(),
+    });
+  }
+
+  _click(hit) {
+    const D = this.draw;
+    if (D.shape === 'rect' && D.pts.length === 1) {
+      // the rectangle is the one of the preview, square with the plan: its corners are stored one by one (the
+      // stored frame, the one of the terrain grid, is turned against the plan)
+      const first = this.ed.toPlan({ frame: D.frame })(...D.pts[0]);
+      const r = rectFromCorners(first, [hit.point.x, hit.point.z]);
+      if (Math.abs(r[1][0] - r[0][0]) < MIN_SIDE || Math.abs(r[2][1] - r[1][1]) < MIN_SIDE) return; // not a corner yet
+      D.pts = r.map(([x, z]) => this.ed.toStore(x, z));
+      this.finishDraw();
+      return;
+    }
+    D.pts.push(this.ed.toStore(hit.point.x, hit.point.z));
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  /** Take back the last point of the shape being drawn; false when it has none. */
+  undoPoint() {
+    if (!this.draw || !this.draw.pts.length) return false;
+    this.draw.pts.pop();
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+    return true;
+  }
+
+  /** Altitude (m) of the ground in the middle of an outline, where a new terrace is laid; null without a terrain. */
+  _groundAlt(pts, frame) {
+    const w = this.ed.engine.world;
+    if (!w || !w.terrain || !this.ed.cfg) return null;
+    const toPlan = this.ed.toPlan({ frame });
+    const [cx, cz] = centroidOf(pts.map(([x, z]) => toPlan(x, z)));
+    return Math.round(this.ed._altOf(w.terrain.heightAt(cx, cz)) * 20) / 20;
+  }
+
+  /** Close the outline: a new terrace is laid on the ground where it is, a redrawn one keeps its altitude. */
+  finishDraw() {
+    const D = this.draw;
+    if (!D || D.pts.length < 3) return false;
+    if (D.i === null) {
+      this.terraces.push(
+        normalizeTerrace({ id: uid('t'), pts: D.pts, frame: D.frame, shape: D.shape, alt: this._groundAlt(D.pts, D.frame) }),
+      );
+      this.sel = this.terraces.length - 1;
+    } else this.terraces[D.i] = normalizeTerrace({ ...this.terraces[D.i], pts: D.pts, frame: D.frame, shape: D.shape });
+    this.draw = null;
+    this.ed.clickTool = null;
+    this.ed._syncPicker();
+    this.ed.commit();
+    return true;
+  }
+
+  cancel() {
+    this.draw = null;
+    this.pts = null;
+    this.ed.setClickTool(null);
+  }
+
+  /** After an undo or a redo (see FenceTools): an entry came or went, the one unfolded is folded. */
+  restored(lists) {
+    if (!lists.includes('terraces')) return;
+    this.sel = null;
+    this.draw = null;
+    this.pts = null;
+  }
+
+  select(i) {
+    this.sel = this.sel === i ? null : i;
+    this.ed.drawDraft();
+    this.ed.onChange(false);
+  }
+
+  /** Change covering / colour / altitude / thickness / blend / laying direction / name of terrace i. */
+  edit(i, patch) {
+    this.terraces[i] = normalizeTerrace({ ...this.terraces[i], ...patch });
+    this.ed.commit();
+  }
+
+  /** Outline of terrace i in the plan frame. */
+  outline(i) {
+    const t = this.terraces[i];
+    const toPlan = this.ed.toPlan(t);
+    return t.pts.map(([x, z]) => toPlan(x, z));
+  }
+
+  _setOutline(i, plan) {
+    const store = this.ed.fromPlan(this.terraces[i]);
+    this.terraces[i].pts = plan.map(([x, z]) => store(x, z));
+    this.ed.commit();
+  }
+
+  /** Give a rectangular terrace a length and a width (m): it keeps its middle and its orientation. */
+  resize(i, l, w) {
+    this._setOutline(i, resizeRect(this.outline(i), l, w));
+  }
+
+  /** Turn terrace i about its middle until its first side points `deg` degrees from the x axis of the plan. */
+  turn(i, deg) {
+    const P = this.outline(i);
+    this._setOutline(i, rotateOutline(P, deg - outlineAngle(P)));
+  }
+
+  /** Move the points of terrace `i` in the view, or the whole terrace. */
+  startMove(i) {
+    this.draw = null;
+    this.pts = null;
+    const t = (this.terraces[i] = normalizeTerrace(this.terraces[i]));
+    this.sel = i;
+    this.ed.setMoveTool(pointsSpec(this.ed, `terrace:${i}`, t, { closed: true }));
+  }
+
+  /** The points of the terrace unfolded in the panel, dragged right away in the view; null without one. */
+  handles() {
+    const t = this.sel !== null && !this.draw ? this.terraces[this.sel] : null;
+    return t && Array.isArray(t.pts) && t.pts.length > 2 ? pointsSpec(this.ed, `terrace-pts:${this.sel}`, t, { closed: true }) : null;
+  }
+
+  /** Click tool on the outline of terrace i: `add` puts a point on the side clicked, `del` removes the point clicked. */
+  startPoints(i, tool) {
+    this.draw = null;
+    this.terraces[i] = normalizeTerrace(this.terraces[i]);
+    this.sel = i;
+    this.pts = { i, tool: tool === 'del' ? 'del' : 'add' };
+    this.ed.setClickTool({ key: 'terrace-pts', click: (hit) => this._ptsClick(hit), draft: (d) => this._draft(d) });
+  }
+
+  _ptsClick(hit) {
+    const E = this.pts;
+    const t = E && this.terraces[E.i];
+    if (!t) return;
+    const P = this.outline(E.i);
+    const { x, z } = hit.point;
+    if (E.tool === 'del') {
+      const n = nearestPoint(P, x, z);
+      if (n.d > 2.5 || !dropPoint(P, n.i)) return;
+      t.pts.splice(n.i, 1);
+    } else {
+      const n = nearestSide(P, true, x, z);
+      const next = n.i >= 0 && n.d <= 3 ? insertPoint(P, n.i, n.t) : null;
+      if (!next) return;
+      // only the new point is stored: the others keep their coordinates to the centimeter
+      t.pts.splice(n.i + 1, 0, this.ed.fromPlan(t)(...next[n.i + 1]));
+    }
+    this.ed.commit();
+  }
+
+  toggleHidden(i) {
+    this.terraces[i].hidden = !this.terraces[i].hidden;
+    this.ed.commit();
+  }
+
+  remove(i) {
+    this.terraces.splice(i, 1);
+    this.sel = null;
+    if (this.draw || this.pts) this.cancel();
+    this.ed.commit();
+  }
+
+  /** Overlay: the outline being drawn (the rectangle follows the pointer), or the one whose points are edited. */
+  _draft(d) {
+    const D = this.draw;
+    if (D) {
+      const toPlan = this.ed.toPlan({ frame: D.frame });
+      const P = D.pts.map(([x, z]) => toPlan(x, z));
+      const old = D.i !== null && this.terraces[D.i] ? this.terraces[D.i].surface : null;
+      const color = terraceLook(old).draft || '#ffe14d';
+      if (D.shape === 'rect' && P.length === 1 && D.hover) {
+        const r = rectFromCorners(P[0], D.hover);
+        d.ribbon([...r, r[0]], color, 0.14);
+      } else if (P.length) d.ribbon(D.hover ? [...P, D.hover, ...(P.length > 1 ? [P[0]] : [])] : P, color, 0.14);
+      for (const [x, z] of P) d.dot(x, z, '#ffffff');
+      return;
+    }
+    const E = this.pts;
+    if (!E || !this.terraces[E.i]) return;
+    const P = this.outline(E.i);
+    d.ribbon([...P, P[0]], terraceLook(this.terraces[E.i].surface).draft || '#ffe14d', 0.14);
+    for (const [x, z] of P) d.dot(x, z, E.tool === 'del' ? '#ff3b30' : '#ffffff');
+  }
+}
+
 export class IrrigationTools {
   constructor(ed) {
     this.ed = ed;
@@ -558,6 +1060,12 @@ export class IrrigationTools {
 
   line(id) {
     return this.irr.lines.find((l) => l.id === id);
+  }
+
+  /** The points of the drip line unfolded in the panel, dragged right away in the view; null without one. */
+  handles() {
+    const ln = this.sel && !this.draw && !this.mode ? this.line(this.sel) : null;
+    return ln && Array.isArray(ln.pts) && ln.pts.length > 1 ? freePointsSpec(this.ed, `drip-pts:${ln.id}`, ln) : null;
   }
 
   circuit(id) {
@@ -598,14 +1106,17 @@ export class IrrigationTools {
         if (P.length > 1) d.ribbon(smoothPath(P, 0.3), '#2f8fff', 0.12);
         for (const [x, z] of P) d.dot(x, z, '#ffe14d');
       },
+      undo: () => this.undoPoint(),
     });
   }
 
+  /** Take back the last point of the line being drawn; false when it has none. */
   undoPoint() {
-    if (!this.draw) return;
+    if (!this.draw || !this.draw.pts.length) return false;
     this.draw.pts.pop();
     this.ed.drawDraft();
     this.ed.onChange(false);
+    return true;
   }
 
   finishLine() {
@@ -632,6 +1143,23 @@ export class IrrigationTools {
     this.draw = null;
     this.mode = null;
     this.ed.setClickTool(null);
+  }
+
+  /**
+   * After an undo or a redo: lines, circuits and heads are known by their id, so what is unfolded stays so when it
+   * is still there. A line being drawn or a head being placed that is gone leaves its tool.
+   */
+  restored() {
+    const heads = this.irr.circuits.flatMap((c) => c.heads || []);
+    const lost = (this.draw && !this.line(this.draw.id)) || (this.mode && !this.head(this.mode.cid, this.mode.hid));
+    if (lost) {
+      const mine = this.ed.clickTool && ['drip', 'head-place', 'head-aim'].includes(this.ed.clickTool.key);
+      this.draw = null;
+      this.mode = null;
+      if (mine) this.ed.setClickTool(null);
+    }
+    if (this.sel && !this.line(this.sel) && !this.circuit(this.sel)) this.sel = null;
+    if (this.selHead && !heads.some((h) => h.id === this.selHead)) this.selHead = null;
   }
 
   editLine(id, patch) {

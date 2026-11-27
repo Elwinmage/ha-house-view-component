@@ -84,9 +84,19 @@ def test_ortho_and_new_edit_lists():
         with pytest.raises(ValueError):
             validate.validate_ortho(bad)
     validate.validate_edits(
-        {"fences": [], "entities": [], "sensors": [], "panel": [], "zones": [], "vacuums": [], "pools": [], "paths": []}
+        {
+            "fences": [],
+            "entities": [],
+            "sensors": [],
+            "panel": [],
+            "zones": [],
+            "vacuums": [],
+            "pools": [],
+            "paths": [],
+            "terraces": [],
+        }
     )
-    for key in ("fences", "entities", "sensors", "panel", "zones", "vacuums", "pools", "paths"):
+    for key in ("fences", "entities", "sensors", "panel", "zones", "vacuums", "pools", "paths", "terraces"):
         with pytest.raises(ValueError):
             validate.validate_edits({key: {}})
     validate.validate_edits(

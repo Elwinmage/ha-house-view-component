@@ -40,11 +40,12 @@ No tiene que aportar el terreno (relieve, edificios vecinos, carreteras, catastr
 
 ### 2.1 Instalar la integración
 
-**Con HACS** (recomendado):
+**Desde el Marketplace** (recomendado): House View está en su catálogo, no hay ningún repositorio que añadir.
 
-1. HACS → menú ⋮ → *Repositorios personalizados* → añada `https://github.com/elwinmage/ha-house-view-component`, tipo *Integración*.
-2. Busque **House View** en HACS e instálelo.
-3. Reinicie Home Assistant.
+1. Abra el repositorio en el Marketplace con este botón: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Elwinmage&repository=ha-house-view-component&category=integration), o busque **House View** en *Ajustes → Marketplace*.
+2. Pulse «Instalar».
+
+En un Home Assistant anterior a 2026.11, los mismos pasos funcionan en HACS; reinicie después Home Assistant.
 
 **A mano**: descomprima `house_view.zip` de la última versión publicada (contiene la tarjeta compilada) en `config/custom_components/house_view/` y reinicie.
 
@@ -111,13 +112,17 @@ Con un plano IFC, SVG o simple, cada habitación recibe una luz de techo encendi
 - **Niveles**: *＋ Level* añade una planta que copia el contorno de las habitaciones de abajo, para renombrar y volver a dividir; la altura del techo se ajusta por nivel. El contorno del nivel de abajo sigue visible en línea discontinua.
 - **Tejado y orientación**: tejado automático, a dos aguas o plano; ángulo del norte (el ajuste sobre el terreno lo corrige después).
 
-El plano se guarda solo y se vuelve a abrir con *Edit the simple plan*. Un plano simple sustituye a un plano importado, previa confirmación; las entidades colocadas, el riego, las vallas… se conservan.
+El plano se guarda solo y se vuelve a abrir con *Edit the simple plan*. Un plano simple sustituye a un plano importado, previa confirmación; las entidades colocadas, el riego, las vallas… se conservan. **Ctrl+Z** y las flechas **↶ ↷** en lo alto del panel deshacen y rehacen los cambios del plano.
 
 ### 4.3 Partir del mapa del robot
 
 Si un robot aspirador ha cartografiado la casa y un extractor de mapa (Xiaomi Cloud Map Extractor, Roborock Custom Map…) da sus habitaciones (atributo `rooms`), el botón *Plan from the robot's map* crea un plano simple con esas habitaciones, con su tamaño y su lugar. Son rectángulos aproximados, y solo los del nivel del robot: ajústelos y añada después puertas, ventanas y otros niveles en el plano simple.
 
 ### 4.4 Descargar el terreno
+
+El terreno no hay que medirlo ni dibujarlo: la integración lo descarga de datos públicos y gratuitos, tomados desde aviones (láser LiDAR y fotografías aéreas del IGN en Francia, levantamientos LiDAR abiertos de muchos países) o desde satélites (modelo mundial Copernicus de 30 m).
+
+![Un jardín en pendiente reconstruido en la tarjeta: muros de contención, escaleras, terrazas, acceso, vallas y portones, piscina, estanque y aspersores, sobre el relieve real](../images/vitrine.jpg)
 
 En **Terrain (DTM)**:
 
@@ -132,6 +137,8 @@ En **Terrain (DTM)**:
 Al final, el plano se **ajusta automáticamente** al terreno (rotación, desplazamiento, altura), se plantan los árboles detectados y aparecen el relieve, las carreteras y la foto.
 
 También puede cargar un archivo de terreno (*Load a terrain .json*) o retocar el ajuste a mano (rotación, desplazamiento, altura) en la misma sección.
+
+Alrededor de la casa, el terreno se detiene en la cara exterior de los muros y queda bajo los suelos, sea cual sea la altura que le dé: un sótano, o una planta medio enterrada en una pendiente, conserva sus habitaciones libres de la tierra que se apoya contra sus muros. Esto sigue las habitaciones del plano y los muros que las rodean, planta por planta; cuando el sótano solo ocupa una parte de la casa, el terreno se mantiene bajo el resto de la planta baja.
 
 ## 5. Usar la vista
 
@@ -201,17 +208,23 @@ Los sensores de humo, gas, monóxido de carbono, fuga de agua, problema, calor, 
 
 **Simulate a year** pasa un año entero (10 s por defecto, de 5 a 60 s) a partir de la fecha mostrada; una etiqueta indica la fecha. Al final, la vista vuelve a la fecha de antes.
 
+<p align="center"><img src="../images/anim-journee.webp" alt="Sol y sombras" width="290"> <img src="../images/anim-saisons.webp" alt="Estaciones" width="290"> <img src="../images/anim-meteo.webp" alt="Tiempo" width="290"></p>
+
 ### 5.7 Luces, persianas y ventanas
 
 Las luces de cada habitación iluminan la habitación y sus ventanas. Las **persianas enrollables** bajan hasta su posición real, las **ventanas** se abren, los **ventanales** se deslizan, las **puertas** giran.
 
 ![Por la noche: persianas cerradas y luces encendidas](../images/14-soiree-volets-lumieres.jpg)
 
+<p align="center"><img src="../images/anim-lumieres.webp" alt="Luces" width="290"> <img src="../images/anim-volets.webp" alt="Persianas" width="290"> <img src="../images/anim-fenetres.webp" alt="Ventanas" width="290"></p>
+
 ### 5.8 El robot aspirador
 
 Un toque en el botón del robot abre la selección de habitaciones: elíjalas en el plano y luego *Clean* (también *Start*, *Pause*, *Dock*). Durante la limpieza, un robot 3D se desplaza, la habitación en curso se colorea con su porcentaje, las habitaciones pendientes se tiñen, una habitación terminada destella y un anillo alrededor del botón da el avance global. En caso de error, la habitación y el robot parpadean en rojo.
 
 ![El robot en plena limpieza](../images/15-aspirateur.jpg)
+
+<p align="center"><img src="../images/anim-aspirateur.webp" alt="Robot aspirador" width="440"></p>
 
 ### 5.9 Riego, piscina y estanque
 
@@ -221,9 +234,11 @@ Cuando se abre una válvula, los **goteros** se iluminan en azul y crece una man
 |---|---|
 | ![Aspersores al amanecer](../images/16-arrosage.jpg) | ![Piscina y estanque](../images/17-piscine-etang.jpg) |
 
+<p align="center"><img src="../images/anim-arrosage.webp" alt="Riego" width="290"> <img src="../images/anim-piscine.webp" alt="Piscina" width="290"> <img src="../images/anim-etang.webp" alt="Estanque" width="290"></p>
+
 ## 6. El editor
 
-Solo para administradores: **menú ⋮ → Editor**. El editor es un **menú de secciones**. Una sección se abre en su propia ventana, encima del menú; un elemento de una lista (una línea de goteo, una zona, una entidad…) se abre encima de la sección. La flecha **←** vuelve a la ventana de debajo. Todo se guarda solo; **Esc** cancela el trazado en curso.
+Solo para administradores: **menú ⋮ → Editor**. El editor es un **menú de secciones**. Una sección se abre en su propia ventana, encima del menú; un elemento de una lista (una línea de goteo, una zona, una entidad…) se abre encima de la sección. La flecha **←** vuelve a la ventana de debajo. Todo se guarda solo; **Esc** cancela el trazado en curso. Los puntos de lo que se está editando aparecen como puntos en la vista: **arrastre uno para moverlo**. **Ctrl+Z** deshace el último cambio, sea cual sea la sección, y **Ctrl+Y** lo rehace (durante un trazado, Ctrl+Z quita primero el último punto); en una tableta, las flechas **↶ ↷** en lo alto de cada ventana hacen lo mismo.
 
 ![El menú del editor](../images/18-editeur.jpg)
 
@@ -286,6 +301,8 @@ Una habitación que **solo tiene una ventana** se enlaza sola con el sensor de v
 
 ![El ventanal del salón y sus enlaces](../images/24-portes-fenetres.jpg)
 
+<p align="center"><img src="../images/anim-porte.webp" alt="Puertas" width="300"> <img src="../images/anim-garage.webp" alt="Puertas de garaje" width="660"></p>
+
 ### 6.7 Piscinas y estanques
 
 *＋ Pool* o *＋ Pond*, y luego dibuje el contorno visto desde arriba: **Rectangle** (dos esquinas opuestas) o **Free shape** (punto a punto, y luego *Finish*). Ajuste el nombre, el color del agua, la profundidad (0,2 a 6 m) y, si tiene uno, el **robot limpiador** (`binary_sensor`, `switch`, `input_boolean`, `vacuum`, `light`, `fan` o `sensor` — y cualquier otra entidad escribiendo su id en el selector; un valor mayor que cero cuenta como activo). El terreno se excava: paredes verticales, fondo plano y borde para una piscina; fondo en pendiente y orilla de guijarros para un estanque.
@@ -329,22 +346,27 @@ Para cada robot (lista *Robot*):
 
 ### 6.10 Vallas
 
-*Fence from the cadastre* (las parcelas de la casa vienen preseleccionadas; **solo en Francia**, ya que el catastro viene de los servicios del IGN: en otros lugares, trace la valla a mano) o *Draw a fence* punto a punto. Cada lado tiene su tipo (malla, madera, muro, seto, o abierto donde no hay valla; un portón se añade en *Gates* y abre la valla por sí solo) y su altura; *Edit the sides* cambia un lado, lo corta en dos o quita un punto.
+*Fence from the cadastre* (las parcelas de la casa vienen preseleccionadas; **solo en Francia**, ya que el catastro viene de los servicios del IGN: en otros lugares, trace la valla a mano) o *Draw a fence* punto a punto. Cada lado tiene su tipo (malla, madera, muro, seto, o abierto donde no hay valla; un portón se añade en *Gates* y abre la valla por sí solo) y su altura; *Edit the sides* cambia un lado, lo corta en dos o quita un punto. Los tipos vienen del catálogo de la casa: la paleta muestra una vista previa de cada uno junto al color que marca sus lados en la vista durante la edición. Un muro o un muro de ladrillo puede llevar una **albardilla** (piedra, ladrillos a sardinel, tejas, chapa plegada…), en su propio color: se elige en la paleta, debajo de la altura, y se coloca lado a lado.
 
 ![Vallas](../images/27-clotures.jpg)
+
+<p align="center"><img src="../images/anim-portails.webp" alt="Portones" width="440"></p>
 
 ### 6.11 Árboles, objetos exteriores y correcciones del suelo
 
 - **Árboles**: borrar los detectados por error, plantar otros (especie del catálogo y altura), deshacer, restablecer todos.
 - **Objetos exteriores** (caseta, portón…): ocultar, altura, desplazamiento, rotación.
-- **Correcciones del suelo**: murete, terraza, pinceles (subir, excavar, alisar), corte del terreno.
+- **Terrazas** (*Terraces*): dibuje un rectángulo o una forma libre y elija su revestimiento con vista previa (madera, baldosas, piedra, hormigón, color liso), un color propio, su altitud y su grosor. El suelo se nivela debajo, una piscina en su interior queda recortada y sus puntos siguen siendo modificables (mover, añadir, quitar).
+- **Escaleras exteriores** (*Drives and paths* → *As a flight of steps*): un camino trazado entre un punto bajo y uno alto se convierte en una escalera con el revestimiento del camino; el terreno se abre debajo y un muro de contención atravesado se corta.
+- **Tejados según el LiDAR**: un tejado demasiado complicado para el plano se lee en el modelo de superficie del terreno. Indique su contorno (trazado punto a punto, tomado de los muros del plano con su alero, o del edificio del mapa) y los faldones se encuentran dentro, cortados a lo largo de sus cumbreras, limatesas y limahoyas; mueva, añada o quite puntos del contorno para cubrir solo una parte de la casa: el tejado del plano se mantiene en el resto.
+- **Correcciones del suelo**: cada corrección colocada aparece contorneada y con su nombre en la vista, y una pulsación la selecciona en la lista. Muro de contención — con un paramento elegido con vista previa (enlucido, piedra, ladrillo…), un color, y una coronación y un pie que pueden ser distintos en sus dos extremos —, plataforma sin revestir, pinceles (subir, excavar, alisar) cuyo efecto se muestra antes de pulsar, corte del terreno. Una herramienta que traza un tipo solo muestra ese tipo (*Shown on the view* hace volver los demás). Se aplican en el orden en que se trazaron; un muro no actúa detrás de otro muro, y una plataforma trazada a lo largo de un muro se queda en su lado. Un muro lleva la albardilla que elija (losas de piedra, ladrillos a sardinel, tejas, chapa plegada…) en su color, y *＋ Add a point* / *− Remove a point*, en la parte superior de una sección, retocan una línea o un contorno libre.
 - **Vistas**: guardar la cámara actual como vista, renombrar, borrar.
 
 ![Árboles](../images/28-arbres.jpg)
 
 ### 6.12 El catálogo de árboles y objetos
 
-Las especies de árboles (con su aspecto en cada estación), los objetos del jardín o los muebles dibujados en lugar de simples cajas, y los peces de los estanques vienen del [catálogo de la casa](https://github.com/Elwinmage/house-catalog). La integración lo actualiza sola desde GitHub (dispositivo *House view catalog*: una entidad de actualización por sección, un interruptor de actualización automática y un botón para actualizar ya) y funciona sin conexión con la copia que incluye.
+Las especies de árboles (con su aspecto en cada estación), los objetos del jardín o los muebles dibujados en lugar de simples cajas, y los peces de los estanques vienen del [catálogo de la casa](https://github.com/Elwinmage/house-catalog). Lo mismo ocurre con los revestimientos de los caminos y de las terrazas, los paramentos de los muros y los tipos de vallas, cada uno con su vista previa allí donde se elige. La integración lo actualiza sola desde GitHub (dispositivo *House view catalog*: una entidad de actualización por sección, un interruptor de actualización automática y un botón para actualizar ya) y funciona sin conexión con la copia que incluye.
 
 Para crear **su propio árbol u objeto**, use el [editor de catálogo](https://github.com/Elwinmage/catalog-editor): una tarjeta de Home Assistant donde se ajustan la forma, los colores y las estaciones viendo el resultado. Lo que guarde lo usa la vista enseguida, y luego puede proponerlo al catálogo común (una solicitud de incorporación en GitHub) para que todos lo aprovechen.
 
@@ -356,7 +378,7 @@ Para crear **su propio árbol u objeto**, use el [editor de catálogo](https://g
 - **Plano** y **terreno**: véase [la puesta en marcha](#4-primera-puesta-en-marcha-el-plano-y-el-terreno).
 - **GitHub backup**: configure un repositorio **privado** en las opciones de la integración (*Ajustes → Dispositivos y servicios → House View → Configurar → copia de seguridad en GitHub*: repositorio `propietario/nombre`, token *fine-grained* con *Contents: read and write*, rama, carpeta), y luego *Back up to GitHub* / *Restore from GitHub*. Un repositorio público se rechaza: contendría el plano de su casa. Encima de los dos botones, **Guardado en Home Assistant** enumera lo que tiene la integración (plano, terreno, modificaciones, foto aérea) con la fecha de la última escritura: la copia solo puede enviar lo que figura ahí, y su mensaje dice qué se escribió, qué ya estaba al día, qué no está guardado aquí y qué rechazó GitHub. Las modificaciones pendientes se guardan antes de la copia.
 - **Edit protection**: se puede pedir una contraseña antes de abrir el editor y la configuración (opciones de la integración → protección de la edición). La tarjeta la vuelve a pedir tras 10 minutos sin cambios; el botón 🔒 bloquea al instante. Mirar la vista, hacer zoom, mandar las luces o el aspirador sigue siendo libre.
-- **Edits file**: exportar o importar todas sus ediciones (entidades, riego, vallas…) en un archivo JSON.
+- **Edits file**: exportar o importar todas sus ediciones (entidades, riego, vallas…) en un archivo JSON. *Export the corrected terrain* guarda además el relieve tal como lo muestra la vista, con las correcciones del suelo aplicadas, en un archivo de terreno para otra herramienta: las correcciones siguen en las ediciones, así que no lo cargue como terreno de esta casa.
 
 ## 8. Varias viviendas
 
@@ -409,6 +431,9 @@ Se ajustan en el editor visual de la tarjeta (panel en modo edición → *Editar
 | `movable_camera` | Cámara móvil | sí |
 | `height`, `min_height` | Altura de la tarjeta (`fill`, `aspect`, en px o en `vh`) | `fill`, 320 |
 | `fps_cap` | Máximo de imágenes por segundo (tableta de pared) | 30 |
+| `quality` | Calidad de la imagen: `auto` (más ligera mientras la cámara se mueve si la pantalla no da abasto), `low` (pantalla poco potente), `high` (nunca aligerada) | `auto` |
+| `keep_scene` | Minutos durante los cuales la escena sigue lista cuando la tarjeta sale de la pantalla (0: se libera enseguida) | 10 |
+| `auto_reload` | Recargar la página sola cuando se actualiza la tarjeta, en cuanto nadie la usa (pantalla mural); sin ella, un botón lo propone | `false` |
 | `year_seconds` | Duración de «Simulate a year» (5 a 60 s) | 10 |
 | `toolbar_buttons` | Herramientas que se quedan en la barra (`preview`, `year`, `camera`, `sim`, `edit`, `setup`) | ninguna |
 | `hide_menu` | Ocultar el menú ⋮ a quienes no son administradores | no |
@@ -441,3 +466,12 @@ En ⚙ → *Terrain (DTM)*, compruebe que *Aerial photo on the ground* está mar
 
 **Quiero mostrar la vista sin mostrar mi casa.**
 Use el [modo demo](#9-el-modo-demo).
+
+**La vista va a saltos en una Raspberry Pi o en una tableta de pared.**
+En las opciones de la tarjeta, ponga *Rendering quality* (`quality`) en `low` y baje `fps_cap`; reducir la resolución de la pantalla también ayuda. Con `auto`, la imagen ya se aligera sola mientras la cámara se mueve cuando la pantalla no da abasto, y recupera todo su detalle en reposo.
+
+**La vista se vuelve a cargar cuando vuelvo de otro panel.**
+La escena sigue lista diez minutos después de salir de la pantalla y luego se libera su memoria: pasado ese tiempo, se vuelve a leer y a construir al volver. Aumente `keep_scene` (en minutos) para conservarla más tiempo.
+
+**Tras una actualización, ¿la tarjeta en pantalla es la nueva?**
+Sí: la tarjeta se carga siempre bajo la huella del archivo que está en el servidor, así que basta con actualizar el navegador (sin vaciar la caché). Las páginas que quedaron abiertas muestran un botón azul *Nueva versión de la tarjeta* en la barra; con la opción `auto_reload`, una tableta mural se recarga sola cuando nadie la usa. Reinicie Home Assistant cuando lo pida tras una actualización de la integración; una tarjeta solo recompilada (desarrollo) no lo necesita.

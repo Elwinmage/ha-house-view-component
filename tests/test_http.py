@@ -193,17 +193,26 @@ async def test_card_bundle_is_served(hass, hass_client, tmp_path, monkeypatch):
     res = await client.get("/house_view/preview.jpg")
     assert res.status == 200
     assert await res.read() == b"jpeg"
+    # the dashboards load the loader, whose address never changes; it names the bundle by its fingerprint
+    assert added == ["/api/house_view/card.js"]
     digest = hashlib.sha256(b"console.log('card');").hexdigest()[:8]
     manifest = Path(house_view.__file__).parent / "manifest.json"
     version = json.loads(manifest.read_text(encoding="utf-8"))["version"]  # not hard-coded: it changes at each release
-    assert added == [f"/house_view/house-view-card.js?v={version}-{digest}"]
+    res = await client.get("/api/house_view/card.js")
+    assert res.status == 200
+    assert res.headers["Content-Type"].startswith("text/javascript")
+    assert res.headers["Cache-Control"] == "no-cache"  # asked again at each load of a dashboard
+    assert await res.text() == f'import "/house_view/house-view-card.js?v={version}-{digest}";\n'
 
 
 async def test_missing_bundle_is_not_fatal(hass, hass_client, hass_admin_user, caplog, tmp_path, monkeypatch):
     """Without the built card the integration still works and says why in the log."""
     monkeypatch.setattr(house_view, "FRONTEND_FILE", tmp_path / "absent.js")
-    await _setup(hass, hass_client, hass_admin_user)
+    client = await _setup(hass, hass_client, hass_admin_user)
     assert "card bundle not found" in caplog.text
+    # and to the browser: the loader loads nothing, the bundle is not there
+    assert await (await client.get("/api/house_view/card.js")).text() == "// House View: card bundle not found\n"
+    assert (await client.get("/house_view/house-view-card.js")).status == 404
 
 
 async def test_bundle_served_without_frontend(hass, hass_client, tmp_path, monkeypatch):
@@ -219,6 +228,7 @@ async def test_bundle_served_without_frontend(hass, hass_client, tmp_path, monke
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert added == []
+    assert await (await (await hass_client()).get("/house_view/house-view-card.js")).text() == "x"
 
 
 async def test_writes_on_unloaded_entry_and_non_admin_delete(

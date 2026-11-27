@@ -154,6 +154,25 @@
           this.calls.push([domain, service, data]);
         },
         fetchWithAuth: (url, init) => fetch(url, init),
+        // subscriptions of the card to the catalog: as the integration, the state of the section is sent right
+        // after subscribing, then at each change (none here)
+        connection: {
+          subscribeMessage(callback, msg) {
+            if (msg.type === 'house_view/card/subscribe') {
+              // the build of the card the integration holds: the one of this page, until a test names another
+              // one (window.__serverBuild('...'))
+              window.__buildListeners.add(callback);
+              const timer = setTimeout(() => callback({ build: window.__build }), 0);
+              return Promise.resolve(() => {
+                clearTimeout(timer);
+                window.__buildListeners.delete(callback);
+              });
+            }
+            if (msg.type !== 'house_view/catalog/subscribe') return Promise.reject(new Error(`unknown command ${msg.type}`));
+            const timer = setTimeout(() => callback({ version: null, updating: false }), 0);
+            return Promise.resolve(() => clearTimeout(timer));
+          },
+        },
         // websocket commands of the integration the card uses: the catalog (trees, objects)
         async callWS(msg) {
           if (msg.type !== 'house_view/catalog') throw new Error(`unknown command ${msg.type}`);
@@ -163,14 +182,25 @@
         },
       };
     </script>
-    <script type="module" src="/custom_components/house_view/frontend/house-view-card.js"></script>
+    <script>
+      // the card bundle, as the loader of the integration names it: under its build
+      window.__build = 'harness-1';
+      window.__buildListeners = new Set();
+      window.__serverBuild = (build) => {
+        window.__build = build;
+        for (const listener of window.__buildListeners) listener({ build });
+      };
+    </script>
+    <script type="module" src="/custom_components/house_view/frontend/house-view-card.js?v=harness-1"></script>
     <script type="module">
       await customElements.whenDefined('house-view-card');
-      const card = document.createElement('house-view-card');
-      card.setConfig(window.__cardConfig || { type: 'custom:house-view-card', weather_entity: 'weather.home' });
-      document.body.appendChild(card);
-      window.card = card;
-      card.hass = window.mockHass;
+      // what Home Assistant creates is a shell (card-shell.js); the card itself is the scene inside it
+      const shell = document.createElement('house-view-card');
+      shell.setConfig(window.__cardConfig || { type: 'custom:house-view-card', weather_entity: 'weather.home' });
+      document.body.appendChild(shell);
+      shell.hass = window.mockHass;
+      window.shell = shell;
+      window.card = shell.scene;
     </script>
   </body>
 </html>

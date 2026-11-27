@@ -64,7 +64,18 @@ def _release(aioclient_mock, section, kind, version, entries):
 
 
 def test_the_specs_read_the_house_catalog():
-    assert [spec.section for spec in catalog.CATALOGS] == ["trees", "objects", "pond_fish", "paths"]
+    assert [spec.section for spec in catalog.CATALOGS] == [
+        "trees",
+        "objects",
+        "pond_fish",
+        "paths",
+        "terraces",
+        "walls",
+        "copings",
+        "fences",
+    ]
+    # every section house-catalog publishes is read, in the order it lists them
+    assert [spec.section for spec in catalog.CATALOGS] == list(house_catalog_sections.SECTIONS)
     assert {spec.repository for spec in catalog.CATALOGS} == {"Elwinmage/house-catalog"}
     # the client knows no house: its sections are declared from what house-catalog says of itself
     assert dict.fromkeys(house_catalog_sections.SECTIONS, house_catalog_sections.REPO) == catalog_pack.SECTION_REPOS
@@ -75,11 +86,20 @@ def test_the_specs_read_the_house_catalog():
     assert catalog.PATHS.suffix == "_paths"
     assert catalog_pack.SECTION_KINDS["pond_fish"] == frozenset({"pond_fish"})
     assert catalog_pack.SECTION_KINDS["paths"] == frozenset({"path"})
+    assert (catalog.TERRACES.suffix, catalog.WALLS.suffix, catalog.FENCES.suffix) == ("_terraces", "_walls", "_fences")
+    assert catalog_pack.SECTION_KINDS["terraces"] == frozenset({"terrace"})
+    assert catalog_pack.SECTION_KINDS["walls"] == frozenset({"wall"})
+    assert (catalog.COPINGS.suffix, catalog_pack.SECTION_KINDS["copings"]) == ("_copings", frozenset({"coping"}))
+    assert catalog_pack.SECTION_KINDS["fences"] == frozenset({"fence"})
     # the built-in snapshots are where the client looks for them
     assert (BUILTIN / "catalog_builtin/items/oak/tree.json").is_file()
     assert (BUILTIN / "catalog_builtin_objects/items/chair/object.json").is_file()
     assert (BUILTIN / "catalog_builtin_pond_fish/items/koi/pond_fish.json").is_file()
     assert (BUILTIN / "catalog_builtin_paths/items/gravel/path.json").is_file()
+    assert (BUILTIN / "catalog_builtin_terraces/items/wood-decking/terrace.json").is_file()
+    assert (BUILTIN / "catalog_builtin_walls/items/dry-stone/wall.json").is_file()
+    assert (BUILTIN / "catalog_builtin_copings/items/brick/coping.json").is_file()
+    assert (BUILTIN / "catalog_builtin_fences/items/mesh/fence.json").is_file()
 
 
 async def test_offline_the_builtin_catalog_is_served(hass, hass_ws_client, hass_client):
@@ -105,6 +125,28 @@ async def test_offline_the_builtin_catalog_is_served(hass, hass_ws_client, hass_
     assert (gravel["source"], gravel["kind"], gravel["surface"]["color"]) == ("builtin", "surface", "#bdb29c")
     assert paths["data"]["items"]["stepping-stones"]["module"]["shapes"] == ["round", "half-moon"]
 
+    # what surrounds the house: the same painted surface, on a terrace, a wall or a fence
+    decking = (await _catalog(ws, "terraces"))["data"]["items"]["wood-decking"]
+    assert (decking["source"], decking["thickness"]) == ("builtin", 0.12)
+    assert decking["surface"]["joints"]["cell"] == [0.15, 2.4]
+    assert decking["thumb"].startswith("/house_view_catalog_terraces/builtin/items/wood-decking/thumb.webp")
+    stone = (await _catalog(ws, "walls"))["data"]["items"]["dry-stone"]
+    assert (stone["source"], stone["surface"]["joints"]["vary"]) == ("builtin", 0.5)
+    # what caps a wall: bricks on edge, a folded sheet whose edges come down over the faces
+    copings = (await _catalog(ws, "copings"))["data"]["items"]
+    assert {"flat-stone", "brick", "aluminium"} <= set(copings)
+    assert (copings["brick"]["source"], copings["brick"]["surface"]["joints"]["cell"]) == ("builtin", [0.6, 0.075])
+    assert (copings["aluminium"]["drop"], copings["aluminium"]["overhang"]) == (0.05, 0.025)
+    assert copings["brick"]["thumb"].startswith("/house_view_catalog_copings/builtin/items/brick/thumb.webp")
+    fences = (await _catalog(ws, "fences"))["data"]["items"]
+    # the kinds the card knew before the catalog keep their ids: the fences already drawn find them
+    before = {"mesh", "wood", "wall", "hedge", "hedge_laurel", "iron", "panel", "reed", "composite", "gabion"}
+    assert before <= set(fences)
+    assert fences["mesh"]["open"] == {"pattern": "mesh", "pitch": 0.1, "fill": 0.38}
+    assert (fences["hedge"]["foliage"], fences["wood"]["posts"]["color"]) == (True, "#5a4330")
+    # the walls a coping can be laid on say so
+    assert {key for key, fence in fences.items() if fence.get("coping")} == {"wall", "wall_brick"}
+
     # the pictures are public catalog data, served without a session
     client = await hass_client()
     for url in (oak["thumb"], chair["image"]):
@@ -129,7 +171,8 @@ async def test_a_release_and_the_entries_of_the_user_are_merged(hass, hass_ws_cl
     _release(aioclient_mock, "trees", "tree", "2026.12.0", {"birch": birch})
     _release(aioclient_mock, "objects", "object", "2026.12.0", {"table": {"name": {"en": "Table"}, "parts": []}})
     aioclient_mock.get(f"{HOUSE_RELEASES}/pond_fish-latest/manifest.json", status=404)
-    aioclient_mock.get(f"{HOUSE_RELEASES}/paths-latest/manifest.json", status=404)
+    for section in ("paths", "terraces", "walls", "copings", "fences"):
+        aioclient_mock.get(f"{HOUSE_RELEASES}/{section}-latest/manifest.json", status=404)
     # an entry saved with the catalog editor: the shared user layer
     mine = Path(hass.config.path("reeftech_catalog/user/trees/items/my-fig/tree.json"))
     await hass.async_add_executor_job(lambda: mine.parent.mkdir(parents=True))

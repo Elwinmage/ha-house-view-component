@@ -235,3 +235,38 @@ describe('GitHub requests', () => {
     expect(JSON.parse(s.calls.at(-1).body)).toEqual({ action: 'forget', key: 'ortho' });
   });
 });
+
+describe('documents written by the card', () => {
+  /** Fake of the integration that stamps what it stores, as its `updated`. */
+  function stamping() {
+    let n = 0;
+    const hass = {
+      async fetchWithAuth(url, init = {}) {
+        const method = init.method || 'GET';
+        const body = method === 'POST' ? { ok: true, updated: `stamp${++n}` } : { ok: true };
+        return { status: 200, ok: true, json: async () => body, text: async () => '' };
+      },
+    };
+    return hass;
+  }
+
+  it('keeps the stamps of the scene shown up to date with its own saves', async () => {
+    const api = new HouseViewApi(stamping());
+    api.stamps = { scene: 'a', terrain: 'b', edits: 'c', ortho: 'd' };
+    expect(await api.setEdits({ trees: [] })).toEqual({ ok: true, updated: 'stamp1' });
+    expect(api.stamps).toEqual({ scene: 'a', terrain: 'b', edits: 'stamp1', ortho: 'd' });
+    await api.setScene({});
+    await api.setTerrain({});
+    expect(api.stamps).toEqual({ scene: 'stamp2', terrain: 'stamp3', edits: 'stamp1', ortho: 'd' });
+    // removed: nothing stored any more
+    await api.clearTerrain();
+    await api.clearOrtho();
+    expect(api.stamps).toEqual({ scene: 'stamp2', terrain: null, edits: 'stamp1', ortho: null });
+  });
+
+  it('notes nothing before the documents were read', async () => {
+    const api = new HouseViewApi(stamping());
+    await api.setEdits({});
+    expect(api.stamps).toBeNull();
+  });
+});

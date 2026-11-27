@@ -11,7 +11,13 @@
 import * as THREE from 'three';
 import { SPECIES } from './catalog.js';
 import { pointInPolygon } from './geometry.js';
-import { compileOps, WALL_T } from './terrain-edit.js';
+import { compileOps } from './terrain-edit.js';
+import { houseFootprint } from './footprint.js';
+import { buildWalls } from '../walls.js';
+import { levelOps } from '../terraces.js';
+import { normalizePath } from '../paths.js';
+import { flightOutlines, flightReach } from '../stairs.js';
+import { smoothPath } from '../irrigation.js';
 import { tintBeach } from './sea-3d.js';
 import { poolValid, centroidOf, inPolygon, nearestOnOutline, islandsOf } from '../pools.js';
 
@@ -50,7 +56,8 @@ const rectPoly = (r) => [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]
 /**
  * Build the ground mesh.
  * - the terrain is aligned so that its height at `t.center` equals `base` (meters, plan frame);
- * - vertices under the lowest level's rooms are dug below the floor so the house sits in the ground;
+ * - under the rooms of the house and the walls around them the ground goes below the floor, and it is cut straight
+ *   down along the outer face of the walls (footprint.js), so the house sits in the ground;
  * - pool / deck / path rectangles get a flat pad, the pool footprint is cut out of the mesh.
  * Returns { group, material, heightAt, pads } where pads holds the pad height of each element.
  */
@@ -163,6 +170,58 @@ function buildRoads(roads, g2p, heightAt, extent) {
   return m;
 }
 
+// (one number per terrain document, to tell one from another in a signature)
+const DOCS = new WeakMap();
+let docs = 0;
+
+/**
+ * What the ground is built from, as one string: the terrain document, its registration and layers, the corrections,
+ * the pools, the terraces, the flights of steps and the sea of the edits, the house and the pads of the plan, and
+ * `rev`, which the caller changes when something else the ground is drawn with did (the catalog of facings).
+ * Two builds with the same string give the same ground: the engine keeps it from one rebuild to the next instead of
+ * working it out again (most edits, a fence or a path, do not touch it). Everything buildTerrain() reads belongs here.
+ */
+export function terrainSign(t, sd, cfg, rev = 0) {
+  if (!DOCS.has(t)) DOCS.set(t, ++docs);
+  const photo = cfg.ortho && cfg.ortho.texture ? [cfg.ortho.texture.uuid, cfg.ortho.bbox, cfg.ortho.lat, cfg.ortho.lon, cfg.ortho.north] : null;
+  return JSON.stringify([
+    DOCS.get(t),
+    rev,
+    [cfg.base, cfg.rot, cfg.dx, cfg.dz, cfg.showMns, cfg.showVec, cfg.showRoads],
+    photo,
+    cfg.ops || [],
+    cfg.pools || [],
+    cfg.terraces || [],
+    // (a path only shapes the ground when it is a flight of steps)
+    (cfg.paths || []).filter((p) => p && p.stairs),
+    cfg.sea || null,
+    sd.levels.map((l) => [l.elevation, (l.rooms || []).map((r) => [r.poly, !!r.noFloor]), (l.walls || []).map((w) => [w.a, w.b, w.thickness, !!w.joinStart, !!w.joinEnd])]),
+    [sd.site.pool || null, sd.site.deck || null, sd.site.path || null],
+  ]);
+}
+
+/**
+ * The terrain document with the ground as the view shows it, at every point of its grid: the relief with the
+ * corrections of the editor (retaining walls, platforms, brushes), levelled under the terraces and around the pools.
+ * `terrain` is the ground built from `t` with the registration `cfg`. A step at a wall is no sharper than the grid;
+ * the basins themselves are not dug in it. The surface model is kept, never under the ground; the other layers are
+ * left as they are. `corrected` tells the document from a terrain as it was fetched: the corrections it holds are
+ * still in the edits, and would be applied a second time on it.
+ */
+export function correctedTerrain(t, cfg, terrain) {
+  const g2p = gridToPlan(t, cfg);
+  const z = new Array(t.nx * t.nz);
+  for (let j = 0; j < t.nz; j++) {
+    for (let i = 0; i < t.nx; i++) {
+      const [x, pz] = g2p(t.origin[0] + i * t.step, t.origin[1] + j * t.step);
+      z[j * t.nx + i] = Math.round((terrain.heightAt(x, pz) - cfg.base + terrain.zRef) * 1000) / 1000;
+    }
+  }
+  const doc = { ...t, z, corrected: true };
+  if (Array.isArray(t.s)) doc.s = t.s.map((v, k) => Math.max(v, z[k]));
+  return doc;
+}
+
 export function buildTerrain(t, sd, cfg) {
   const base = cfg.base;
   const cell = Math.max(0.5, Math.max((t.nx - 1) * t.step, (t.nz - 1) * t.step) / 260);
@@ -172,8 +231,11 @@ export function buildTerrain(t, sd, cfg) {
     const [gx, gz] = toGrid(x, z);
     return gridHeight(t, gx, gz) - zRef + base;
   };
-  // manual corrections (retaining walls, terraces, brushes) applied on top of the LiDAR ground
-  const eops = cfg.ops && cfg.ops.length ? compileOps(cfg.ops, gridToPlan(t, cfg), (alt) => alt - zRef + base) : null;
+  // the ground is levelled under the terraces of the garden first (terraces.js), then the manual corrections
+  // (retaining walls, platforms, brushes) are applied in their order: a wall holding a terrace keeps its step
+  const levelled = levelOps(cfg.terraces, (o) => (o.frame === 'plan' ? toGrid : (x, z) => [x, z]), (gx, gz) => gridHeight(t, gx, gz));
+  const ops = [...levelled, ...(cfg.ops || [])];
+  const eops = ops.length ? compileOps(ops, gridToPlan(t, cfg), (alt) => alt - zRef + base, { cell }) : null;
   const raw1 = eops ? (x, z) => eops.apply(x, z, raw0(x, z), raw0) : raw0;
   // pools and ponds drawn in the editor: a flat rim around them, the ground is cut out over their outline
   const digs = (cfg.pools || [])
@@ -187,6 +249,13 @@ export function buildTerrain(t, sd, cfg) {
       const islands = islandsOf(pl).map((i) => i.pts.map(([x, z]) => toPlanOf(i.frame || pl.frame)(x, z)));
       return { id: pl.id, poly, islands, rim: raw1(cx, cz) };
     });
+  // the ground is opened under the flights of steps (stairs.js): cut out along their outline like a pool, without a
+  // flat rim around them, the flight itself and its cheek walls closing the gap
+  const stairs = (cfg.paths || []).map(normalizePath);
+  const stairsToPlan = (p) => (p.frame === 'plan' ? (x, z) => [x, z] : gridToPlan(t, cfg));
+  const rounded = (pts) => smoothPath(pts, 0.5);
+  const flights = flightOutlines(stairs, stairsToPlan, rounded);
+  const holes = [...digs, ...flights.map((poly) => ({ poly, islands: [] }))];
   const ISLAND = 0.1; // height of the bank of an island above the rim; the middle rises up to 0.35 m more
   const inIsland = (d, x, z) => d.islands.find((i) => inPolygon(i, x, z)) || null;
   const RIM = 0.6; // flat band around the water
@@ -197,8 +266,12 @@ export function buildTerrain(t, sd, cfg) {
         for (const d of digs) {
           const isl = d.islands.length ? inIsland(d, x, z) : null;
           if (isl) return d.rim + ISLAND + 0.35 * smooth01(Math.min(1, nearestOnOutline(isl, x, z).d / 2));
-          const q = inPolygon(d.poly, x, z) ? 0 : nearestOnOutline(d.poly, x, z).d;
+          const near = inPolygon(d.poly, x, z) ? null : nearestOnOutline(d.poly, x, z);
+          const q = near ? near.d : 0;
           if (q >= RIM + FEATHER) continue;
+          // a retaining wall between the basin and this point holds the ground up: the rim of the basin stops at
+          // it, instead of pulling down the ground behind a wall that stands close to the water
+          if (near && eops && eops.crosses(x, z, near.px, near.pz)) continue;
           const k = q <= RIM ? 1 : 1 - smooth01((q - RIM) / FEATHER);
           h += (d.rim - h) * k;
         }
@@ -208,7 +281,7 @@ export function buildTerrain(t, sd, cfg) {
   // vertices near an outline are moved onto it (just outside), so the cut follows the drawn shape
   // (islands: just inside them, the ground being kept there)
   const snapPool = (x, z) => {
-    for (const d of digs) {
+    for (const d of holes) {
       for (const isl of d.islands) {
         const q = nearestOnOutline(isl, x, z);
         if (q.d >= cell * 0.75) continue;
@@ -229,31 +302,37 @@ export function buildTerrain(t, sd, cfg) {
     return gridHeight(t, gx, gz, t.s) - zRef + base;
   };
 
-  const ground = sd.levels[0];
-  const footprint = ground.rooms.map((r) => r.poly);
+  // the house in the ground (footprint.js): its rooms and the walls around them, level by level
+  const house = houseFootprint(sd.levels);
+  const UNDER = 0.3; // the ground stays this far under a floor
   const pad = {};
   const pads = [];
   const addPad = (key, rect) => {
     const cx = (rect[0] + rect[2]) / 2;
     const cz = (rect[1] + rect[3]) / 2;
     pad[key] = raw(cx, cz);
-    pads.push({ key, rect: [rect[0] - 0.5, rect[1] - 0.5, rect[2] + 0.5, rect[3] + 0.5], y: pad[key] });
+    pads.push({ key, inner: rect, poly: rectPoly(rect), rect: [rect[0] - 0.5, rect[1] - 0.5, rect[2] + 0.5, rect[3] + 0.5], y: pad[key] });
   };
   const pool = sd.site.pool;
   if (pool) addPad('pool', [pool.x0, pool.z0, pool.x1, pool.z1]);
   if (sd.site.deck) addPad('deck', sd.site.deck.rect);
   if (sd.site.path) addPad('path', sd.site.path.rect);
 
-  const nearFootprint = (x, z) => footprint.some((p) => pointInPolygon([x, z], p));
   const heightAt = (x, z) => {
-    for (const p of pads) if (x >= p.rect[0] && x <= p.rect[2] && z >= p.rect[1] && z <= p.rect[3]) return p.y;
+    for (const p of pads) {
+      if (x < p.rect[0] || x > p.rect[2] || z < p.rect[1] || z > p.rect[3]) continue;
+      // a retaining wall holds its own ground (as around a drawn basin): in the margin around a pad when it stands
+      // in between, and in the strip of the pad that goes a little past it (the wall drawn just inside the pad)
+      const nx = Math.min(Math.max(x, p.inner[0]), p.inner[2]);
+      const nz = Math.min(Math.max(z, p.inner[1]), p.inner[3]);
+      if (eops && (nx !== x || nz !== z ? eops.crosses(x, z, nx, nz) : eops.spills(p.poly, x, z))) continue;
+      return p.y;
+    }
     return raw(x, z);
   };
-  // dug height used for the mesh only (inside the building the ground goes under the floor)
-  const meshHeight = (x, z) => {
-    if (nearFootprint(x, z)) return Math.min(heightAt(x, z), -0.3);
-    return heightAt(x, z);
-  };
+  // dug height used for the mesh only: under a floor of the house (`floor`, null elsewhere) the ground goes below it
+  const dugHeight = (x, z, floor) => (floor === null ? heightAt(x, z) : Math.min(heightAt(x, z), floor - UNDER));
+  const meshHeight = (x, z) => dugHeight(x, z, house ? house.floorAt(x, z) : null);
 
   const x0 = t.origin[0];
   const z0 = t.origin[1];
@@ -265,14 +344,85 @@ export function buildTerrain(t, sd, cfg) {
       let x = x0 + i * cell;
       let z = z0 + j * cell;
       if (eops && eops.walls.length) [x, z] = eops.snap(x, z, cell);
-      if (digs.length) [x, z] = snapPool(x, z);
+      if (holes.length) {
+        // onto the outline of a pool or of a flight of steps, but never across a wall: the ground would take the
+        // level of the other side, and sink behind the wall
+        const [sx, sz] = snapPool(x, z);
+        if (!eops || !eops.crosses(x, z, sx, sz)) [x, z] = [sx, sz];
+      }
+      if (house) {
+        // onto the outline of the house, and inside it onto the limit of a lower level, where the ground stands
+        // higher than the pit under the floor: the cut then follows the outer face of the walls (never across a
+        // retaining wall, as above)
+        const e = house.edge(x, z, cell * 0.75);
+        if (e && heightAt(e.x, e.z) > e.y - UNDER + 0.02 && (!eops || !eops.crosses(x, z, e.x, e.z))) [x, z] = [e.x, e.z];
+      }
       const k = (j * (nx + 1) + i) * 3;
       pos[k] = x;
-      pos[k + 1] = meshHeight(x, z) - 0.02;
+      pos[k + 1] = heightAt(x, z) - 0.02;
       pos[k + 2] = z;
     }
   }
+  const X = (v) => pos[v * 3];
+  const Z = (v) => pos[v * 3 + 2];
+  if (house) {
+    // one vertex on every corner of these limits, so that no triangle cuts across a corner of the house
+    const taken = new Set();
+    for (const c of house.corners) {
+      if (heightAt(c.x, c.z) <= c.y - UNDER + 0.02) continue;
+      const ci = Math.round((c.x - x0) / cell);
+      const cj = Math.round((c.z - z0) / cell);
+      let best = -1;
+      let bd = cell * 0.75;
+      for (let j = Math.max(0, cj - 1); j <= Math.min(nz, cj + 1); j++) {
+        for (let i = Math.max(0, ci - 1); i <= Math.min(nx, ci + 1); i++) {
+          const v = j * (nx + 1) + i;
+          const d = Math.hypot(X(v) - c.x, Z(v) - c.z);
+          if (!taken.has(v) && d < bd) {
+            bd = d;
+            best = v;
+          }
+        }
+      }
+      if (best < 0 || (eops && eops.crosses(X(best), Z(best), c.x, c.z))) continue;
+      taken.add(best);
+      pos[best * 3] = c.x;
+      pos[best * 3 + 1] = heightAt(c.x, c.z) - 0.02;
+      pos[best * 3 + 2] = c.z;
+    }
+  }
+  // under the house the triangles go down below the floor that stands over them, each with its own copy of its
+  // corners: the ground is then cut straight down along the walls, instead of sloping from the garden to the pit
+  // through them (mounds of earth inside the rooms of a level sunk in the ground)
+  const sunk = []; // positions of the copies, after those of the grid
+  const copies = new Map();
+  const count = (nx + 1) * (nz + 1);
+  const under = (v, floor) => {
+    const id = `${v}:${floor}`;
+    if (!copies.has(id)) {
+      copies.set(id, count + sunk.length / 3);
+      sunk.push(pos[v * 3], dugHeight(pos[v * 3], pos[v * 3 + 2], floor) - 0.02, pos[v * 3 + 2]);
+    }
+    return copies.get(id);
+  };
+  // (a cell is looked at when it reaches the box of the house)
+  const near = (mx, mz) => !!house && mx >= house.box[0] - 2 * cell && mx <= house.box[2] + 2 * cell && mz >= house.box[1] - 2 * cell && mz <= house.box[3] + 2 * cell;
+  // how well a triangle keeps to one side of the limits: how many of its sides, seen from a little inside it, stand
+  // over the same floor as its middle
+  const clean = (p, q, r) => {
+    const mx = (X(p) + X(q) + X(r)) / 3;
+    const mz = (Z(p) + Z(q) + Z(r)) / 3;
+    const floor = house.floorAt(mx, mz);
+    let n = 0;
+    for (const [u, v] of [[p, q], [q, r], [r, p]]) {
+      const ex = (X(u) + X(v)) / 2;
+      const ez = (Z(u) + Z(v)) / 2;
+      if (house.floorAt(ex + (mx - ex) * 0.1, ez + (mz - ez) * 0.1) === floor) n++;
+    }
+    return n;
+  };
   const idx = [];
+  const sides = new Map(); // sides of the triangles around the house, with the floor each triangle stands under
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
       const cx = x0 + (i + 0.5) * cell;
@@ -282,25 +432,58 @@ export function buildTerrain(t, sd, cfg) {
       const b = a + 1;
       const c = a + (nx + 1);
       const d = c + 1;
-      if (digs.length) {
-        // centre of the (snapped) cell inside a drawn pool: cut out
-        const mx = (pos[a * 3] + pos[b * 3] + pos[c * 3] + pos[d * 3]) / 4;
-        const mz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2] + pos[d * 3 + 2]) / 4;
-        if (digs.some((g) => inPolygon(g.poly, mx, mz) && !inIsland(g, mx, mz))) continue;
+      // centre of the (snapped) cell
+      const mx = (pos[a * 3] + pos[b * 3] + pos[c * 3] + pos[d * 3]) / 4;
+      const mz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2] + pos[d * 3 + 2]) / 4;
+      // inside a drawn pool or under a flight of steps: cut out
+      if (holes.length && holes.some((g) => inPolygon(g.poly, mx, mz) && !inIsland(g, mx, mz))) continue;
+      if (!near(mx, mz)) {
+        idx.push(a, c, b, b, c, d); // counter-clockwise seen from +y
+        continue;
       }
-      idx.push(a, c, b, b, c, d); // counter-clockwise seen from +y
+      // around the house: the diagonal that best keeps each triangle on one side of its limits
+      const cut = clean(a, c, b) + clean(b, c, d) >= clean(a, c, d) + clean(a, d, b) ? [a, c, b, b, c, d] : [a, c, d, a, d, b];
+      for (let k = 0; k < 6; k += 3) {
+        const [p, q, r] = [cut[k], cut[k + 1], cut[k + 2]];
+        const floor = house.floorAt((X(p) + X(q) + X(r)) / 3, (Z(p) + Z(q) + Z(r)) / 3);
+        if (floor === null) idx.push(p, q, r);
+        else idx.push(under(p, floor), under(q, floor), under(r, floor));
+        for (const [u, v, w] of [[p, q, r], [q, r, p], [r, p, q]]) {
+          const id = u < v ? u * count + v : v * count + u;
+          if (!sides.has(id)) sides.set(id, []);
+          sides.get(id).push({ u, v, w, floor });
+        }
+      }
     }
   }
+  // the earth standing behind the walls: a face straight down wherever two triangles that share a side stand at
+  // different levels (seen through a window of a basement, and where a level is hidden)
+  for (const pair of sides.values()) {
+    if (pair.length !== 2 || pair[0].floor === pair[1].floor) continue;
+    const yOf = (v, floor) => dugHeight(X(v), Z(v), floor) - 0.02;
+    const [lo, hi] = yOf(pair[0].u, pair[0].floor) + yOf(pair[0].v, pair[0].floor) <= yOf(pair[0].u, pair[1].floor) + yOf(pair[0].v, pair[1].floor) ? pair : [pair[1], pair[0]];
+    const { u, v, w } = lo;
+    if (yOf(u, hi.floor) - yOf(u, lo.floor) < 0.01 && yOf(v, hi.floor) - yOf(v, lo.floor) < 0.01) continue;
+    // (turned toward the low side: the pit it stands around)
+    const turned = -(Z(v) - Z(u)) * (X(w) - X(u)) + (X(v) - X(u)) * (Z(w) - Z(u)) >= 0;
+    const [a, b] = turned ? [u, v] : [v, u];
+    const base = count + sunk.length / 3;
+    sunk.push(X(a), yOf(a, lo.floor), Z(a), X(b), yOf(b, lo.floor), Z(b), X(b), yOf(b, hi.floor), Z(b), X(a), yOf(a, hi.floor), Z(a));
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const all = new Float32Array(pos.length + sunk.length);
+  all.set(pos);
+  all.set(sunk, pos.length);
+  geo.setAttribute('position', new THREE.BufferAttribute(all, 3));
   geo.setIndex(idx);
   // aerial photo / map draped on the ground: each vertex -> grid -> lon/lat -> Web Mercator -> texture
   const photo = cfg.ortho && cfg.ortho.texture ? cfg.ortho : null;
   if (photo) {
     const [bx0, by0, bx1, by1] = photo.bbox;
-    const uv = new Float32Array((pos.length / 3) * 2);
-    for (let k = 0; k < pos.length / 3; k++) {
-      const [gx, gz] = toGrid(pos[k * 3], pos[k * 3 + 2]);
+    const uv = new Float32Array((all.length / 3) * 2);
+    for (let k = 0; k < all.length / 3; k++) {
+      const [gx, gz] = toGrid(all[k * 3], all[k * 3 + 2]);
       const [lon, lat] = gridToLonLat(gx - t.center[0], gz - t.center[1], photo.lat, photo.lon, photo.north || 0);
       const [mx, my] = mercator(lon, lat);
       uv[k * 2] = (mx - bx0) / (bx1 - bx0);
@@ -482,27 +665,10 @@ export function buildTerrain(t, sd, cfg) {
   if (vec) group.add(vec);
   if (roads) group.add(roads);
 
-  // masonry faces of the retaining walls (vertical boxes along each segment)
-  if (eops) {
-    const wallMat = new THREE.MeshStandardMaterial({ color: '#a39a8b', roughness: 0.95 });
-    for (const w of eops.walls) {
-      if (w.hiY - w.loY < 0.05) continue;
-      for (let i = 0; i < w.pts.length - 1; i++) {
-        const [ax, az] = w.pts[i];
-        const [bx, bz] = w.pts[i + 1];
-        const L = Math.hypot(bx - ax, bz - az);
-        if (L < 0.05) continue;
-        const h = w.hiY - w.loY + 1.03; // buried 1 m below the foot so the base never shows on a slope
-        const m = new THREE.Mesh(new THREE.BoxGeometry(L + WALL_T, h, WALL_T), wallMat);
-        m.position.set((ax + bx) / 2, w.loY - 1 + h / 2 - 0.02, (az + bz) / 2);
-        m.rotation.y = -Math.atan2(bz - az, bx - ax);
-        m.castShadow = true;
-        m.receiveShadow = true;
-        m.name = 'retaining-wall';
-        group.add(m);
-      }
-    }
-  }
+  // masonry of the retaining walls: faced as the catalog says, from under the foot up to the top (walls.js)
+  // a wall is cut where a flight of steps goes through it or ends on it: over all the flight takes up
+  const masonry = eops ? buildWalls(eops.walls, flightOutlines(stairs, stairsToPlan, rounded, flightReach)) : null;
+  if (masonry) group.add(masonry);
 
   // Vertical profile between two plan points: original ground, corrected ground and DSM (when available)
   const profile = (ax, az, bx, bz, n = 120) => {
@@ -517,7 +683,8 @@ export function buildTerrain(t, sd, cfg) {
     }
     return out;
   };
-  return { group, material, heightAt, digs, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, seaY, seaTint, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
+  // (wallAt: where a move on the ground first meets a retaining wall, for what is laid on it)
+  return { group, material, heightAt, wallAt: eops ? eops.meet : null, digs, pad, profile, ground: mesh, hasMns: !!mns, hasVec: !!vec, photo: !!photo, seaY, seaTint, hasRoads: !!roads, roadMaterial: roads ? roads.material : null, extent: { x0, z0, x1: xe, z1: ze }, zRef };
 }
 
 /**

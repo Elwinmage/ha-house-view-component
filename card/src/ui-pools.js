@@ -66,6 +66,14 @@ function drawTool(card, pool, island = null) {
     leave: () => {
       if (card._poolDraw === D) card._poolDraw = null;
     },
+    undo: () => {
+      // the last point of the outline being drawn is taken back
+      if (!D.pts.length) return false;
+      D.pts.pop();
+      ed.drawDraft();
+      card.requestUpdate();
+      return true;
+    },
     draft: (d) => {
       const toPlan = ed.toPlan({ frame: ed.frame });
       const P = D.pts.map(([x, z]) => toPlan(x, z));
@@ -97,6 +105,22 @@ function drawTool(card, pool, island = null) {
  * takes the whole thing — the islands of a pond then follow it. Dragged in the view, or tapped and dropped.
  */
 function moveTool(card, pool, island = null) {
+  card._editors.setMoveTool(moveSpec(card, pool, island));
+  card.requestUpdate();
+}
+
+/**
+ * The points of the basin unfolded in the panel, dragged right away in the view (editors.js, setHandles); null
+ * when none is, or while one is being drawn.
+ */
+export function poolHandles(card) {
+  const pool = (card._data.edits.pools || []).find((p) => p.id === card._poolSel);
+  if (!pool || card._poolDraw || !poolValid(pool)) return null;
+  return { ...moveSpec(card, pool), key: `pool-pts:${pool.id}` };
+}
+
+/** The outline of a basin (or of one of its islands) as handles: what the move tool works on. */
+function moveSpec(card, pool, island = null) {
   const ed = card._editors;
   const target = island || pool;
   const pts = () => {
@@ -111,7 +135,7 @@ function moveTool(card, pool, island = null) {
       return store(a + dx, b + dz);
     });
   };
-  ed.setMoveTool({
+  return {
     key: `pool:${pool.id}${island ? `:${(pool.islands || []).indexOf(island)}` : ''}`,
     closed: true,
     points: pts,
@@ -121,14 +145,22 @@ function moveTool(card, pool, island = null) {
       // the whole basin moves with its islands, which are drawn in its water
       if (h.i === WHOLE && !island) for (const isl of pool.islands || []) shift(isl, x - from[0], z - from[1]);
     },
+    // a point more on a side, or one less (editors.js, setPointsTool): the outline is then a free shape
+    insert: (i, x, z) => {
+      target.pts.splice(i + 1, 0, ed.fromPlan(target)(x, z));
+      target.shape = 'free';
+    },
+    remove: (i) => {
+      target.pts.splice(i, 1);
+      target.shape = 'free';
+    },
     commit: () => {
       card._edited(true);
       ed.commit();
       card._pushPools();
       card.requestUpdate();
     },
-  });
-  card.requestUpdate();
+  };
 }
 
 /** Outline of the selected pool on the ground (editor overlay). */
@@ -317,6 +349,16 @@ function renderPoolEditor(card, p) {
                   >
                     ✥
                   </button>
+                  ${['add', 'del'].map(
+                    (m) =>
+                      html`<button
+                        class=${card._editors.pointsMode(`pool:${p.id}:${i}`) === m ? 'on' : ''}
+                        title=${t(`terrace_pt_${m}`)}
+                        @click=${() => card._editors.setPointsTool(m, moveSpec(card, p, isl))}
+                      >
+                        ${m === 'add' ? '＋' : '−'}
+                      </button>`,
+                  )}
                   <button
                     title=${t('delete')}
                     @click=${() => {

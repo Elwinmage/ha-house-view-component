@@ -4,7 +4,10 @@
 import * as THREE from 'three';
 import { SPECIES } from './engine/catalog.js';
 import { gridToPlan, planToGrid, houseParcel } from './engine/terrain.js';
+import { compileOps, nearestOnLine, opAt, opCenter, opOutline, runsOf, wallEnds } from './engine/terrain-edit.js';
+import { brushPreview, fillMesh, labelSprite, segment } from './engine/terrain-overlay.js';
 import { unionOutline, inPoly } from './parcels.js';
+import { nearestPoint, nearestSide } from './fences.js';
 import { normalizeScene } from './engine/scene-model.js';
 import { emptyEdits } from './engine/edits.js';
 import { GRAB_PX, WHOLE, handlesOf, movedPts, nearestHandle } from './move.js';
@@ -13,28 +16,42 @@ const round = (v, n) => Math.round(v * n) / n;
 const ringArea = (r) => r.reduce((a, p, i) => a + p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1], 0) / 2;
 const TOGGLE_DOMAINS = ['light', 'switch', 'input_boolean', 'fan', 'cover', 'lock', 'siren', 'humidifier'];
 
+/** Kind of ground correction a ground tool draws ('wall', 'terrace', 'brush'), 'all' for the tools that draw none. */
+export const opKindOf = (mode) => (mode === 'wall' || mode === 'terrace' ? mode : String(mode).startsWith('brush') ? 'brush' : 'all');
+
 export class WorldEditors {
   /**
    * @param {import('./engine.js').HouseEngine} engine
-   * @param {{onChange?: () => void}} [opts]
+   * @param {{onChange?: () => void, opName?: (op: object, i: number, ops: object[]) => string}} [opts]
    */
   constructor(engine, opts = {}) {
     this.engine = engine;
     this.onChange = opts.onChange || (() => {});
+    this.opName = opts.opName || (() => '');
     this.treeMode = 'off'; // 'off' | 'delete' | 'add'
     this.treeAdd = { species: 'oak', h: SPECIES.oak ? SPECIES.oak.height : 8 };
     this.tool = { mode: 'off', pts: [], r: 3, v: 0.5 }; // pts: grid-frame points of the shape being drawn (plan points for 'section')
     this.selOp = -1;
-    this.history = []; // undo stack of the tree editor
-    this.clickTool = null; // generic one-at-a-time click tool of a feature editor: { key, click(hit, ev), draft?(d), wall?, furniture? }
+    this.showOps = 'all'; // kind of ground correction the overlay shows: 'all' | 'wall' | 'terrace' | 'brush'
+    // generic one-at-a-time click tool of a feature editor: { key, click(hit, ev), draft?(d), undo?(), wall?, furniture? }
+    this.clickTool = null;
     this.move = null; // move tool in use: { spec, grab (the handle taken, null), from ([x, z] where it was taken) }
+    this.handles = null; // points dragged right away beside the tools (setHandles): the same shape, with `shown`
+    this.ptsTool = null; // points being added or removed (setPointsTool): { mode: 'add' | 'del', spec (null: the handles) }
     this.placing = null; // entity id waiting for its position (next click)
     this.parcelSel = null; // Set of parcel indexes while choosing the parcels of the property
     this.section = null; // { d, ground0, ground, surf, wall } of the last cross-section
     this.sectionLine = null;
+    this.hoverPt = null; // plan point under the pointer while a ground tool is in use
+    this.hoverY = 0; // scene y of that point (height of the ground there)
+    this.hoverOp = -1; // ground correction under the pointer (-1 none)
     this.draft = new THREE.Group();
     this.draft.name = 'terrain-draft';
     engine.scene.add(this.draft);
+    // what the next click would do: rebuilt at every pointer move, so it is kept out of the draft group
+    this.hover = new THREE.Group();
+    this.hover.name = 'terrain-hover';
+    engine.scene.add(this.hover);
     engine.onLoaded = () => this.drawDraft();
   }
 
@@ -57,6 +74,7 @@ export class WorldEditors {
       this.tool.mode = 'off';
       this.tool.pts = [];
       this.sectionLine = null;
+      this._setHover(null);
     }
     if (keep !== 'click' && this.clickTool) {
       if (this.clickTool.leave) this.clickTool.leave();
@@ -68,9 +86,14 @@ export class WorldEditors {
 
   dispose() {
     this.engine.setPicker(null);
+    this.engine.pickerWheel = null;
+    this.engine.pickerMove = null;
     this.engine.onLoaded = null;
+    clearTimeout(this._hoverTimer);
     this._clearDraft();
+    this._clearHover();
     this.engine.scene.remove(this.draft);
+    this.engine.scene.remove(this.hover);
   }
 
   _commit() {
@@ -81,14 +104,32 @@ export class WorldEditors {
   _syncPicker() {
     this.engine.setPicker(this.active ? (ev) => this._click(ev) : null);
     this.engine.pickerMove = this.active ? (ev) => this._move(ev) : null;
+    this.engine.pickerWheel = this.active ? (ev) => this._wheel(ev) : null;
   }
 
-  /** Pointer moving with a click tool: the tool shows what a click would use (tool.hover(hit), null off target). */
+  /** Shift + wheel over the view sizes the brush of the ground editor; true when the wheel was used for that. */
+  _wheel(ev) {
+    if (!ev.shiftKey || !this.tool.mode.startsWith('brush')) return false;
+    const r = Math.min(20, Math.max(0.5, round((this.tool.r || 3) + (ev.deltaY < 0 ? 0.5 : -0.5), 2)));
+    if (r !== this.tool.r) {
+      this.tool.r = r;
+      this.drawHover();
+      this.onChange(false); // the radius field of the panel follows
+    }
+    return true;
+  }
+
+  /**
+   * Pointer moving with a click tool (the tool shows what a click would use: tool.hover(hit), null off target), or
+   * with a ground tool (the brush radius and the relief it would leave are drawn under the pointer).
+   */
   _move(ev) {
     const t = this.clickTool;
-    if (!t || !t.hover) return;
-    if (!ev) return t.hover(null);
-    t.hover(this._pickFor(t, ev));
+    if (t) {
+      if (!t.hover) return;
+      return t.hover(ev ? this._pickFor(t, ev) : null);
+    }
+    if (this.tool.mode !== 'off') this._toolHover(ev);
   }
 
   /** What a click tool works on: its own picking (`pick(ev)`), a piece of furniture, or a point of a floor or wall. */
@@ -99,7 +140,8 @@ export class WorldEditors {
 
   /**
    * Install the click tool of a feature editor (fences, irrigation, vacuum...), or null to leave it. Only one click
-   * mode is active at a time. tool.click(hit, ev) gets the picked point; tool.draft(d) draws its overlay.
+   * mode is active at a time. tool.click(hit, ev) gets the picked point; tool.draft(d) draws its overlay; a tool
+   * that draws a shape point by point takes its last point back with tool.undo() (true when it had one).
    */
   setClickTool(tool) {
     if (this.clickTool && this.clickTool !== tool && this.clickTool.leave) this.clickTool.leave();
@@ -145,21 +187,137 @@ export class WorldEditors {
       },
       draft: (d) => this._moveDraft(d),
       leave: () => {
-        this.engine.moveGrab = null;
         this.move = null;
+        this._syncGrab(); // back to the handles kept beside the tools, when there are some
         if (spec.leave) spec.leave();
       },
     });
     this.move = { spec, grab: null, from: null };
-    this.engine.moveGrab = {
-      pick: (ev) => (this.move && !this.move.grab ? this._handleAt(ev) : null),
-      y: (h) => this._handleY(h),
-      start: (h) => this._grab(h),
-      move: (h, x, z) => this._moveTo(h, x, z),
-      tap: () => this.onChange(false), // the handle stays taken: the next click drops it
-      end: () => this._drop(),
-    };
+    this._syncGrab();
     this.drawDraft();
+  }
+
+  /**
+   * Handles kept in the view beside the tool in use, or without any: the points of the object being edited in a
+   * panel are dragged right away, without asking for the move tool first. A press that does not move is left to
+   * the tool in use, as a click on that spot. `spec` as for setMoveTool ({ key, points, move, commit, closed,
+   * pickAt }), without a handle for the object as a whole (that one is the move tool's); null removes them.
+   */
+  setHandles(spec) {
+    const cur = this.handles;
+    if (!spec && !cur) return;
+    if (spec && cur && cur.spec.key === spec.key) {
+      // the same object, rendered again: a drag in progress goes on, the dots follow what was changed elsewhere
+      cur.spec = { ...spec, whole: false };
+      if (!cur.grab && this._handlesKey(cur) !== cur.shown) this.drawDraft();
+      return;
+    }
+    this.handles = spec ? { spec: { ...spec, whole: false }, grab: null, from: null, shown: '' } : null;
+    this._syncGrab();
+    this.drawDraft();
+  }
+
+  /**
+   * Click tool on the points of the object being edited: 'add' puts a point on the side clicked, 'del' removes the
+   * point clicked (a line keeps two of them, an outline three). It works on the handles kept in the view
+   * (setHandles), or on `spec` when one is given (an object that has none: the island of a pond). The spec says how
+   * to `insert(i, x, z)` a plan point after its point `i` and how to `remove(i)` one. Null, or the mode already in
+   * use, leaves the tool.
+   */
+  setPointsTool(mode, spec = null) {
+    if (!mode || this.pointsMode(spec ? spec.key : null) === mode) {
+      if (this.clickTool && this.clickTool.key === 'pts') this.setClickTool(null);
+      return;
+    }
+    this.setClickTool({
+      key: 'pts',
+      click: (hit) => this._ptsClick(hit),
+      draft: (d) => this._ptsDraft(d),
+      leave: () => {
+        this.ptsTool = null;
+      },
+    });
+    this.ptsTool = { mode: mode === 'del' ? 'del' : 'add', spec };
+    this.drawDraft();
+    this.onChange(false);
+  }
+
+  /**
+   * Mode of the points tool in use ('add' | 'del'), null without it: on the handles kept in the view, or on the
+   * object of key `key` when it was started on one.
+   */
+  pointsMode(key = null) {
+    const T = this.clickTool && this.clickTool.key === 'pts' ? this.ptsTool : null;
+    return T && (T.spec ? T.spec.key : null) === key ? T.mode : null;
+  }
+
+  /** What the points tool works on: the object it was started on, else the handles kept in the view. */
+  _ptsSpec() {
+    const T = this.ptsTool;
+    const spec = T && (T.spec || (this.handles && this.handles.spec));
+    return spec && spec.insert && spec.remove ? spec : null;
+  }
+
+  _ptsClick(hit) {
+    const sp = this._ptsSpec();
+    if (!sp) return;
+    const P = sp.points();
+    const { x, z } = hit.point;
+    if (this.ptsTool.mode === 'del') {
+      const n = nearestPoint(P, x, z);
+      if (n.i < 0 || n.d > 2.5 || P.length <= (sp.closed ? 3 : 2)) return;
+      sp.remove(n.i);
+    } else {
+      const n = nearestSide(P, !!sp.closed, x, z);
+      if (n.i < 0 || n.d > 3) return;
+      const a = P[n.i];
+      const b = P[(n.i + 1) % P.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (n.t * L < 0.1 || (1 - n.t) * L < 0.1) return; // on one of the ends of the side: there is a point already
+      sp.insert(n.i, a[0] + (b[0] - a[0]) * n.t, a[1] + (b[1] - a[1]) * n.t);
+    }
+    sp.commit();
+  }
+
+  /** Overlay of the points tool: the sides to click between the points, and the points of an object without handles. */
+  _ptsDraft({ dot, ribbon }) {
+    const sp = this._ptsSpec();
+    if (!sp) return;
+    const pts = sp.points();
+    if (pts.length > 1) ribbon(sp.closed ? [...pts, pts[0]] : pts, '#7b8a95', 0.12);
+    if (this.ptsTool.spec) for (const [x, z] of pts) dot(x, z, '#ffffff');
+  }
+
+  /** Where the handles kept in the view are: the overlay is drawn again when it changes. */
+  _handlesKey(S) {
+    return this.engine.world ? JSON.stringify(S.spec.points()) : '';
+  }
+
+  /** What the pointer takes hold of in the view: the handles of the move tool in use, else the ones kept beside the tools. */
+  _syncGrab() {
+    const S = this.move || this.handles;
+    if (!S) {
+      this.engine.moveGrab = null;
+      return;
+    }
+    const beside = S !== this.move;
+    this.engine.moveGrab = {
+      pick: (ev) => (!S.grab ? this._handleAt(ev, S) : null),
+      y: (h) => this._handleY(h),
+      start: (h) => this._grab(h, S),
+      move: (h, x, z) => this._moveTo(h, x, z, S),
+      tap: beside
+        ? (h, ev) => {
+            // not a drag: the handle is let go, and the tool in use gets the click it would have had
+            S.grab = null;
+            S.from = null;
+            this.drawDraft();
+            this.onChange(false);
+            if (this.engine.picker) this.engine.picker(ev, this.engine);
+          }
+        : () => this.onChange(false), // the handle stays taken: the next click drops it
+      end: () => this._drop(S),
+    };
   }
 
   /** The move tool `key` is the one in use. */
@@ -167,8 +325,8 @@ export class WorldEditors {
     return !!this.move && this.move.spec.key === key && !!this.clickTool && this.clickTool.key === `move:${key}`;
   }
 
-  _handles() {
-    const sp = this.move.spec;
+  _handles(S = this.move) {
+    const sp = S.spec;
     return handlesOf(sp.points(), sp.whole !== false);
   }
 
@@ -178,23 +336,23 @@ export class WorldEditors {
     return w ? w.groundAt(h.x, h.z) : 0;
   }
 
-  _handleAt(ev) {
+  _handleAt(ev, S = this.move) {
     const [sx, sy] = this.engine.pointerAt(ev);
-    const sp = this.move.spec;
+    const sp = S.spec;
     const at = (h) => this.engine.project(h.x, sp.pickAt ? sp.pickAt(h) : this._handleY(h), h.z);
-    return nearestHandle(this._handles(), at, sx, sy, GRAB_PX);
+    return nearestHandle(this._handles(S), at, sx, sy, GRAB_PX);
   }
 
-  _grab(h) {
-    this.move.grab = h;
-    this.move.from = [h.x, h.z];
+  _grab(h, S = this.move) {
+    S.grab = h;
+    S.from = [h.x, h.z];
     this.drawDraft();
     this.onChange(false);
   }
 
   /** The handle taken follows the pointer: only the overlay is redrawn, the world waits for the drop. */
-  _moveTo(h, x, z) {
-    const M = this.move;
+  _moveTo(h, x, z, S = this.move) {
+    const M = S;
     if (!M) return;
     M.spec.move(h, x, z, M.from);
     M.from = [x, z];
@@ -202,8 +360,8 @@ export class WorldEditors {
     this.drawDraft();
   }
 
-  _drop() {
-    const M = this.move;
+  _drop(S = this.move) {
+    const M = S;
     if (!M) return;
     M.grab = null;
     M.from = null;
@@ -294,17 +452,8 @@ export class WorldEditors {
     Object.assign(this.treeAdd, p);
   }
 
-  treeUndo() {
-    const undo = this.history.pop();
-    if (undo) {
-      undo();
-      this._commit();
-    }
-  }
-
   treeReset() {
     this.edits.trees = emptyEdits().trees;
-    this.history.length = 0;
     this._commit();
   }
 
@@ -360,21 +509,12 @@ export class WorldEditors {
     if (M.src.kind === 'added') {
       const a = added[M.src.idx];
       if (!a) return;
-      const was = a.at;
       a.at = at;
-      this.history.push(() => {
-        a.at = was;
-      });
     } else {
       // a tree of the height model or of the plan: taken off there, put back here as a tree of its own
       if (M.src.kind === 'dsm') rem.dsm.push([M.src.gx, M.src.gz]);
       else rem.sd.push(M.src.idx);
       added.push({ species: M.species, at, h: round((M.scale || 1) * SPECIES[M.species].height, 10) });
-      this.history.push(() => {
-        added.pop();
-        if (M.src.kind === 'dsm') rem.dsm.pop();
-        else rem.sd.pop();
-      });
     }
     this._commit();
   }
@@ -399,16 +539,9 @@ export class WorldEditors {
       if (best < 0) return;
       const src = w.trees[best]._src;
       const rem = this.edits.trees.removed;
-      if (src.kind === 'dsm') {
-        rem.dsm.push([src.gx, src.gz]);
-        this.history.push(() => rem.dsm.pop());
-      } else if (src.kind === 'sd') {
-        rem.sd.push(src.idx);
-        this.history.push(() => rem.sd.pop());
-      } else {
-        const [a] = this.edits.trees.added.splice(src.idx, 1);
-        this.history.push(() => this.edits.trees.added.splice(src.idx, 0, a));
-      }
+      if (src.kind === 'dsm') rem.dsm.push([src.gx, src.gz]);
+      else if (src.kind === 'sd') rem.sd.push(src.idx);
+      else this.edits.trees.added.splice(src.idx, 1);
     } else {
       const ray = eng.rayAt(ev);
       let p = null;
@@ -421,7 +554,6 @@ export class WorldEditors {
         if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) return;
       }
       this.edits.trees.added.push({ species: this.treeAdd.species, at: [round(p.x, 10), round(p.z, 10)], h: this.treeAdd.h });
-      this.history.push(() => this.edits.trees.added.pop());
     }
     this._commit();
   }
@@ -432,18 +564,53 @@ export class WorldEditors {
     return this.engine.terrainCfg;
   }
 
-  setTool(mode) {
+  /** `rebuild` false when the world is known to be up to date (the caller just left another mode): only redraw. */
+  setTool(mode, rebuild = true) {
     if (mode !== 'off' && !this.cfg) return false; // needs a terrain
     this._exclusive('tool');
+    if (mode !== this.tool.mode) {
+      this.tool.pts = []; // points of a shape left unfinished: they are not for the tool being taken
+      this.sectionLine = null;
+      // a tool that draws one kind of correction shows that kind only: the others are in the way
+      this._showOps(opKindOf(mode));
+    }
     this.tool.mode = mode;
+    this._setHover(null);
     this._syncPicker();
-    this.engine.commit();
+    if (rebuild) this.engine.commit();
+    else this.drawDraft();
     this.onChange(false);
     return true;
   }
 
+  /** The correction `op`, of rank `i`, is drawn on the view: its kind is the one shown, or it is the selected one. */
+  opShown(op, i) {
+    return this.showOps === 'all' || op.type === this.showOps || i === this.selOp;
+  }
+
+  _showOps(kind) {
+    this.showOps = kind;
+    // the selection follows: a correction of another kind would be the only one left on the view
+    const ops = this.edits.terrain;
+    if (kind === 'all' || (ops[this.selOp] && ops[this.selOp].type === kind)) return;
+    for (let i = ops.length - 1; i >= 0; i--)
+      if (ops[i].type === kind) {
+        this.selOp = i;
+        return;
+      }
+  }
+
+  /** Show one kind of ground correction on the view ('wall', 'terrace', 'brush'), or all of them ('all'). */
+  setShowOps(kind) {
+    this._showOps(['wall', 'terrace', 'brush'].includes(kind) ? kind : 'all');
+    this._setHover(null);
+    this.drawDraft();
+    this.onChange(false);
+  }
+
   setToolParams(p) {
     Object.assign(this.tool, p);
+    this.drawHover(); // the radius and the preview follow the fields right away, without moving the pointer
   }
 
   cancelDraft() {
@@ -451,6 +618,87 @@ export class WorldEditors {
     this.sectionLine = null;
     this.drawDraft();
     this.onChange(false);
+  }
+
+  /**
+   * Take back the last point of the shape being drawn: a ground correction, or what the click tool in use draws
+   * (its `undo`). False when nothing is being drawn, or nothing that has a point yet: there is nothing to take back
+   * before the last change of the corrections themselves.
+   */
+  undoPoint() {
+    if (this.tool.mode !== 'off' && this.tool.pts.length) {
+      this.tool.pts.pop();
+      this.sectionLine = null;
+      this.drawDraft();
+      this.onChange(false);
+      return true;
+    }
+    return !!(this.clickTool && this.clickTool.undo && this.clickTool.undo());
+  }
+
+  /**
+   * The corrections were put back as they were before or after a change (undo, redo): `lists` names the lists
+   * where an entry came or went (history.js, resizedLists). What is being moved or picked, and the correction
+   * selected by its rank, may be another entry now: they are left. The trees are told apart by where they stand:
+   * their tools go on.
+   */
+  restored(lists) {
+    const others = lists.filter((key) => !key.startsWith('trees'));
+    if (others.includes('terrain')) this.selOp = -1;
+    if (others.length && this.clickTool) this.setClickTool(null);
+    this._treeMove = null;
+    this._setHover(null);
+  }
+
+  // ------------------------------------------------------------ ground: what the next click would do
+
+  /** Pointer over the view with a ground tool: the preview is rebuilt at most every 40 ms (it samples the ground). */
+  _toolHover(ev) {
+    const w = this.engine.world;
+    this._hoverWant = ev && !ev.buttons && w && w.terrain ? this._groundPoint(ev) : null;
+    const wait = 40 - (performance.now() - (this._hoverT || 0));
+    if (wait > 0) {
+      if (!this._hoverTimer)
+        this._hoverTimer = setTimeout(() => {
+          this._hoverTimer = null;
+          this._applyHover();
+        }, wait);
+      return;
+    }
+    this._applyHover();
+  }
+
+  _applyHover() {
+    this._hoverT = performance.now();
+    const p = this._hoverWant;
+    this._setHover(p ? [p.x, p.z] : null, p ? p.y : 0);
+  }
+
+  /** Point under the pointer (plan frame) and correction found there; redraws only when one of them changes. */
+  _setHover(pt, y = 0) {
+    clearTimeout(this._hoverTimer);
+    this._hoverTimer = null;
+    const g = pt && this.cfg ? planToGrid(this.cfg.data, this.cfg)(pt[0], pt[1]) : null;
+    const op = g ? opAt(this.edits.terrain, g[0], g[1], (o, i) => this.opShown(o, i)) : -1;
+    const still = !pt === !this.hoverPt && (!pt || Math.hypot(pt[0] - this.hoverPt[0], pt[1] - this.hoverPt[1]) < 0.03);
+    this.hoverPt = pt;
+    this.hoverY = y;
+    const sameOp = op === this.hoverOp;
+    this.hoverOp = op;
+    if (still && sameOp) return;
+    this.drawHover();
+  }
+
+  /** Brush a click at `pt` (plan frame) would add, in the grid frame: same values as _terrainToolClick. */
+  _brushAt(pt, y) {
+    const m = this.tool.mode;
+    if (!m.startsWith('brush') || !pt || !this.cfg) return null;
+    const mode = m.slice(6);
+    const v = this.tool.v;
+    const value =
+      mode === 'set' ? (Number.isFinite(v) ? v : round(this._altOf(y), 100)) : mode === 'add' ? v || 0 : Math.min(Math.max(v || 1, 0.1), 1);
+    const g = planToGrid(this.cfg.data, this.cfg)(pt[0], pt[1]);
+    return { type: 'brush', pt: g, r: Math.max(0.5, this.tool.r || 3), mode, value };
   }
 
   _altOf(y) {
@@ -470,7 +718,12 @@ export class WorldEditors {
     const g = planToGrid(this.cfg.data, this.cfg)(p.x, p.z);
     const tool = this.tool;
     const m = tool.mode;
-    if (m === 'wall' || m === 'terrace') {
+    if (m === 'select') {
+      // clicking a correction in the view selects it in the panel (-1 outside any of them: nothing selected)
+      this.selOp = opAt(this.edits.terrain, g[0], g[1], (o, i) => this.opShown(o, i));
+      this.drawDraft();
+      this.onChange(false);
+    } else if (m === 'wall' || m === 'terrace') {
       tool.pts.push(g);
       this.drawDraft();
       this.onChange(false);
@@ -544,17 +797,17 @@ export class WorldEditors {
     this.drawDraft();
   }
 
-  /** Move the points of ground correction `i` in the view, or the whole correction (a brush is a single point). */
-  startOpMove(i) {
+  /** The points of ground correction `i` as handles (a brush is a single point); null when it has none to show. */
+  _opSpec(i) {
     const op = this.edits.terrain[i];
-    if (!op || !this.cfg) return;
+    if (!op || !this.cfg) return null;
     const key = op.type === 'wall' ? 'pts' : op.type === 'terrace' ? 'poly' : null;
+    if (!key && !op.pt) return null;
     const pts = () => {
       const g2p = gridToPlan(this.cfg.data, this.cfg);
       return key ? op[key].map(([x, z]) => g2p(x, z)) : [g2p(op.pt[0], op.pt[1])];
     };
-    this.selOp = i;
-    this.setMoveTool({
+    return {
       key: `op:${i}`,
       closed: op.type === 'terrace',
       whole: !!key,
@@ -565,8 +818,38 @@ export class WorldEditors {
         if (key) op[key] = next;
         else op.pt = next[0];
       },
+      // a wall and a platform take a point more, or one less (setPointsTool); a brush has only its centre
+      ...(key
+        ? {
+            insert: (k, x, z) =>
+              op[key].splice(
+                k + 1,
+                0,
+                planToGrid(this.cfg.data, this.cfg)(x, z).map((v) => round(v, 100)),
+              ),
+            remove: (k) => op[key].splice(k, 1),
+          }
+        : {}),
       commit: () => this._commit(),
-    });
+    };
+  }
+
+  /** Move the points of ground correction `i` in the view, or the whole correction. */
+  startOpMove(i) {
+    const spec = this._opSpec(i);
+    if (!spec) return;
+    this.selOp = i;
+    this.setMoveTool(spec);
+  }
+
+  /**
+   * The points of the correction selected in the panel, dragged right away: while corrections are being picked in
+   * the view or no ground tool is in use (a brush or a wall being drawn keeps the clicks to itself).
+   */
+  opHandles() {
+    const busy = this.clickTool && this.clickTool.key !== 'pts'; // (the tool that adds and removes points works on them)
+    if (this.selOp < 0 || busy || !['off', 'select'].includes(this.tool.mode)) return null;
+    return this._opSpec(this.selOp);
   }
 
   editOp(i, patch) {
@@ -609,7 +892,14 @@ export class WorldEditors {
     const nz = (bx - ax) / bl;
     const mx = (ax + bx) / 2;
     const mz = (az + bz) / 2;
-    this.showSection([mx - nx * 7, mz - nz * 7], [mx + nx * 7, mz + nz * 7], { hi: op.hi, lo: op.lo });
+    // top and foot of the wall where it is cut: they may differ from one end of the wall to the other
+    const runs = runsOf(P);
+    const k = (runs[best] + bl / 2) / (runs[runs.length - 1] || 1);
+    const e = wallEnds(op);
+    this.showSection([mx - nx * 7, mz - nz * 7], [mx + nx * 7, mz + nz * 7], {
+      hi: e.hi + (e.hi2 - e.hi) * k,
+      lo: e.lo + (e.lo2 - e.lo) * k,
+    });
     this.onChange(false);
   }
 
@@ -834,36 +1124,43 @@ export class WorldEditors {
 
   // ------------------------------------------------------------ draft (yellow shape being drawn, existing corrections)
 
-  _clearDraft() {
-    for (const c of [...this.draft.children]) {
-      this.draft.remove(c);
-      if (c.geometry) c.geometry.dispose();
-      if (c.material) c.material.dispose();
+  /** Empty an overlay group; a sprite keeps its geometry, which three.js shares between all of them. */
+  _clearGroup(group) {
+    for (const c of [...group.children]) {
+      group.remove(c);
+      if (c.geometry && !c.isSprite && !c.userData.shared) c.geometry.dispose();
+      if (c.material) {
+        if (c.material.map) c.material.map.dispose();
+        c.material.dispose();
+      }
     }
   }
 
-  drawDraft() {
-    this._clearDraft();
+  _clearDraft() {
+    this._clearGroup(this.draft);
+  }
+
+  /**
+   * Drawing primitives of the overlays, added to `group`: they follow the ground (or `level(x, z)` when given),
+   * ignore the depth buffer and take plan points. Only called once the world is there.
+   */
+  _prim(group, level = null) {
     const w = this.engine.world;
-    const cfg = this.cfg;
-    if (!w) return;
-    const from = cfg ? gridToPlan(cfg.data, cfg) : (x, z) => [x, z];
-    const y = (x, z) => w.groundAt(x, z) + 0.5;
+    const y = level ? (x, z) => level(x, z) + 0.5 : (x, z) => w.groundAt(x, z) + 0.5;
     const mat = (c) => new THREE.LineBasicMaterial({ color: c, depthTest: false });
     const line = (planPts, color, closed) => {
       if (planPts.length < 2) return;
       const g = new THREE.BufferGeometry().setFromPoints(planPts.map(([x, z]) => new THREE.Vector3(x, y(x, z), z)));
       const l = closed ? new THREE.LineLoop(g, mat(color)) : new THREE.Line(g, mat(color));
       l.renderOrder = 998;
-      this.draft.add(l);
+      group.add(l);
     };
     const dot = (x, z, color) => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false }));
       m.position.set(x, y(x, z), z);
       m.renderOrder = 999;
-      this.draft.add(m);
+      group.add(m);
     };
-    // flat colored strip on the ground (lines are 1 px wide whatever the zoom: too thin to tell the types apart)
     const ribbon = (planPts, color, width = 0.25, closed = false) => {
       const pos = [];
       const n = closed ? planPts.length : planPts.length - 1;
@@ -912,56 +1209,178 @@ export class WorldEditors {
         new THREE.MeshBasicMaterial({ color, depthTest: false, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
       );
       m.renderOrder = 998;
-      this.draft.add(m);
+      group.add(m);
     };
+    return { y, line, dot, ribbon, group };
+  }
+
+  drawDraft() {
+    this._clearDraft();
+    const w = this.engine.world;
+    const cfg = this.cfg;
+    if (!w) return;
+    const from = cfg ? gridToPlan(cfg.data, cfg) : (x, z) => [x, z];
+    const { y, line, dot, ribbon } = this._prim(this.draft);
     if (this.clickTool && this.clickTool.draft) this.clickTool.draft({ line, dot, ribbon, group: this.draft, y });
+    const H = this.handles;
+    if (H && !this.move) {
+      // the points of the object being edited, dragged right away: the one taken lit up, the outline shown while
+      // it moves (the world itself waits for the drop)
+      const pts = H.spec.points();
+      if (H.grab && pts.length > 1) ribbon(H.spec.closed ? [...pts, pts[0]] : pts, '#7b8a95', 0.12);
+      pts.forEach(([x, z], i) => dot(x, z, H.grab && H.grab.i === i ? '#ffe14d' : '#ffffff'));
+      H.shown = JSON.stringify(pts);
+    }
     if (this.parcelSel) {
       // parcels of the terrain: selected ones filled in green, the others outlined in yellow
       this.parcels.forEach((pc, k) => {
         const P = pc.poly.map(([x, z]) => from(x, z));
         const on = this.parcelSel.has(k);
         line(P, on ? '#4cd964' : '#ffe14d', true);
-        if (!on) return;
-        const ring = P.length > 2 && P[0][0] === P[P.length - 1][0] && P[0][1] === P[P.length - 1][1] ? P.slice(0, -1) : P;
-        const tris = THREE.ShapeUtils.triangulateShape(
-          ring.map(([x, z]) => new THREE.Vector2(x, z)),
-          [],
-        );
-        const pos = [];
-        for (const t of tris) for (const v of t) pos.push(ring[v][0], y(ring[v][0], ring[v][1]) - 0.3, ring[v][1]);
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        const m = new THREE.Mesh(
-          g,
-          new THREE.MeshBasicMaterial({ color: '#4cd964', transparent: true, opacity: 0.25, depthTest: false, side: THREE.DoubleSide }),
-        );
-        m.renderOrder = 997;
-        this.draft.add(m);
+        if (on) this._add(this.draft, fillMesh(P, y, '#4cd964', 0.25, -0.3));
       });
     }
     const tool = this.tool;
     if (tool.mode !== 'off') {
-      // existing corrections, to see and pick what is already there
+      // corrections already in place: outlined, tinted and named, so they can be seen, picked and told apart
+      // (those of the kind shown: with all of them on a busy ground, one hides the other)
       this.edits.terrain.forEach((op, i) => {
-        const col = i === this.selOp ? '#ffffff' : op.type === 'wall' ? '#ff9f43' : '#38d9f5';
-        if (op.type === 'wall')
-          line(
-            op.pts.map(([x, z]) => from(x, z)),
-            col,
-            false,
-          );
-        else if (op.type === 'terrace')
-          line(
-            op.poly.map(([x, z]) => from(x, z)),
-            col,
-            true,
-          );
+        if (this.opShown(op, i)) this._drawOp(this.draft, op, i, i === this.selOp ? 2 : 0);
       });
     }
     const pl = tool.mode === 'section' ? tool.pts : tool.pts.map(([x, z]) => from(x, z));
     line(pl, '#ffe14d', false);
     for (const [x, z] of pl) dot(x, z, '#ffe14d');
     if (this.sectionLine) line(this.sectionLine, '#ffe14d', false);
+    this.drawHover();
+  }
+
+  _add(group, obj) {
+    if (obj) group.add(obj);
+    return obj;
+  }
+
+  /**
+   * Height of the top of wall `op` along its line `P` (plan frame), for its outline: on the line itself the ground
+   * is its top or its foot at random, and the outline would go up and down from one point to the next.
+   */
+  _wallTop(op, P) {
+    const e = wallEnds(op);
+    const cum = runsOf(P);
+    const length = cum[cum.length - 1] || 1;
+    const toY = (alt) => alt - this.engine.world.terrain.zRef + this.cfg.base;
+    return (x, z) => {
+      const q = nearestOnLine(P, x, z);
+      if (!q) return this.engine.world.groundAt(x, z);
+      const run = cum[q.seg] + Math.min(Math.max(q.t, 0), 1) * (cum[q.seg + 1] - cum[q.seg]);
+      return toY(e.hi + (e.hi2 - e.hi) * (run / length));
+    };
+  }
+
+  /**
+   * One ground correction in `group`: its outline, a tint inside, the high side of a wall and its name.
+   * `level`: 0 = one of the others, 1 = under the pointer, 2 = the one selected in the panel.
+   */
+  _drawOp(group, op, i, level) {
+    const o = opOutline(op);
+    const cfg = this.cfg;
+    if (!o || !cfg) return;
+    const from = gridToPlan(cfg.data, cfg);
+    const P = o.pts.map(([x, z]) => from(x, z));
+    const { y, line, ribbon } = this._prim(group, op.type === 'wall' ? this._wallTop(op, P) : null);
+    const strong = level > 0;
+    const col =
+      level === 2 ? '#ffffff' : level === 1 ? '#ffe14d' : op.type === 'wall' ? '#ff9f43' : op.type === 'terrace' ? '#38d9f5' : '#c08bff';
+    ribbon(P, col, strong ? 0.4 : 0.22, o.closed);
+    if (o.fill) this._add(group, fillMesh(P, y, col, strong ? 0.22 : 0.1, -0.22));
+    // a wall is told from its high side: a short tick in the middle of every segment points at it
+    if (op.type === 'wall')
+      for (let k = 0; k < P.length - 1; k++) {
+        const [ax, az] = P[k];
+        const [bx, bz] = P[k + 1];
+        const L = Math.hypot(bx - ax, bz - az) || 1;
+        const nx = (-(bz - az) / L) * (op.side || 1);
+        const nz = ((bx - ax) / L) * (op.side || 1);
+        const mx = (ax + bx) / 2;
+        const mz = (az + bz) / 2;
+        line(
+          [
+            [mx, mz],
+            [mx + nx * 0.9, mz + nz * 0.9],
+          ],
+          col,
+          false,
+        );
+      }
+    // the two ends of the selected wall are named, as in the panel: A where it was started, B where it ends
+    if (op.type === 'wall' && level === 2)
+      for (const [mark, [x, z]] of [
+        ['A', P[0]],
+        ['B', P[P.length - 1]],
+      ])
+        this._add(group, labelSprite(mark, [x, y(x, z) + 0.5, z], { h: 0.036, color: '#ffe14d' }));
+    const c = opCenter(op);
+    if (!c) return;
+    const [lx, lz] = from(c[0], c[1]);
+    const name = this.opName(op, i, this.edits.terrain);
+    if (name)
+      this._add(group, labelSprite(name, [lx, y(lx, lz) + 0.9, lz], { h: strong ? 0.044 : 0.034, opacity: strong ? 1 : 0.62, color: col }));
+  }
+
+  _clearHover() {
+    this._clearGroup(this.hover);
+  }
+
+  /**
+   * What the next click would do, under the pointer: radius and resulting relief of a brush, segment still to close
+   * of a wall / terrace / cross-section, and the correction the pointer is over (outlined, with its name).
+   */
+  drawHover() {
+    this._clearHover();
+    const w = this.engine.world;
+    const cfg = this.cfg;
+    const mode = this.tool.mode;
+    if (!w || !w.terrain || !cfg || mode === 'off') return;
+    const T = w.terrain;
+    const from = gridToPlan(cfg.data, cfg);
+    const { y, line, dot } = this._prim(this.hover);
+    if (this.hoverOp >= 0 && this.hoverOp !== this.selOp) this._drawOp(this.hover, this.edits.terrain[this.hoverOp], this.hoverOp, 1);
+    const pt = this.hoverPt;
+    if (!pt) return;
+    const br = this._brushAt(pt, this.hoverY);
+    if (br) {
+      // the ground as the brush would leave it: green where it rises, orange where it falls
+      const { apply } = compileOps([br], from, (alt) => alt - T.zRef + cfg.base);
+      const g0 = (x, z) => T.heightAt(x, z);
+      const grid = br.mode === 'smooth' ? { na: 24, nr: 6 } : { na: 36, nr: 9 };
+      const pv = brushPreview(pt[0], pt[1], br.r, g0, (x, z) => apply(x, z, g0(x, z), g0), grid);
+      this.hover.add(pv.mesh);
+      line(pv.ring, '#ffe14d', true);
+      this.hover.add(segment([pt[0], pv.y0, pt[1]], [pt[0], pv.y0 + pv.dy, pt[1]], '#ffffff'));
+      dot(pt[0], pt[1], '#ffe14d');
+      const alt = this._altOf(this.hoverY); // the altitude a click would read there, as _terrainToolClick does
+      const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}`;
+      const txt =
+        br.mode === 'set'
+          ? `R ${br.r} m · ${alt.toFixed(2)} → ${br.value.toFixed(2)} m`
+          : br.mode === 'add'
+            ? `R ${br.r} m · ${alt.toFixed(2)} m ${sign(br.value)} m`
+            : `R ${br.r} m · ${alt.toFixed(2)} m · ${sign(pv.peak)} m`;
+      this.hover.add(labelSprite(txt, [pt[0], y(pt[0], pt[1]) + 1.2, pt[1]], { h: 0.04, color: '#ffe14d' }));
+      return;
+    }
+    if (mode === 'select') return;
+    // shape being drawn: the segment the next click would add, and its length
+    const pl = mode === 'section' ? this.tool.pts : this.tool.pts.map(([x, z]) => from(x, z));
+    dot(pt[0], pt[1], '#ffe14d');
+    if (!pl.length) return;
+    const last = pl[pl.length - 1];
+    line([last, pt], '#b9a43a', false);
+    if (mode === 'terrace' && pl.length >= 2) line([pt, pl[0]], '#6f6530', false);
+    const d = Math.hypot(pt[0] - last[0], pt[1] - last[1]);
+    const mx = (pt[0] + last[0]) / 2;
+    const mz = (pt[1] + last[1]) / 2;
+    this.hover.add(labelSprite(`${d.toFixed(2)} m`, [mx, y(mx, mz) + 0.9, mz], { h: 0.036, color: '#ffe14d' }));
   }
 }
 

@@ -27,6 +27,9 @@ describe('card option editor', () => {
         'height',
         'min_height',
         'fps_cap',
+        'quality',
+        'keep_scene',
+        'auto_reload',
         'year_seconds',
         'toolbar_buttons',
         'hide_menu',
@@ -43,7 +46,7 @@ describe('card option editor', () => {
         expect(s.title).not.toMatch(/^ed_/);
       }
       const options = flat(schema).flatMap((s) => (s.selector.select ? s.selector.select.options : []));
-      expect(options.length).toBe(13);
+      expect(options.length).toBe(16);
       for (const o of options) expect(o.label).not.toMatch(/^ed_/);
     }
     for (const key of Object.keys(DEFAULTS)) expect(flat(editorSchema(makeT('en'))).map((s) => s.name)).toContain(key);

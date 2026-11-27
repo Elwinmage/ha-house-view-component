@@ -3,6 +3,7 @@
 // sleepers, log rounds). Pure: no three.js, no DOM, unit-tested. The same reading as the previews of the catalog
 // (scripts/render_previews.py there), so a path looks here like the picture of its entry.
 import { localName } from './catalog-lib.js';
+import { shadeHex } from './surface-lib.js';
 
 /** The kinds the card ships with: the surfaces it drew before the catalog had a section of its own. */
 export const BUILTIN_PATHS = {
@@ -165,19 +166,8 @@ export const pathKindName = (id) => NAMES[id] || '';
 export const pathWidth = (def, fallback) =>
   def && def.width && def.width.min > 0 && def.width.max >= def.width.min ? def.width : fallback;
 
-// ---------------------------------------------------------------- colours
-
-const hex2 = (v) =>
-  Math.round(Math.min(255, Math.max(0, v)))
-    .toString(16)
-    .padStart(2, '0');
-
-/** A colour lightened (factor above 1) or darkened. */
-export function shadeHex(hex, factor) {
-  const n = parseInt(String(hex).slice(1), 16);
-  if (!Number.isFinite(n)) return hex;
-  return `#${hex2(((n >> 16) & 255) * factor)}${hex2(((n >> 8) & 255) * factor)}${hex2((n & 255) * factor)}`;
-}
+/** A colour lightened (factor above 1) or darkened: shared by every painted surface. */
+export { shadeHex };
 
 // ---------------------------------------------------------------- modular paths
 

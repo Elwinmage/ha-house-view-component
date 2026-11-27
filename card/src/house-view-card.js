@@ -1,11 +1,25 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { HouseEngine } from './engine.js';
 import { HouseViewApi, errorReason, githubState, saveCleared, saveFailure } from './api.js';
+import { defineCard } from './card-shell.js';
+import { sameStamps, stampsOf } from './scene-reserve.js';
+import { History, listSizes, resizedLists, syncInto, typingIn, undoKey } from './history.js';
+import { RELOAD_KEY, buildOf, isOtherBuild, shouldReload } from './card-update.js';
 import { WorldEditors, drawSection } from './editors.js';
-import { FenceTools, GateTools, BedTools, PathTools, IrrigationTools, VacuumTools } from './garden-tools.js';
+import { FenceTools, GateTools, BedTools, RoofTools, PathTools, TerraceTools, IrrigationTools, VacuumTools } from './garden-tools.js';
 import { VacuumController } from './vacuum-ctl.js';
 import { irrigationStates } from './irrigation.js';
-import { renderFences, renderGates, renderBeds, renderPaths, renderRooms, renderVacuumSetup, renderIrrigation } from './ui-sections.js';
+import {
+  renderFences,
+  renderGates,
+  renderBeds,
+  renderRoofs,
+  renderPaths,
+  renderRooms,
+  renderVacuumSetup,
+  renderIrrigation,
+} from './ui-sections.js';
+import { renderTerraces, renderWallFacing } from './ui-terraces.js';
 import { treeThumb } from './tree-art.js';
 import {
   renderGeneral,
@@ -54,7 +68,7 @@ import { gatesOf, gateOpenness } from './gates.js';
 import { normalizeFence } from './fences.js';
 import { renderOpenings, renderRoomOpenings, renderRoomOpeningWindow } from './ui-openings.js';
 import { renderSea } from './ui-sea.js';
-import { renderPools } from './ui-pools.js';
+import { poolHandles, renderPools } from './ui-pools.js';
 import { POOL_ROOM, editTarget, robotRunning, poolLight, coverClosed, fallsOf, fallRunning } from './pools.js';
 import { renderBuilder } from './ui-builder.js';
 import {
@@ -86,6 +100,11 @@ console.info(
 // of a home without a plan
 const PREVIEW_IMG = new URL('./preview.jpg', import.meta.url).href;
 const TICK_MS = 30000; // live clock refresh
+const CATALOG_WAIT_MS = 250; // the sections of the catalog report one after the other: read once they all have
+const CONTEXT_WAIT_MS = 4000; // a lost graphics context is given this long to come back before a new scene is started
+// The build this bundle was loaded as (the loader of the integration puts it in its address): compared with the one
+// the integration holds now, to offer a reload when the card was updated (card-update.js)
+const MY_BUILD = buildOf(import.meta.url);
 const SAVE_DELAY = 600; // edits are saved this long after the last change
 const PREVIEW_MS = 180000; // a forced season / weather preview returns to live after 3 min
 const PREVIEW = {
@@ -109,16 +128,28 @@ const SECTION_ICONS = {
   gates: 'mdi:gate',
   beds: 'mdi:flower',
   paths: 'mdi:road-variant',
+  terraces: 'mdi:texture-box',
   outdoor: 'mdi:home-group',
   trees: 'mdi:pine-tree',
   ground: 'mdi:terrain',
   views: 'mdi:camera-outline',
 };
-const TOOLS = ['off', 'wall', 'terrace', 'brush-set', 'brush-add', 'brush-smooth', 'section'];
+const TOOLS = ['off', 'select', 'wall', 'terrace', 'brush-set', 'brush-add', 'brush-smooth', 'section'];
+/** Sections of the house catalog the card draws from (house-catalog). */
+const CATALOG_SECTIONS = ['trees', 'objects', 'pond_fish', 'paths', 'terraces', 'walls', 'copings', 'fences'];
 const OP_FIELDS = {
   wall: [
     ['hi', 'op_hi', 0.05],
     ['lo', 'op_lo', 0.05],
+    ['flat', 'op_flat', 0.5],
+    ['feather', 'op_feather', 0.5],
+  ],
+  // a wall whose top and foot differ from its first point (A) to its last one (B)
+  wall_ends: [
+    ['hi', 'op_hi_a', 0.05],
+    ['hi2', 'op_hi_b', 0.05],
+    ['lo', 'op_lo_a', 0.05],
+    ['lo2', 'op_lo_b', 0.05],
     ['flat', 'op_flat', 0.5],
     ['feather', 'op_feather', 0.5],
   ],
@@ -183,7 +214,6 @@ class HouseViewCard extends LitElement {
     this._lastLive = '';
     this._rev = 0;
     this._outSel = '';
-    this._opSel = -1;
     this._opDemo = new Set(); // openings the editor holds open to show how they move
     this._opRoomSel = null; // the opening opened from the editor of the rooms
     this._focus = null;
@@ -191,6 +221,10 @@ class HouseViewCard extends LitElement {
     this._vacMode = false;
     this._vacSel = new Set();
     this._fetch = null;
+    // what the editors changed, to go back on it (Ctrl+Z, the arrows of their panels): the corrections, the plan
+    this._history = new History();
+    this._planHistory = new History();
+    this._typed = new WeakSet(); // fields of the panels holding a text typed and not taken yet: Ctrl+Z is theirs
     this._fit = this._fit.bind(this);
     this._onKey = this._onKey.bind(this);
   }
@@ -311,7 +345,70 @@ class HouseViewCard extends LitElement {
     window.addEventListener('keydown', this._onKey);
     this._updateRunning();
     requestAnimationFrame(this._fit);
-    if (this._engine) this._watchCatalog(); // re-attached (dashboard edit mode): follow the catalog again
+    if (this._engine) this._resume();
+  }
+
+  /**
+   * Back on the page with a scene built earlier: the card was put back by Home Assistant (another view of the
+   * dashboard, its edit mode), or its scene was kept in reserve while another dashboard was shown (card-shell.js).
+   * What ran when it left runs again, and the scene is checked against what the integration holds now.
+   */
+  _resume() {
+    this._watchCatalog();
+    this._watchBuild();
+    if (this._demo) this._runDemo();
+    if (this._sim.play) this._togglePlay(true);
+    this._pushTime(true);
+    this._watchContext();
+    this._checkFresh();
+  }
+
+  /** Was a document of the home written while the scene was away (another browser, a restore)? Read again if so. */
+  async _checkFresh() {
+    if (this._checking || !this._api || !['ready', 'empty'].includes(this._status)) return;
+    this._checking = true;
+    try {
+      const info = await this._api.info();
+      if (this.released || !info) return;
+      // nothing was shown yet and a plan is there now, or a document of the scene shown was written since
+      const stale = this._status === 'empty' ? info.has_scene : !sameStamps(this._api.stamps, info.updated);
+      if (stale) await this._reload();
+      else this._info = info;
+    } catch {
+      // Home Assistant cannot be reached right now: the scene stays as it is
+    } finally {
+      this._checking = false;
+    }
+  }
+
+  /** A built scene, worth keeping in reserve when the card leaves the page. */
+  get keepable() {
+    return !!this._engine && !this.released;
+  }
+
+  /**
+   * The end of this card (card-shell.js): nobody came back for its scene, or a new one replaces it. The graphics
+   * memory is given back right away.
+   */
+  release() {
+    this.released = true;
+    clearTimeout(this._lostTimer);
+    if (this._engine) this._engine.dispose();
+  }
+
+  /**
+   * The graphics context was lost (the browser took it back): three.js draws again when it is given back. When it
+   * does not come back while the card is shown, a new scene is started in its place.
+   */
+  _watchContext() {
+    clearTimeout(this._lostTimer);
+    const eng = this._engine;
+    if (!eng || !eng.lost || !this.isConnected) return;
+    this._lostTimer = setTimeout(() => {
+      if (this.released || !this.isConnected || !eng.lost) return;
+      const shell = this.parentNode;
+      if (shell && typeof shell.renew === 'function') shell.renew();
+    }, CONTEXT_WAIT_MS);
   }
 
   disconnectedCallback() {
@@ -330,19 +427,57 @@ class HouseViewCard extends LitElement {
     this._irrDemoStop();
     if (this._io) this._io.disconnect();
     this._unwatchCatalog();
+    this._unwatchBuild();
     document.removeEventListener('visibilitychange', this._vis);
     window.removeEventListener('resize', this._fit);
     window.removeEventListener('keydown', this._onKey);
-    if (this._engine) this._engine.stop(); // keep the engine: the card may be re-attached (dashboard edit mode)
+    clearTimeout(this._lostTimer);
+    // the scene is kept: the card may be put back (dashboard edit mode, another view), or its scene taken back by
+    // the card of the same dashboard when it is opened again (card-shell.js)
+    if (this._engine) this._engine.stop();
   }
 
   firstUpdated() {
     this._fit();
+    // a field of the panels holds a text of its own from the first key until its value is taken (Enter, leaving
+    // it): meanwhile Ctrl+Z is the undo of the field, afterwards the one of the editor (_onKey)
+    this.renderRoot.addEventListener('input', (e) => this._typed.add(e.target), true);
+    this.renderRoot.addEventListener('change', (e) => this._typed.delete(e.target), true);
   }
 
   updated() {
     const cv = this.renderRoot.querySelector('#section');
     if (cv && this._editors && this._editors.section) drawSection(cv, this._editors.section);
+    // the points of what is being edited in the open section are dragged right away in the view
+    if (this._editors) this._editors.setHandles(this._handlesOf());
+  }
+
+  /**
+   * The object being edited in the open section of the editor, as handles for the view (editors.js, setHandles):
+   * its points are dragged without asking for the move tool. Null when the editor is closed or nothing is unfolded.
+   */
+  _handlesOf() {
+    if (this._panel !== 'edit' || !this._editors || !this._engine || !this._engine.world) return null;
+    switch (this._section) {
+      case 'paths':
+        return this._pathTools.handles();
+      case 'terraces':
+        return this._terraceTools.handles();
+      case 'fences':
+        return this._fenceTools.handles();
+      case 'beds':
+        return this._bedTools.handles();
+      case 'roofs':
+        return this._roofTools.handles();
+      case 'irrigation':
+        return this._irrTools.handles();
+      case 'pools':
+        return poolHandles(this);
+      case 'ground':
+        return this._editors.opHandles();
+      default:
+        return null;
+    }
   }
 
   /** Render only when the card is on screen and the browser tab is visible. Both conditions are tracked
@@ -354,9 +489,90 @@ class HouseViewCard extends LitElement {
   }
 
   _onKey(e) {
-    if (e.key !== 'Escape') return;
-    if (this._saveErr && this._saveErr.open) return this._saveErrOpen(false);
-    if (this._editors && this._editors.tool.mode !== 'off') this._editors.cancelDraft();
+    if (e.key === 'Escape') {
+      if (this._saveErr && this._saveErr.open) return this._saveErrOpen(false);
+      if (this._editors && this._editors.tool.mode !== 'off') this._editors.cancelDraft();
+      return;
+    }
+    // Ctrl+Z undoes the last change of the open editor, Ctrl+Y or Ctrl+Shift+Z does it again (Cmd on a Mac); in
+    // a field being typed in, they stay the ones of the field
+    const back = undoKey(e);
+    if (back === null || !this._undoScope || typingIn(e, (el) => this.renderRoot.contains(el) && !this._typed.has(el))) return;
+    e.preventDefault();
+    this._step(back);
+  }
+
+  /** What undo works on: 'plan' in the plan builder, 'edits' in the editor, null when neither is open. */
+  get _undoScope() {
+    if (this._panel === 'builder' && this._builder) return 'plan';
+    if (this._panel === 'edit' && this._editors && this._engine && this._engine.edits) return 'edits';
+    return null;
+  }
+
+  /** Is there something to undo (`back`) or to do again in the open editor? */
+  _canStep(back) {
+    const scope = this._undoScope;
+    if (!scope) return false;
+    const H = scope === 'plan' ? this._planHistory : this._history;
+    if (!back) return H.canRedo;
+    // a shape being drawn gives its last point back first
+    const ed = this._editors;
+    const drawing = scope === 'edits' && ((ed.tool.mode !== 'off' && ed.tool.pts.length > 0) || !!(ed.clickTool && ed.clickTool.undo));
+    return H.canUndo || drawing;
+  }
+
+  /**
+   * Undo (`back`) the last change made in the open editor, or do again the one just undone. In the editor, a shape
+   * being drawn loses its last point first; then the corrections are put back as they were, the view rebuilt and
+   * the corrections saved. In the plan builder, the plan is put back.
+   */
+  _step(back) {
+    const scope = this._undoScope;
+    if (scope === 'plan') return this._stepPlan(back);
+    if (scope !== 'edits') return;
+    const ed = this._editors;
+    if (back && ed.undoPoint()) return;
+    const edits = this._engine.edits;
+    // (what the tools changed without saying, an entry given its missing fields or a head not yet placed, is no
+    // state of its own: it goes with the change being undone)
+    const doc = back ? this._history.undo() : this._history.redo();
+    if (!doc) return;
+    const before = listSizes(edits);
+    syncInto(edits, doc); // in place: the editors and their tools hold these very objects
+    const lists = resizedLists(before, listSizes(edits));
+    // an entry came back or went away: what was selected by its rank may be another one now
+    ed.restored(lists);
+    for (const tool of [this._fenceTools, this._gateTools, this._bedTools, this._roofTools, this._pathTools, this._terraceTools])
+      tool.restored(lists);
+    this._irrTools.restored();
+    this._engine.commit();
+    this._edited(true, false);
+    this.requestUpdate();
+  }
+
+  _stepPlan(back) {
+    const H = this._planHistory;
+    const doc = back ? H.undo() : H.redo();
+    if (!doc) return;
+    const b = (this._builder = normalizeBuilder(doc));
+    // what was selected may be gone
+    if (!b.levels.some((l) => l.id === this._bLevel)) this._bLevel = b.levels[0].id;
+    if (!b.rooms.some((r) => r.id === this._bSel)) this._bSel = null;
+    if (!b.openings.some((o) => o.id === this._bOpening)) this._bOpening = null;
+    this._bPlace = null;
+    this._bDrag = null;
+    this._bBox = null;
+    this._builderChanged(false, false);
+  }
+
+  /** The two arrows of an editor panel: undo and redo (the keys are for a keyboard, these for a touch screen). */
+  _stepButtons() {
+    const t = this._t;
+    return html`<button class="x step" title=${`${t('undo')} (Ctrl+Z)`} ?disabled=${!this._canStep(true)} @click=${() => this._step(true)}>
+        <ha-icon icon="mdi:undo"></ha-icon></button
+      ><button class="x step" title=${`${t('redo')} (Ctrl+Y)`} ?disabled=${!this._canStep(false)} @click=${() => this._step(false)}>
+        <ha-icon icon="mdi:redo"></ha-icon>
+      </button>`;
   }
 
   /** Card height: fill the screen below the card's top (default), keep an aspect ratio, or a fixed height. */
@@ -388,10 +604,12 @@ class HouseViewCard extends LitElement {
     this._api.onLocked = () => this._askUnlock(); // a write refused by the edit lock: ask the password, then retry
     this._api.lockedMessage = this._t('lock_refused');
     await this.updateComplete;
+    if (this.released) return;
     this._fit();
     this._engine = new HouseEngine(this.renderRoot.querySelector('#view'), {
       movable: this._movable,
       fpsCap: this._config.fps_cap,
+      quality: this._config.quality,
       onRoomClick: (roomId) => this._roomClick(roomId),
       onZoneClick: (id) => openZone(this, id),
       onPoolCoverClick: (id) => this._poolCoverClick(id),
@@ -403,9 +621,11 @@ class HouseViewCard extends LitElement {
       this._placeAnchors();
       placeZones(this);
     };
+    this._engine.onContext = () => this._watchContext();
     this._syncVacs();
     this._updateRunning();
     this._watchCatalog();
+    this._watchBuild();
     await Promise.all([this._loadCatalog(), this._reload()]);
     this._aquariums = await loadAquariums(this);
     this._aquariumsLoaded = true;
@@ -413,14 +633,14 @@ class HouseViewCard extends LitElement {
   }
 
   /**
-   * Trees, objects, pond fish and kinds of path of the house catalog. The integration downloads them and merges the entries saved with the
-   * catalog editor; the card only asks it (never the network) and draws them. Without them (an older integration)
-   * the built-in species stay.
+   * Trees, objects, pond fish, kinds of path, of terrace, of wall, of coping and of fence of the house catalog. The integration
+   * downloads them and merges the entries saved with the catalog editor; the card only asks it (never the network)
+   * and draws them. Without them (an older integration) the built-in kinds stay.
    */
   async _loadCatalog() {
     const h = this._hass;
     if (!h || !h.callWS || !this._engine) return;
-    this._catalog = this._catalog || { trees: {}, objects: {}, pond_fish: {}, paths: {} };
+    this._catalog = this._catalog || Object.fromEntries(CATALOG_SECTIONS.map((section) => [section, {}]));
     // each section on its own: one that cannot be read keeps what it had, and does not hide the other
     await Promise.all(
       Object.keys(this._catalog).map(async (section) => {
@@ -434,6 +654,12 @@ class HouseViewCard extends LitElement {
         }
       }),
     );
+    // The world is built again with a catalog (the ground included): only when what was read differs from what is
+    // drawn. The integration tells the state of every section each time the card subscribes, that is each time it
+    // comes back on the page: nothing has changed then, and nothing is to be built.
+    const sign = JSON.stringify([this._catalog, h.language]);
+    if (sign === this._catalogSign || !this._engine) return;
+    this._catalogSign = sign;
     try {
       this._engine.setCatalog(this._catalog, h.language);
     } catch (err) {
@@ -446,12 +672,84 @@ class HouseViewCard extends LitElement {
   _watchCatalog() {
     const h = this._hass;
     if (this._catalogUnsub || !h || !h.connection || !h.connection.subscribeMessage) return;
-    this._catalogUnsub = ['trees', 'objects', 'pond_fish', 'paths'].map((section) =>
-      h.connection.subscribeMessage(() => this._loadCatalog(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
+    this._catalogUnsub = CATALOG_SECTIONS.map((section) =>
+      h.connection.subscribeMessage(() => this._catalogChanged(), { type: 'house_view/catalog/subscribe', section }).catch(() => null),
     );
   }
 
+  /** A section of the catalog changed, or says where it stands: the sections come in a burst, read once for all. */
+  _catalogChanged() {
+    clearTimeout(this._catalogTimer);
+    this._catalogTimer = setTimeout(() => this._loadCatalog(), CATALOG_WAIT_MS);
+  }
+
+  /**
+   * The integration says which build of the card it holds, now and each time the bundle changes on the server
+   * (a new release, a bundle built again): when it is not the one running, a button offers to reload the page, and
+   * the page reloads by itself when nobody is using it with the option `auto_reload` (a wall display).
+   */
+  _watchBuild() {
+    const h = this._hass;
+    if (this._buildUnsub || !MY_BUILD || !h || !h.connection || !h.connection.subscribeMessage) return;
+    // (an integration from before this command refuses it: nothing to compare with)
+    this._buildUnsub = h.connection.subscribeMessage((ev) => this._serverBuild(ev && ev.build), { type: 'house_view/card/subscribe' });
+    this._buildUnsub.catch(() => null);
+    // somebody at work anywhere on the page keeps it from reloading under their fingers
+    this._touched = () => {
+      this._touchedAt = Date.now();
+    };
+    for (const type of ['pointerdown', 'keydown', 'wheel']) window.addEventListener(type, this._touched, { capture: true, passive: true });
+    this._touched();
+  }
+
+  _unwatchBuild() {
+    clearInterval(this._reloadTimer);
+    this._reloadTimer = null;
+    if (this._buildUnsub) this._buildUnsub.then((unsub) => unsub && unsub()).catch(() => null);
+    this._buildUnsub = null;
+    if (this._touched)
+      for (const type of ['pointerdown', 'keydown', 'wheel']) window.removeEventListener(type, this._touched, { capture: true });
+    this._touched = null;
+  }
+
+  /** The build the integration holds: another one than this bundle, and the page is to be reloaded. */
+  _serverBuild(build) {
+    this._newBuild = isOtherBuild(MY_BUILD, build) ? build : null;
+    clearInterval(this._reloadTimer);
+    this._reloadTimer = this._newBuild && this._config.auto_reload ? setInterval(() => this._reloadWhenIdle(), 1000) : null;
+    this.requestUpdate();
+  }
+
+  _reloadWhenIdle() {
+    let tried = null;
+    try {
+      tried = sessionStorage.getItem(RELOAD_KEY);
+    } catch {
+      // no storage in this browser: the page reloads once per build all the same, the integration naming the new one
+    }
+    const busy = !!this._panel || !!this._dirty || !!this._saveErr || !!(this._fetch && this._fetch.state === 'running');
+    const ask = { mine: MY_BUILD, theirs: this._newBuild, auto: this._config.auto_reload, tried, busy };
+    const now = shouldReload({ ...ask, idleMs: Date.now() - (this._touchedAt || 0) });
+    // (already reloaded for this build, and still the bundle of before: the button stays, the page is left alone)
+    if (!now && tried !== this._newBuild) return;
+    clearInterval(this._reloadTimer);
+    this._reloadTimer = null;
+    if (!now) return;
+    try {
+      sessionStorage.setItem(RELOAD_KEY, this._newBuild);
+    } catch {
+      // (see above)
+    }
+    this._reloadPage();
+  }
+
+  /** Load the page again: Home Assistant asks the loader of the card again, which names the new bundle. */
+  _reloadPage() {
+    window.location.reload();
+  }
+
   _unwatchCatalog() {
+    clearTimeout(this._catalogTimer);
     for (const pending of this._catalogUnsub || []) pending.then((unsub) => unsub && unsub());
     this._catalogUnsub = null;
   }
@@ -476,7 +774,9 @@ class HouseViewCard extends LitElement {
         info.has_edits ? this._api.getEdits() : null,
         info.has_ortho ? this._api.getOrtho() : null,
       ]);
+      if (this.released) return;
       this._data = { scene, terrain, ortho, edits: edits || emptyEdits() };
+      this._api.stamps = stampsOf(info.updated); // what the scene is built from (see _checkFresh)
       this._apply();
       this._status = 'ready';
     } catch (e) {
@@ -489,6 +789,8 @@ class HouseViewCard extends LitElement {
   _apply(keep = false) {
     this._engine.load(this._data, { keepLights: keep });
     this._data.edits = this._engine.edits; // the engine owns the normalized edits; the editors mutate them in place
+    // documents read again, imported, or changed by the setup: nothing of before to go back to in the editor
+    this._history.reset(this._data.edits);
     this._views = this._engine.views.map((v) => v.name);
     this._focus = this._engine.focus;
     this._lastLive = '';
@@ -803,17 +1105,38 @@ class HouseViewCard extends LitElement {
     if (this._panel !== 'edit') return nothing;
     const sec = this._winSec;
     const body = sec ? sec.body() : nothing; // evaluated first: it may open the item window
+    // the points of what is being edited: dragged right away, and for a free line or outline one can be added on a
+    // side or removed (a fence and a terrace have tools of their own for that)
+    const handles = sec ? this._handlesOf() : null;
+    const ptsMode = this._editors ? this._editors.pointsMode() : null;
+    const drag = handles
+      ? html`<div class="hint">✥ ${this._t('drag_hint')}</div>
+          ${
+            handles.insert
+              ? html`<div class="row">
+                    ${['add', 'del'].map(
+                      (m) =>
+                        html`<button class=${ptsMode === m ? 'on' : ''} @click=${() => this._editors.setPointsTool(m)}>
+                          ${m === 'add' ? '＋' : '−'} ${this._t(`terrace_pt_${m}`)}
+                        </button>`,
+                    )}
+                  </div>
+                  ${ptsMode ? html`<div class="hint">${this._t(`pts_hint_${ptsMode}`)}</div>` : nothing}`
+              : nothing
+          }`
+      : nothing;
     const item = this._winItem;
     // stacked over the menu: the back arrow returns to the window underneath
     const win = (cls, title, content, close) =>
       html`<div class=${`win ${cls}`} @pointerdown=${(e) => e.stopPropagation()}>
         <div class="head">
           <button class="wback" title=${this._t('back')} @click=${close}><ha-icon icon="mdi:arrow-left"></ha-icon></button><b>${title}</b>
+          ${this._stepButtons()}
           <button class="x" title=${this._t('close_editor')} @click=${() => this._togglePanel('edit')}>✕</button>
         </div>
         <div class="body">${content}</div>
       </div>`;
-    return html`${sec ? win('sec', sec.title, body, () => this._onSection(sec.key, false)) : nothing}
+    return html`${sec ? win('sec', sec.title, html`${drag}${body}`, () => this._onSection(sec.key, false)) : nothing}
     ${
       item
         ? win('item', item.title, item.content, () => {
@@ -830,6 +1153,7 @@ class HouseViewCard extends LitElement {
     if (this._editors && this._editors.active) this._editors.stop();
     if (next !== 'vacuum' && this._vac) this._vac.showMap(false); // the picture of the robot's map is a setting aid
     this._section = next;
+    if (next === 'ground' && this._editors) this._editors.setTool('select', false); // the world is already up to date
     if (next !== 'openings' && this._engine) this._engine.setOpeningTarget(null);
     this._pushIrrigation();
     // the aquariums read again: views or sizes changed in ha-reef-card meanwhile
@@ -1497,11 +1821,16 @@ class HouseViewCard extends LitElement {
     if (this._panel === 'edit' && next !== 'edit' && this._editors) this._editors.stop();
     if (next === 'edit') this._loadPickers();
     if (next === 'edit' && !this._editors && this._engine) {
-      this._editors = new WorldEditors(this._engine, { onChange: (persist = true) => this._edited(persist) });
+      this._editors = new WorldEditors(this._engine, {
+        onChange: (persist = true) => this._edited(persist),
+        opName: (op, i, ops) => this._opName(op, i, ops), // names drawn on the view, same as in the list
+      });
       this._fenceTools = new FenceTools(this._editors);
       this._gateTools = new GateTools(this._editors);
       this._bedTools = new BedTools(this._editors);
+      this._roofTools = new RoofTools(this._editors);
       this._pathTools = new PathTools(this._editors);
+      this._terraceTools = new TerraceTools(this._editors);
       this._irrTools = new IrrigationTools(this._editors);
       this._vacTools = new VacuumTools(this._editors, () => this._vacCfg(this._vacuum, true));
     }
@@ -1538,13 +1867,19 @@ class HouseViewCard extends LitElement {
     this._engine.setMovable(this._movable);
   }
 
-  _edited(persist) {
+  /**
+   * The editors changed something: the panel and what follows the corrections are refreshed. `persist`: the
+   * corrections themselves changed and are saved a moment later; their state is kept to go back to (`note`), but
+   * when the change is itself an undo or a redo.
+   */
+  _edited(persist, note = true) {
     this._rev++;
     this._views = this._engine.views.map((v) => v.name);
     this._pushIrrigation();
     this._syncVacs(); // a robot hidden or shown again in the settings
     for (const v of (this._vacs || new Map()).values()) if (!v.demo) v.refresh();
     if (!persist) return;
+    if (note) this._history.note(this._engine.edits);
     this._dirty = true;
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => this._save('edits'), SAVE_DELAY);
@@ -1756,12 +2091,7 @@ class HouseViewCard extends LitElement {
       // a fine day of early summer, the clock running (1 h every 2 s)
       this._sim = { ...this._sim, hour: 6, doy: 160, weather: 'clear', cloud: undefined, precip: undefined };
       this._togglePlay(true);
-      let last = performance.now();
-      this._demoTimer = setInterval(() => {
-        const now = performance.now();
-        if (this._demo.tick(this._sim.hour, Math.min((now - last) / 1000, 1))) this._demoChanged();
-        last = now;
-      }, 200);
+      this._runDemo();
       this._demo.tick(this._sim.hour, 10);
     } else {
       this._demo = null;
@@ -1769,6 +2099,17 @@ class HouseViewCard extends LitElement {
       if (this._panel === 'demo') this._panel = null;
     }
     if (this._realHass) this.hass = this._realHass;
+  }
+
+  /** The simulated home lives on: its entities change with the hour (started again when the card comes back). */
+  _runDemo() {
+    clearInterval(this._demoTimer);
+    let last = performance.now();
+    this._demoTimer = setInterval(() => {
+      const now = performance.now();
+      if (this._demo.tick(this._sim.hour, Math.min((now - last) / 1000, 1))) this._demoChanged();
+      last = now;
+    }, 200);
   }
 
   /** A simulated entity changed: the card sees a new hass object, as on a state change in Home Assistant. */
@@ -1996,6 +2337,7 @@ class HouseViewCard extends LitElement {
       if (free) r.area = free.area_id;
     }
     this._builder = model;
+    this._planHistory.reset(model); // the plan as it is opened: nothing before it to go back to
     this._bLevel = model.levels[0].id;
     this._bSel = model.rooms[0] ? model.rooms[0].id : null;
     this._bOpening = null;
@@ -2052,9 +2394,13 @@ class HouseViewCard extends LitElement {
     await this._plainPlan([{ name: this._t('b_ground'), rooms }], { counts: {}, warnings: [this._t('robot_plan_note')] });
   }
 
-  /** The builder model changed: new scene now, 3D rebuilt a moment later, plan saved after a pause. */
-  _builderChanged(now = false) {
+  /**
+   * The builder model changed: new scene now, 3D rebuilt a moment later, plan saved after a pause. Its state is
+   * kept to go back to (`note`), but when the change is itself an undo or a redo.
+   */
+  _builderChanged(now = false, note = true) {
     if (!this._builder || !this._data) return;
+    if (note) this._planHistory.note(this._builder);
     this._data.scene = builderScene(this._builder, this._homePlace.latitude);
     this._report = builderReport(this._builder);
     clearTimeout(this._bApplyTimer);
@@ -2112,6 +2458,8 @@ class HouseViewCard extends LitElement {
       await this._save('terrain');
       await this._save('edits');
       this._apply(true);
+      // (a terrain saved with "Export the corrected terrain" already holds the corrections of the edits)
+      if (this._data.terrain.corrected) this._msg = this._t('terrain_corrected');
     } catch (e) {
       this._msg = `${this._t('error')}: ${e.message}`;
     }
@@ -2379,13 +2727,23 @@ class HouseViewCard extends LitElement {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  /** The terrain with the ground as the view shows it (corrections applied), as a terrain file. */
+  _exportTerrain() {
+    const doc = this._engine ? this._engine.correctedTerrain() : null;
+    if (!doc) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(doc)], { type: 'application/json' }));
+    a.download = 'house-view-terrain-corrected.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   async _importEdits(ev) {
     const input = ev.target;
     const file = input.files[0];
     if (!file) return;
     try {
       this._data.edits = normalizeEdits(JSON.parse(await file.text()));
-      if (this._editors) this._editors.history.length = 0;
       this._apply(true); // the engine adopts the imported edits before they are saved
       await this._save('edits');
     } catch (e) {
@@ -2569,6 +2927,12 @@ class HouseViewCard extends LitElement {
                     >${t('import')}<input type="file" accept=".json,application/json" @change=${this._importEdits}
                   /></label>
                 </div>
+                ${
+                  this._data && this._data.terrain
+                    ? html`<div class="row"><button @click=${this._exportTerrain}>${t('export_terrain')}</button></div>
+                        <div class="hint">${t('export_terrain_hint')}</div>`
+                    : nothing
+                }
               </details>`
           : nothing
       }
@@ -2873,10 +3237,23 @@ class HouseViewCard extends LitElement {
       }
       ${ed.treeMode !== 'off' ? html`<div class="hint">${t(`tree_hint_${ed.treeMode}`)}</div>` : nothing}
       <div class="row">
-        <button ?disabled=${!ed.history.length} @click=${() => ed.treeUndo()}>${t('undo')}</button>
+        <button ?disabled=${!this._canStep(true)} @click=${() => this._step(true)}>${t('undo')}</button>
         <button @click=${() => ed.treeReset()}>${t('tree_reset')}</button>
       </div>
       <div class="hint">${info.count} ${t('tree_count')} · ${info.removed} ${t('tree_removed')} · ${info.added} ${t('tree_added')}</div>`;
+  }
+
+  /** Name of a ground correction, in the list of the editor and on the view: its kind, its rank and its heights. */
+  _opName(o, i, ops) {
+    const t = this._t;
+    const n = ops.slice(0, i + 1).filter((x) => x.type === o.type).length;
+    if (o.type === 'wall') {
+      // heights of its own at its last point: both ends are told
+      const b = Number.isFinite(o.hi2) || Number.isFinite(o.lo2) ? ` · ${(o.lo2 ?? o.lo).toFixed(2)} → ${(o.hi2 ?? o.hi).toFixed(2)}` : '';
+      return `${t('op_wall')} ${n} (${o.lo.toFixed(2)} → ${o.hi.toFixed(2)}${b} m)`;
+    }
+    if (o.type === 'terrace') return `${t('op_terrace')} ${n} (${o.alt.toFixed(2)} m)`;
+    return `${t('op_brush')} ${n} (${t(`brush_${o.mode}`)})`;
   }
 
   _renderGround() {
@@ -2884,41 +3261,44 @@ class HouseViewCard extends LitElement {
     const ed = this._editors;
     const tool = ed.tool;
     const ops = this._data.edits.terrain;
-    if (this._opSel >= ops.length || (this._opSel < 0 && ops.length)) this._opSel = ops.length - 1;
-    const op = ops[this._opSel];
-    const opName = (o, i) => {
-      const n = ops.slice(0, i + 1).filter((x) => x.type === o.type).length;
-      if (o.type === 'wall') return `${t('op_wall')} ${n} (${o.lo.toFixed(2)} → ${o.hi.toFixed(2)} m)`;
-      if (o.type === 'terrace') return `${t('op_terrace')} ${n} (${o.alt.toFixed(2)} m)`;
-      return `${t('op_brush')} ${n} (${t(`brush_${o.mode}`)})`;
-    };
+    // the selection of the editor is the one of the list: a correction clicked on the view shows up here
+    let sel = ed.selOp;
+    if (sel >= ops.length || (sel < 0 && ops.length)) sel = ops.length - 1;
+    ed.selOp = sel;
+    const op = ops[sel];
+    // a wall given heights of its own at its last point: four altitudes instead of two
+    const ends = !!op && op.type === 'wall' && (Number.isFinite(op.hi2) || Number.isFinite(op.lo2));
+    const opName = (o, i) => this._opName(o, i, ops);
     if (!this._engine.terrainCfg) {
       return html` <div class="hint">${t('ground_needs_terrain')}</div>`;
     }
     const brush = tool.mode.startsWith('brush');
+    // with a ground tool the corrections are drawn on the view: one kind of them can be shown alone
+    const shown = tool.mode !== 'off';
     return html` <select @change=${(e) => ed.setTool(e.target.value)}>
         ${TOOLS.map((m) => html`<option value=${m} ?selected=${tool.mode === m}>${t(`tool_${m}`)}</option>`)}
       </select>
       ${
         brush
           ? html`<div class="row">
-              <span>${t('op_r')}</span
-              ><input
-                type="number"
-                min="0.5"
-                max="20"
-                step="0.5"
-                .value=${String(tool.r)}
-                @change=${(e) => ed.setToolParams({ r: parseFloat(e.target.value) || 3 })}
-              />
-              <span>${t(`brush_v_${tool.mode.slice(6)}`)}</span
-              ><input
-                type="number"
-                step="0.05"
-                .value=${Number.isFinite(tool.v) ? String(tool.v) : ''}
-                @change=${(e) => ed.setToolParams({ v: parseFloat(e.target.value) })}
-              />
-            </div>`
+                <span>${t('op_r')}</span
+                ><input
+                  type="number"
+                  min="0.5"
+                  max="20"
+                  step="0.5"
+                  .value=${String(tool.r)}
+                  @input=${(e) => ed.setToolParams({ r: parseFloat(e.target.value) || 3 })}
+                />
+                <span>${t(`brush_v_${tool.mode.slice(6)}`)}</span
+                ><input
+                  type="number"
+                  step="0.05"
+                  .value=${Number.isFinite(tool.v) ? String(tool.v) : ''}
+                  @input=${(e) => ed.setToolParams({ v: parseFloat(e.target.value) })}
+                />
+              </div>
+              <div class="hint">${t('brush_wheel')}</div>`
           : nothing
       }
       ${
@@ -2932,23 +3312,52 @@ class HouseViewCard extends LitElement {
           : nothing
       }
       ${tool.mode !== 'off' ? html`<div class="hint">${t(`tool_hint_${tool.mode}`)}</div>` : nothing}
-      ${ed.moving(`op:${this._opSel}`) ? html`<div class="hint">${t('move_hint')}</div>` : nothing}
+      ${ed.moving(`op:${sel}`) ? html`<div class="hint">${t('move_hint')}</div>` : nothing}
       <label>${t('ops')}</label>
       ${
         ops.length
-          ? html`<select
+          ? html`${
+                shown
+                  ? html`<div class="row">
+                        <span>${t('ops_show')}</span>
+                        <select class="grow" @change=${(e) => ed.setShowOps(e.target.value)}>
+                          ${['all', 'wall', 'terrace', 'brush'].map(
+                            (k) =>
+                              html`<option value=${k} ?selected=${ed.showOps === k}>
+                                ${k === 'all' ? t('ops_show_all') : t(`op_${k}`)} (${ops.filter((o) => k === 'all' || o.type === k).length})
+                              </option>`,
+                          )}
+                        </select>
+                      </div>
+                      ${ed.showOps !== 'all' ? html`<div class="hint">${t('ops_show_hint')}</div>` : nothing}`
+                  : nothing
+              }
+              <select
                 @change=${(e) => {
-                  this._opSel = parseInt(e.target.value, 10);
-                  ed.selectOp(this._opSel);
+                  ed.selectOp(parseInt(e.target.value, 10));
                   this._rev++;
                 }}
               >
-                ${ops.map((o, i) => html`<option value=${i} ?selected=${i === this._opSel}>${opName(o, i)}</option>`)}
+                ${ops.map((o, i) => (!shown || ed.opShown(o, i) ? html`<option value=${i} ?selected=${i === sel}>${opName(o, i)}</option>` : nothing))}
               </select>
               ${
                 op
-                  ? html`<div class="grid">
-                        ${OP_FIELDS[op.type].map(
+                  ? html`${
+                        op.type === 'wall'
+                          ? html`${renderWallFacing(this, op, (patch) => ed.editOp(sel, patch))}
+                              <label class="chk"
+                                ><input
+                                  type="checkbox"
+                                  .checked=${ends}
+                                  @change=${(e) => ed.editOp(sel, e.target.checked ? { hi2: op.hi, lo2: op.lo } : { hi2: undefined, lo2: undefined })}
+                                />
+                                ${t('wall_ends')}</label
+                              >
+                              ${ends ? html`<div class="hint">${t('wall_ends_hint')}</div>` : nothing}`
+                          : nothing
+                      }
+                      <div class="grid">
+                        ${OP_FIELDS[ends ? 'wall_ends' : op.type].map(
                           ([key, label, step]) =>
                             html`<span>${key === 'value' ? t(`brush_v_${op.mode}`) : t(label)}</span
                               ><input
@@ -2957,23 +3366,27 @@ class HouseViewCard extends LitElement {
                                 .value=${String(op[key])}
                                 @change=${(e) => {
                                   const v = parseFloat(e.target.value);
-                                  if (Number.isFinite(v)) ed.editOp(this._opSel, { [key]: v });
+                                  if (Number.isFinite(v)) ed.editOp(sel, { [key]: v });
                                 }}
                               />`,
                         )}
                       </div>
                       <div class="row">
                         <button
-                          class=${ed.moving(`op:${this._opSel}`) ? 'on' : ''}
-                          @click=${() => (ed.moving(`op:${this._opSel}`) ? ed.setMoveTool(null) : ed.startOpMove(this._opSel))}
+                          class=${ed.moving(`op:${sel}`) ? 'on' : ''}
+                          @click=${() => {
+                            if (!ed.moving(`op:${sel}`)) return ed.startOpMove(sel);
+                            ed.setMoveTool(null);
+                            ed.setTool('select', false); // back to the tool that outlines the corrections
+                          }}
                         >
                           ✥ ${t('move')}
                         </button>
-                        <button @click=${() => ed.deleteOp(this._opSel)}>${t('delete')}</button>
+                        <button @click=${() => ed.deleteOp(sel)}>${t('delete')}</button>
                         ${
                           op.type === 'wall'
-                            ? html`<button @click=${() => ed.flipOp(this._opSel)}>${t('flip')}</button>
-                                <button @click=${() => ed.sectionOfOp(this._opSel)}>${t('section')}</button>`
+                            ? html`<button @click=${() => ed.flipOp(sel)}>${t('flip')}</button>
+                                <button @click=${() => ed.sectionOfOp(sel)}>${t('section')}</button>`
                             : nothing
                         }
                       </div>`
@@ -3034,6 +3447,7 @@ class HouseViewCard extends LitElement {
     ${this._sec('alarms', t('alarms'), () => renderAlarmsEditor(this))}
     ${this._sec('zones', `${t('zones')} (${this._data.edits.zones.length})`, () => renderZonesEditor(this))}
     ${this._sec('rooms', t('rooms'), () => renderRooms(this))}
+    ${this._sec('roofs', `${t('roofs')} (${this._data.edits.roofs.length})`, () => renderRoofs(this))}
     ${this._sec('openings', `${t('openings')} (${ops.length})`, () => renderOpenings(this))} ${renderRoomOpeningWindow(this)}
     ${this._sec('pools', `${t('pools')} (${this._data.edits.pools.length})`, () => renderPools(this))}
     ${this._sec('sea', t('sea'), () => renderSea(this))}
@@ -3041,6 +3455,7 @@ class HouseViewCard extends LitElement {
     ${this._sec('irrigation', t('irrigation'), () => renderIrrigation(this))} ${this._sec('fences', t('fences'), () => renderFences(this))}
     ${this._sec('gates', `${t('gates')} (${this._data.edits.gates.length})`, () => renderGates(this))}
     ${this._sec('paths', `${t('paths')} (${this._data.edits.paths.length})`, () => renderPaths(this))}
+    ${this._sec('terraces', `${t('terraces')} (${this._data.edits.terraces.length})`, () => renderTerraces(this))}
     ${this._sec('beds', `${t('beds')} (${this._data.edits.beds.length})`, () => renderBeds(this))}
     ${this._sec('outdoor', t('outdoor'), () => this._renderOutdoor())} ${this._sec('trees', t('trees'), () => this._renderTrees())}
     ${this._sec('ground', t('ground'), () => this._renderGround())} ${this._sec('views', t('views'), () => this._renderViewsEditor())}`;
@@ -3231,6 +3646,7 @@ class HouseViewCard extends LitElement {
       <div class="head">
         <b>${title}</b>
         <span>
+          ${this._undoScope ? this._stepButtons() : nothing}
           ${
             this._info && this._info.locked && ['setup', 'edit', 'builder'].includes(this._panel)
               ? html`<button class="x" title=${t('lock_now')} @click=${() => this._lockNow()}>🔒</button>`
@@ -3307,6 +3723,13 @@ class HouseViewCard extends LitElement {
             : nothing
         }
         <div class="toolbar">
+          ${
+            this._newBuild
+              ? html`<button class="tb newer" title=${t('card_update')} @click=${() => this._reloadPage()}>
+                  <ha-icon icon="mdi:update"></ha-icon>
+                </button>`
+              : nothing
+          }
           ${
             this._saveErr
               ? html`<button class="tb unsaved" title=${t('save_failed')} @click=${() => this._saveErrOpen(!this._saveErr.open)}>
@@ -3991,6 +4414,22 @@ class HouseViewCard extends LitElement {
       margin-right: 5px;
       vertical-align: middle;
     }
+    /* a kind without a picture in a picker: a patch of its colour in place of the picture */
+    :is(.panel, .win) .sw.big {
+      width: 42px;
+      height: 42px;
+      margin: 0;
+      border-radius: 5px;
+    }
+    :is(.panel, .win) .pair {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    :is(.panel, .win) .pair input {
+      min-width: 0;
+      flex: 1;
+    }
     :is(.panel, .win) .roomblk {
       margin-bottom: 8px;
       padding-bottom: 6px;
@@ -4449,6 +4888,16 @@ class HouseViewCard extends LitElement {
       cursor: pointer;
       font-size: 14px;
     }
+    /* undo and redo: wide enough for a finger, dimmed when there is nothing to go back on */
+    :is(.panel, .win) .x.step {
+      padding: 2px 6px;
+      vertical-align: middle;
+      --mdc-icon-size: 20px;
+    }
+    :is(.panel, .win) .x.step[disabled] {
+      opacity: 0.3;
+      cursor: default;
+    }
     :is(.panel, .win) details {
       border-top: 1px solid rgba(255, 255, 255, 0.1);
       padding-top: 6px;
@@ -4609,6 +5058,12 @@ class HouseViewCard extends LitElement {
       border-color: transparent;
       animation: alarm-pulse 1.6s ease-in-out infinite;
     }
+    /* another build of the card is on the server: reload the page */
+    .tb.newer {
+      background: #1976d2;
+      border-color: transparent;
+      animation: alarm-pulse 1.6s ease-in-out infinite;
+    }
     .savedlg {
       position: absolute;
       inset: 0;
@@ -4760,7 +5215,8 @@ class HouseViewCard extends LitElement {
   `;
 }
 
-if (!customElements.get('house-view-card')) customElements.define('house-view-card', HouseViewCard);
+// Home Assistant creates the shell (card-shell.js); the card itself lives inside it and outlives it for a while
+defineCard('house-view-card', HouseViewCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'house-view-card',
